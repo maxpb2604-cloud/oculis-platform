@@ -1,0 +1,106 @@
+@import "tailwindcss";
+
+/* Class-based dark mode: <html class="dark"> */
+@variant dark (&:where(.dark, .dark *));
+
+/*
+ * Oculis Auribus — consulting-grade design system.
+ * Editorial serif display (Source Serif 4) + clean grotesque (Inter) for data.
+ * Restrained ink/paper palette, single deep-emerald accent, muted semantic risk tones.
+ */
+@theme {
+  --font-serif: "Source Serif 4", Georgia, "Times New Roman", serif;
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+
+  --color-brand-50: #e8f4ee;
+  --color-brand-400: #2bb789;
+  --color-brand-500: #0e8a63;
+  --color-brand-600: #0b6e4f;
+  --color-brand-700: #08583f;
+}
+
+:root {
+  --bg: #f5f6f4;
+  --surface: #ffffff;
+  --surface-2: #f0f2f0;
+  --border: #e4e7e3;
+  --border-strong: #d3d8d2;
+  --text: #11201a;
+  --text-muted: #5c6b63;
+  --accent: #0b6e4f;
+  --accent-soft: #e8f4ee;
+
+  --risk-alto: #b23b34;
+  --risk-medio: #b07d2a;
+  --risk-bajo: #2e7d57;
+  --risk-alto-soft: #f6e7e6;
+  --risk-medio-soft: #f6eedb;
+  --risk-bajo-soft: #e4f1ea;
+}
+.dark {
+  --bg: #080b0a;
+  --surface: #0e1413;
+  --surface-2: #141b19;
+  --border: #1e2724;
+  --border-strong: #28332f;
+  --text: #e9eeeb;
+  --text-muted: #8a988f;
+  --accent: #2bb789;
+  --accent-soft: #11241d;
+
+  --risk-alto: #d9655d;
+  --risk-medio: #d2a24a;
+  --risk-bajo: #4cb185;
+  --risk-alto-soft: #241715;
+  --risk-medio-soft: #241f12;
+  --risk-bajo-soft: #112019;
+}
+
+html,
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+* {
+  border-color: var(--border);
+}
+
+/* ---- typographic utilities (consulting report voice) ---- */
+.serif {
+  font-family: var(--font-serif);
+  letter-spacing: -0.01em;
+}
+.eyebrow {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+.hairline {
+  height: 1px;
+  background: var(--border);
+}
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+}
+.elev {
+  box-shadow:
+    0 1px 2px rgba(16, 32, 26, 0.04),
+    0 8px 24px -16px rgba(16, 32, 26, 0.18);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation: none !important;
+    transition: none !important;
+  }
+}
