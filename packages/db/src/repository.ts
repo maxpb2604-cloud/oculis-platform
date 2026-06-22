@@ -598,6 +598,38 @@ export async function upsertDocument(db: Database, d: NewDocument): Promise<bool
   return res.length > 0;
 }
 
+/** Initiatives that still need a document sweep (source id + code to query/link). */
+export async function listInitiativesForDocuments(
+  db: Database,
+  opts: { source?: string; limit?: number } = {},
+): Promise<Array<{ id: number; sourceId: string; code: string | null }>> {
+  const where = opts.source ? eq(initiatives.source, opts.source) : undefined;
+  const q = db
+    .select({ id: initiatives.id, sourceId: initiatives.sourceId, code: initiatives.code })
+    .from(initiatives)
+    .where(where)
+    .orderBy(sql`${initiatives.id} desc`);
+  return opts.limit ? q.limit(opts.limit) : q;
+}
+
+/** Documents pending a local/remote file fetch (have a URL, no stored path yet). */
+export async function listDocumentsToFetch(
+  db: Database,
+  opts: { limit?: number } = {},
+): Promise<Array<{ id: number; initiativeCode: string | null; url: string | null; docType: string | null }>> {
+  const q = db
+    .select({
+      id: documents.id,
+      initiativeCode: documents.initiativeCode,
+      url: documents.url,
+      docType: documents.docType,
+    })
+    .from(documents)
+    .where(sql`${documents.url} is not null`)
+    .orderBy(sql`${documents.id} desc`);
+  return opts.limit ? q.limit(opts.limit) : q;
+}
+
 /** Documents for one initiative (by id), newest upload first. */
 export async function listDocuments(
   db: Database,

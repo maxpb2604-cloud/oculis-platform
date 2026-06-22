@@ -24,6 +24,18 @@ import { fetchJson } from "./http.js";
 
 const BASE = "https://www.diputadosrd.gob.do/sil/api/iniciativa";
 const REFERER = "https://www.diputadosrd.gob.do/sil/iniciativa";
+/** Cámara document host that serves the actual PDF bytes (port 8095). */
+const DOC_HOST = "https://s-sil.camaradediputados.gob.do:8095";
+
+/** Document attached to a SIL initiative. */
+export interface SilDocumento {
+  id: number; // document id (used in documentUrl)
+  documento: string | null; // the initiative code, e.g. "05950-2024-2028-CD"
+  descripcion: string | null; // doc type, e.g. "PROYECTO DEPOSITADO"
+  extension: string | null; // "pdf"
+  cargado: string | null; // upload datetime
+  [k: string]: unknown;
+}
 
 export interface Grupo {
   id: number;
@@ -168,6 +180,25 @@ export class SilDiputadosAdapter implements SourceAdapter {
       { headers },
     );
     return env.results ?? [];
+  }
+
+  /**
+   * Official documents attached to an initiative (deposited text, committee acuse/
+   * informe, approved text…). The `documentos` JSON is reachable over normal HTTP; the
+   * actual file is served from the Cámara's document host (`s-sil...:8095`), which may
+   * be reachable only from certain networks. `documentUrl()` builds the official link.
+   */
+  async documentos(id: string | number): Promise<SilDocumento[]> {
+    const env = await fetchJson<Page<SilDocumento>>(
+      `${this.base}/documentos?page=1&id=${id}`,
+      { headers },
+    );
+    return env.results ?? [];
+  }
+
+  /** Official view/download URL for a SIL document id. */
+  documentUrl(documentoId: string | number): string {
+    return `${DOC_HOST}/ReportesGenerales/VerDocumento?documentoId=${documentoId}`;
   }
 
   /**

@@ -12,6 +12,7 @@ import { createDb } from "@oculis/db";
 import { loadEnv } from "./env.js";
 import { ingestSilDiputados } from "./ingest.js";
 import { ingestActivity } from "./ingest-activity.js";
+import { ingestDocuments, fetchDocumentFiles } from "./ingest-documents.js";
 import { runDaily } from "./daily.js";
 import { rescoreAll } from "./rescore.js";
 
@@ -47,6 +48,26 @@ async function main() {
   const started = Date.now();
   try {
     await ensureSchema();
+
+    if (flag("documents")) {
+      console.log("📎 Ingesting official initiative documents (metadata + URLs)\n");
+      const r = await ingestDocuments(db, { limit, log: (m) => console.log(m) });
+      const secs = ((Date.now() - started) / 1000).toFixed(1);
+      console.log(
+        `\n✔ done in ${secs}s — ${r.initiatives} initiatives, ${r.documents} docs (${r.newDocuments} new)`,
+      );
+      return;
+    }
+
+    if (flag("fetch-docs")) {
+      console.log("⬇  Downloading official PDFs → storage backend\n");
+      const r = await fetchDocumentFiles(db, { limit, log: (m) => console.log(m) });
+      const secs = ((Date.now() - started) / 1000).toFixed(1);
+      console.log(
+        `\n✔ done in ${secs}s — backend ${r.backend}: stored ${r.stored}, skipped ${r.skipped}, failed ${r.failed} of ${r.attempted}`,
+      );
+      return;
+    }
 
     if (flag("daily")) {
       console.log("🗓  FHC daily monitoring — both chambers\n");
