@@ -25,10 +25,10 @@ describe("dip-oficial: detectReadingStatuses", () => {
   it("finds reading statuses present in agenda text", () => {
     const text = "... aprobado en SEGUNDA LECTURA ... declarado de urgencia ... tomado en consideración ...";
     const s = detectReadingStatuses(text);
-    expect(s).toContain("2da lectura");
-    expect(s).toContain("urgencia");
-    expect(s).toContain("en consideración");
-    expect(s).not.toContain("1ra lectura");
+    expect(s).toContain("Aprobado 2da lectura");
+    expect(s).toContain("Declarado de urgencia");
+    expect(s).toContain("Tomado en consideración");
+    expect(s).not.toContain("Aprobado 1ra lectura");
   });
 });
 

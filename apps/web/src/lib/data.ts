@@ -79,12 +79,28 @@ export function todayISO(): string {
   }).format(new Date());
 }
 
-/** Activity for a specific day (default today), optionally filtered by chamber. */
-export async function getDayActivity(opts: { date?: string; chamber?: string } = {}) {
+/** Shift an ISO date by N days (negative = earlier). */
+function shiftISO(iso: string, days: number): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  const dt = new Date(Date.UTC(y!, m! - 1, d!));
+  dt.setUTCDate(dt.getUTCDate() + days);
+  return dt.toISOString().slice(0, 10);
+}
+
+/**
+ * Activity for "Hoy". Diputados is exact-date (its SIL/agenda dates are same-day).
+ * The Senate's published session dates can lag, so it uses a short lookback window
+ * ending at the selected date — the rows show their real date, so nothing is misleading.
+ */
+export async function getDayActivity(opts: { date?: string; senateWindowDays?: number } = {}) {
   const d = await db();
   const date = opts.date ?? todayISO();
-  const items = await listActivity(d, { date, chamber: opts.chamber, limit: 500 });
-  return { date, items };
+  const since = shiftISO(date, -(opts.senateWindowDays ?? 6));
+  const [dip, sen] = await Promise.all([
+    listActivity(d, { date, chamber: "DIPUTADOS", limit: 500 }),
+    listActivity(d, { dateFrom: since, dateTo: date, chamber: "SENADO", limit: 500 }),
+  ]);
+  return { date, senateSince: since, dip, sen };
 }
 
 /** Recent activity (no date filter) for a chamber — its standing feed. */

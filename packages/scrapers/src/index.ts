@@ -1,5 +1,7 @@
 export * from "./types.js";
 export * from "./http.js";
+export * from "./codes.js";
+export * from "./dates.js";
 export * from "./sil-diputados.js";
 export * from "./sil-actividad.js";
 export * from "./pdf.js";

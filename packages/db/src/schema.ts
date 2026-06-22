@@ -132,6 +132,7 @@ export const activityEvents = pgTable(
     body: text("body"), // committee name (COMMITTEE) or chamber (PLENARY)
     description: text("description").notNull(),
     agendaUrl: text("agenda_url"), // source PDF / page for this agenda item
+    statuses: jsonb("statuses"), // structured reading/processing statuses (string[])
     // synthesized from content (the source carries no stable id) → dedupe re-scrapes
     dedupeKey: text("dedupe_key").notNull(),
     raw: jsonb("raw"),

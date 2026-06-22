@@ -13,6 +13,7 @@ export interface ActivityItem {
   body: string | null;
   description: string;
   agendaUrl: string | null;
+  statuses: string[] | null;
   initiativeCount: number;
 }
 
@@ -38,7 +39,7 @@ export function StatTile({ value, label, accent = "var(--accent)" }: { value: nu
   );
 }
 
-/** Scope chip (Pleno / Asamblea / Comisión). */
+/** Scope chip (Pleno / Asamblea / Comisión). Label is always text, not color-only. */
 export function ScopeChip({ scope }: { scope: string }) {
   return (
     <span className="rounded-full px-2 py-0.5 text-[11px] font-semibold"
@@ -48,35 +49,45 @@ export function ScopeChip({ scope }: { scope: string }) {
   );
 }
 
-/** Status chip with self-explanatory tooltip, derived from the canonical status map. */
+/** Status chip with self-explanatory tooltip. The label text always carries the
+ *  meaning (never color-only); the dot is decorative (aria-hidden). */
 export function StatusChip({ raw }: { raw: string }) {
   const meta = normalizeStatus(raw);
   const color = STAGE_COLOR[STAGE_META[meta.stage].color] ?? "#64748b";
   return (
-    <span title={meta.tooltip}
+    <span title={meta.tooltip} aria-label={`${meta.label}: ${meta.tooltip}`}
       className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-medium"
       style={{ background: `${color}1a`, color }}>
-      <span className="h-1.5 w-1.5 rounded-full" style={{ background: color }} />
+      <span aria-hidden className="h-1.5 w-1.5 rounded-full" style={{ background: color }} />
       {meta.label}
     </span>
   );
 }
 
-/** One agenda/activity row. */
+/** One agenda/activity row. Composes structured fields — body (title), status chips,
+ *  count chip, date — instead of re-printing a pre-baked description string. */
 export function ActivityRow({ item }: { item: ActivityItem }) {
+  const statuses = item.statuses ?? [];
+  // show description only when it adds detail beyond the body title
+  const showDesc = item.description && item.description.trim() !== (item.body ?? "").trim();
   return (
     <div className="flex items-start gap-3 border-b px-5 py-3 last:border-0">
       <div className="pt-0.5"><ScopeChip scope={item.scope} /></div>
       <div className="min-w-0 flex-1">
         <div className="text-sm font-medium leading-snug">{item.body}</div>
-        <div className="mt-0.5 text-[13px]" style={{ color: "var(--text-muted)" }}>
-          {item.description}
-        </div>
+        {showDesc && (
+          <div className="mt-0.5 text-[13px]" style={{ color: "var(--text-muted)" }}>{item.description}</div>
+        )}
+        {statuses.length > 0 && (
+          <div className="mt-1.5 flex flex-wrap gap-1.5">
+            {statuses.map((s, i) => <StatusChip key={i} raw={s} />)}
+          </div>
+        )}
         <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[11px]" style={{ color: "var(--text-muted)" }}>
           {item.kind && <span>{item.kind}</span>}
           {item.initiativeCount > 0 && (
             <span className="rounded bg-[var(--surface-2)] px-1.5 py-0.5 font-medium">
-              {item.initiativeCount} iniciativa{item.initiativeCount === 1 ? "" : "s"}
+              {item.initiativeCount} {item.initiativeCount === 1 ? "iniciativa" : "iniciativas"}
             </span>
           )}
           {item.agendaUrl && (
@@ -96,8 +107,8 @@ export function ActivityRow({ item }: { item: ActivityItem }) {
   );
 }
 
-/** A list of activity grouped under a heading, with empty state. */
-export function ActivityList({ items, empty }: { items: ActivityItem[]; empty: string }) {
+/** A list of activity with empty state. */
+export function ActivityList({ items, empty }: { items: ActivityItem[]; empty: React.ReactNode }) {
   if (!items.length) {
     return <div className="px-5 py-8 text-center text-sm" style={{ color: "var(--text-muted)" }}>{empty}</div>;
   }
@@ -113,11 +124,29 @@ export function StatusLegend() {
         const color = STAGE_COLOR[m.color] ?? "#64748b";
         return (
           <span key={key} className="inline-flex items-center gap-1.5 text-[12px]" style={{ color: "var(--text-muted)" }}>
-            <span className="h-2 w-2 rounded-full" style={{ background: color }} />
+            <span aria-hidden className="h-2 w-2 rounded-full" style={{ background: color }} />
             {m.label}
           </span>
         );
       })}
     </div>
+  );
+}
+
+// --- Health (Estado de monitoreo) building blocks ---
+
+/** OK / WARN / ERROR pill using design tokens (dark-mode safe). */
+export function HealthPill({ state, children }: { state: "ok" | "warn" | "error"; children: React.ReactNode }) {
+  const map = {
+    ok: { bg: "var(--accent-soft)", fg: "var(--accent)" },
+    warn: { bg: "var(--warn-soft)", fg: "var(--warn)" },
+    error: { bg: "var(--danger-soft)", fg: "var(--danger)" },
+  }[state];
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[11px] font-semibold"
+      style={{ background: map.bg, color: map.fg }}>
+      <span aria-hidden className="h-1.5 w-1.5 rounded-full" style={{ background: map.fg }} />
+      {children}
+    </span>
   );
 }

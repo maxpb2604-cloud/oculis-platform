@@ -37,6 +37,11 @@
   --risk-alto-soft: #f6e7e6;
   --risk-medio-soft: #f6eedb;
   --risk-bajo-soft: #e4f1ea;
+
+  --danger: #b23b34;
+  --danger-soft: #f6e7e6;
+  --warn: #b07d2a;
+  --warn-soft: #f6eedb;
 }
 .dark {
   --bg: #080b0a;
@@ -55,6 +60,11 @@
   --risk-alto-soft: #241715;
   --risk-medio-soft: #241f12;
   --risk-bajo-soft: #112019;
+
+  --danger: #d9655d;
+  --danger-soft: #241715;
+  --warn: #d2a24a;
+  --warn-soft: #241f12;
 }
 
 html,

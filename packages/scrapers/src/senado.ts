@@ -3,25 +3,21 @@
  *
  * The Senate publishes its órdenes del día (Pleno / Asamblea), weekly committee
  * agendas, síntesis, and approved-initiative lists through the **WPFD** (WordPress
- * File Download) plugin. Its file lists are reachable over plain HTTP via
+ * File Download) plugin, reachable over plain HTTP via
  * `admin-ajax.php?action=wpfd&task=files.getFiles&id={categoryId}` — no Playwright or
  * reCAPTCHA needed for these document categories (the reCAPTCHA only guards the separate
  * "Sistema de Gestión de Expedientes Digitales" search, which we flag as a gap).
- *
- * Category IDs were discovered from each section page's embedded WPFD shortcode.
  */
+import { extractCodes } from "./codes.js";
+import { buildISODate, spanishMonthToNum } from "./dates.js";
+import { browserHeaders, fetchJson } from "./http.js";
+import { detectReadingStatuses } from "./dip-oficial.js";
+import { fetchPdfText, PdfParseError } from "./pdf.js";
 import type { RawActivityEvent } from "./sil-actividad.js";
-import { fetchPdfText } from "./pdf.js";
 
 const AJAX = "https://www.senadord.gob.do/wp-admin/admin-ajax.php";
 const FILE = "https://www.senadord.gob.do/wpfd_file";
-const H = {
-  "User-Agent":
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36",
-  "X-Requested-With": "XMLHttpRequest",
-  Referer: "https://www.senadord.gob.do/",
-};
-const CODE_RE = /\d{5}-\d{4}-\d{4}-[A-Z]{2}/g;
+const H = browserHeaders({ "X-Requested-With": "XMLHttpRequest", Referer: "https://www.senadord.gob.do/" });
 
 /** WPFD document categories on the Senate site → our activity scope. */
 export const SENADO_CATEGORIES: Array<{
@@ -46,35 +42,27 @@ export interface WpfdFile {
 }
 
 interface SenadoOptions {
-  /** Parse each file's PDF to extract referenced initiative codes (slower). */
+  /** Parse each file's PDF to extract referenced initiative codes + reading statuses. */
   parsePdfs?: boolean;
   /** Max files per category to process. */
   limitPerCategory?: number;
 }
 
-const MONTHS: Record<string, string> = {
-  ene: "01", feb: "02", mar: "03", abr: "04", may: "05", jun: "06",
-  jul: "07", ago: "08", sep: "09", oct: "10", nov: "11", dic: "12",
-};
-
 /** Pull a yyyy-mm-dd date out of a Senate file title like "...-17-6-2026-SIL". */
 export function parseSenadoDate(title: string): string | null {
   const numeric = title.match(/(\d{1,2})-(\d{1,2})-(\d{4})/);
-  if (numeric) {
-    const [, d, m, y] = numeric;
-    return `${y}-${m!.padStart(2, "0")}-${d!.padStart(2, "0")}`;
-  }
-  const named = title.match(/(\d{1,2})[-\s]de[-\s]([a-zñ]{3})[a-zñ]*[-\s]de[-\s](\d{4})/i);
+  if (numeric) return buildISODate(numeric[1]!, numeric[2]!, numeric[3]!);
+  const named = title.match(/(\d{1,2})[-\s]de[-\s]([a-zñ]{3,})[-\s]de[-\s](\d{4})/i);
   if (named) {
-    const mm = MONTHS[named[2]!.slice(0, 3).toLowerCase()];
-    if (mm) return `${named[3]}-${mm}-${named[1]!.padStart(2, "0")}`;
+    const mm = spanishMonthToNum(named[2]);
+    if (mm) return buildISODate(named[1]!, mm, named[3]!);
   }
   return null;
 }
 
 export interface SenadoResult {
   events: RawActivityEvent[];
-  /** Health gaps (e.g. Expedientes portal not scraped) for the dashboard. */
+  /** Health gaps (e.g. Expedientes portal not scraped, PDF parse failures) for the dashboard. */
   gaps: string[];
 }
 
@@ -82,13 +70,19 @@ export class SenadoAdapter {
   readonly source = "senado";
 
   async filesInCategory(categoryId: number): Promise<WpfdFile[]> {
-    const res = await fetch(
+    // resilient (retry/backoff) so one blip doesn't drop a whole category
+    const data = await fetchJson<{ files?: WpfdFile[] }>(
       `${AJAX}?juwpfisadmin=false&action=wpfd&task=files.getFiles&id=${categoryId}`,
-      { headers: H, signal: AbortSignal.timeout(30_000) },
+      { headers: H, timeoutMs: 30_000 },
     );
-    if (!res.ok) throw new Error(`HTTP ${res.status} for Senado category ${categoryId}`);
-    const data = (await res.json()) as { files?: WpfdFile[] };
-    return (data.files ?? []).filter((f) => /pdf/i.test(f.ext));
+    const files = (data.files ?? []).filter((f) => /pdf/i.test(f.ext));
+    // sort newest-first by the actual session date (title), falling back to upload time,
+    // so "latest N" is genuinely the latest regardless of WPFD payload order.
+    return files.sort((a, b) => {
+      const da = parseSenadoDate(a.post_title) ?? a.created_time?.slice(0, 10) ?? "";
+      const db = parseSenadoDate(b.post_title) ?? b.created_time?.slice(0, 10) ?? "";
+      return db.localeCompare(da);
+    });
   }
 
   fileUrl(slug: string): string {
@@ -98,11 +92,15 @@ export class SenadoAdapter {
   /**
    * Collect Senate agenda/orden-del-día activity. Plain HTTP per WPFD category;
    * the Expedientes Digitales search portal is reCAPTCHA-gated → recorded as a gap.
+   * With parsePdfs, each PDF is read for initiative codes + reading statuses; genuine
+   * parse failures (vs. empty agendas) are counted and surfaced as gaps.
    */
   async collect(opts: SenadoOptions = {}): Promise<SenadoResult> {
     const { parsePdfs = false, limitPerCategory = 12 } = opts;
     const events: RawActivityEvent[] = [];
     const gaps: string[] = [];
+    let parseFailures = 0;
+    let parsed = 0;
 
     for (const cat of SENADO_CATEGORIES) {
       let files: WpfdFile[];
@@ -115,23 +113,28 @@ export class SenadoAdapter {
       for (const f of files) {
         const url = this.fileUrl(f.post_name);
         let codes: string[] = [];
+        let statuses: string[] = [];
         if (parsePdfs) {
+          parsed++;
           try {
             const { text } = await fetchPdfText(url);
-            codes = [...new Set(text.match(CODE_RE) ?? [])];
-          } catch {
-            /* keep the item; the link still works for analysts */
+            codes = extractCodes(text);
+            statuses = detectReadingStatuses(text);
+          } catch (err) {
+            if (err instanceof PdfParseError) parseFailures++;
           }
         }
+        const date = parseSenadoDate(f.post_title) ?? f.created_time?.slice(0, 10) ?? null;
         events.push({
           source: this.source,
           scope: cat.scope,
           chamber: "SENADO",
           agendaUrl: url,
-          date: parseSenadoDate(f.post_title) ?? f.created_time?.slice(0, 10) ?? null,
+          date,
           kind: cat.label,
           body: `Senado — ${cat.label}`,
           description: f.post_title.replace(/\s+/g, " ").trim(),
+          statuses,
           initiativeCodes: codes,
           dedupeKey: `senado|${cat.id}|${f.ID}`,
           raw: f,
@@ -139,7 +142,17 @@ export class SenadoAdapter {
       }
     }
 
-    // The per-expediente detail lives behind the reCAPTCHA-gated "Sistema de Gestión de
+    if (parsePdfs && parseFailures) {
+      gaps.push(`Senado · ${parseFailures} de ${parsed} PDF(s) no se pudieron leer (posible bloqueo/WAF).`);
+    }
+    if (!parsePdfs) {
+      // The WPFD file URL serves an HTML viewer, not raw PDF bytes (download needs a
+      // client-side nonce), so per-agenda initiative codes aren't auto-linked yet.
+      gaps.push(
+        "Senado · vinculación de iniciativas por agenda pendiente: la descarga de PDF (WPFD) requiere flujo con token; las agendas se listan con su enlace oficial.",
+      );
+    }
+    // Per-expediente detail lives behind the reCAPTCHA-gated "Sistema de Gestión de
     // Expedientes Digitales" — not scraped in Phase 1; surface it honestly.
     gaps.push(
       "Senado · Iniciativas (Sistema de Gestión de Expedientes Digitales): portal con reCAPTCHA, pendiente de verificación manual.",

@@ -22,10 +22,18 @@ export default async function SenadoPage({ searchParams }: { searchParams: Promi
         <StatTile value={comisiones.length} label="Agenda comisiones" accent="#8b5cf6" />
       </div>
       <div className="mt-6 grid grid-cols-1 gap-5 lg:grid-cols-2">
-        <Panel title={`Pleno y Asamblea · ${pleno.length + asamblea.length}`} flush>
+        <Panel
+          title={`Pleno y Asamblea · ${pleno.length + asamblea.length}`}
+          flush
+          action={<span className="text-[11px]" style={{ color: "var(--text-muted)" }}>órdenes del día publicadas</span>}
+        >
           <ActivityList items={[...pleno, ...asamblea]} empty="Sin órdenes del día recientes." />
         </Panel>
-        <Panel title={`Agenda semanal de comisiones · ${comisiones.length}`} flush>
+        <Panel
+          title={`Comisiones · ${comisiones.length}`}
+          flush
+          action={<span className="text-[11px]" style={{ color: "var(--text-muted)" }}>agendas semanales publicadas</span>}
+        >
           <ActivityList items={comisiones} empty="Sin agendas de comisión recientes." />
         </Panel>
       </div>

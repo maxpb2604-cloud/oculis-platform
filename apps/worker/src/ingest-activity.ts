@@ -39,17 +39,9 @@ export async function ingestActivity(
     if (ev.scope === "COMMITTEE") committee++;
     else plenary++;
     linkedCodes += ev.initiativeCodes.length;
-    const res = await upsertActivityEvent(db, {
-      source: ev.source,
-      scope: ev.scope,
-      date: ev.date,
-      kind: ev.kind,
-      body: ev.body,
-      description: ev.description,
-      initiativeCodes: ev.initiativeCodes,
-      dedupeKey: ev.dedupeKey,
-      raw: ev.raw,
-    });
+    // pass the full event (chamber/agendaUrl/statuses included) — mapping a subset
+    // here previously nulled out fields the --daily path had written.
+    const res = await upsertActivityEvent(db, ev);
     if (res.inserted) inserted++;
   }
 

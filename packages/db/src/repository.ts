@@ -380,6 +380,7 @@ export interface ActivityInput {
   body: string | null;
   description: string;
   agendaUrl?: string | null;
+  statuses?: string[];
   initiativeCodes: string[];
   dedupeKey: string;
   raw: unknown;
@@ -394,6 +395,10 @@ export interface ActivityUpsertResult {
  * Idempotent upsert of one agenda/activity event keyed by (source, dedupe_key), plus
  * its referenced-initiative links. Each link is resolved to an initiatives.id when that
  * bill already exists in the corpus (so the UI can join activity ↔ bill, risk, status).
+ *
+ * Because the dedupeKey is identity-based (scope|date|body|kind, not a content hash),
+ * an EDITED agenda updates the same row instead of spawning a duplicate — so all
+ * mutable fields (description, statuses, codes, …) are refreshed on the existing path.
  */
 export async function upsertActivityEvent(
   db: Database,
@@ -405,40 +410,31 @@ export async function upsertActivityEvent(
     .where(and(eq(activityEvents.source, a.source), eq(activityEvents.dedupeKey, a.dedupeKey)))
     .limit(1);
 
+  const fields = {
+    scope: a.scope,
+    chamber: a.chamber ?? null,
+    eventDate: a.date,
+    kind: a.kind,
+    body: a.body,
+    description: a.description,
+    agendaUrl: a.agendaUrl ?? null,
+    statuses: (a.statuses ?? null) as object | null,
+  };
+
   let id: number;
   let inserted = false;
   if (existing.length === 0) {
     const [row] = await db
       .insert(activityEvents)
-      .values({
-        source: a.source,
-        scope: a.scope,
-        chamber: a.chamber ?? null,
-        eventDate: a.date,
-        kind: a.kind,
-        body: a.body,
-        description: a.description,
-        agendaUrl: a.agendaUrl ?? null,
-        dedupeKey: a.dedupeKey,
-        raw: a.raw as object,
-      })
+      .values({ source: a.source, dedupeKey: a.dedupeKey, raw: a.raw as object, ...fields })
       .returning({ id: activityEvents.id });
     id = row!.id;
     inserted = true;
   } else {
     id = existing[0]!.id;
-    // refresh enrichable fields too (chamber/agendaUrl were added later, so this
-    // backfills rows first seen before those columns existed)
     await db
       .update(activityEvents)
-      .set({
-        scope: a.scope,
-        chamber: a.chamber ?? null,
-        agendaUrl: a.agendaUrl ?? null,
-        kind: a.kind,
-        body: a.body,
-        lastSeenAt: sql`now()`,
-      })
+      .set({ ...fields, lastSeenAt: sql`now()` })
       .where(eq(activityEvents.id, id));
   }
 
@@ -458,9 +454,28 @@ export async function upsertActivityEvent(
           initiativeId: byCode.get(code) ?? null,
         })),
       )
-      .onConflictDoNothing();
+      // backfill initiative_id when the bill is ingested AFTER the activity was first
+      // seen (the common Phase-1 case) — onConflictDoNothing would leave it NULL forever.
+      .onConflictDoUpdate({
+        target: [activityInitiatives.activityId, activityInitiatives.initiativeCode],
+        set: { initiativeId: sql`coalesce(${activityInitiatives.initiativeId}, excluded.initiative_id)` },
+      });
   }
   return { id, inserted };
+}
+
+/**
+ * Backfill activity↔initiative links for bills ingested after their agenda activity.
+ * Run after a corpus ingest so existing NULL links resolve. Returns rows updated.
+ */
+export async function backfillActivityInitiativeIds(db: Database): Promise<number> {
+  const res = await db.execute(sql`
+    update activity_initiatives ai
+    set initiative_id = i.id
+    from initiatives i
+    where ai.initiative_id is null and ai.initiative_code = i.code
+  `);
+  return (res as unknown as { rowCount?: number }).rowCount ?? 0;
 }
 
 export interface ActivityListItem {
@@ -472,17 +487,24 @@ export interface ActivityListItem {
   body: string | null;
   description: string;
   agendaUrl: string | null;
+  statuses: string[] | null;
   initiativeCount: number;
 }
 
-/** Activity for a given ISO date (default: all), newest first, with linked-bill counts. */
+/**
+ * Activity rows, newest first, with linked-bill counts. Filter by exact `date`, an
+ * inclusive `[dateFrom, dateTo]` window (used to widen the Senate's "today" view since
+ * its session dates can lag), scope, and/or chamber.
+ */
 export async function listActivity(
   db: Database,
-  opts: { date?: string; scope?: string; chamber?: string; limit?: number } = {},
+  opts: { date?: string; dateFrom?: string; dateTo?: string; scope?: string; chamber?: string; limit?: number } = {},
 ): Promise<ActivityListItem[]> {
-  const { date, scope, chamber, limit = 200 } = opts;
+  const { date, dateFrom, dateTo, scope, chamber, limit = 200 } = opts;
   const conds = [];
   if (date) conds.push(eq(activityEvents.eventDate, date));
+  if (dateFrom) conds.push(sql`${activityEvents.eventDate} >= ${dateFrom}`);
+  if (dateTo) conds.push(sql`${activityEvents.eventDate} <= ${dateTo}`);
   if (scope) conds.push(eq(activityEvents.scope, scope));
   if (chamber) conds.push(eq(activityEvents.chamber, chamber));
   const where = conds.length ? and(...conds) : undefined;
@@ -496,6 +518,7 @@ export async function listActivity(
       body: activityEvents.body,
       description: activityEvents.description,
       agendaUrl: activityEvents.agendaUrl,
+      statuses: sql<string[] | null>`${activityEvents.statuses}`,
       initiativeCount: sql<number>`count(${activityInitiatives.id})::int`,
     })
     .from(activityEvents)
@@ -506,7 +529,8 @@ export async function listActivity(
     .limit(limit);
 }
 
-/** Daily activity counts (for the dashboard "activity per day" view). */
+/** Daily activity counts (for the dashboard "activity per day" view). ASAMBLEA is
+ *  folded into the plenary bucket so the calendar agrees with the /hoy aggregation. */
 export async function activityCountsByDate(
   db: Database,
   opts: { since?: string } = {},
@@ -515,7 +539,7 @@ export async function activityCountsByDate(
   const rows = await db.execute(sql`
     select event_date as date,
            count(*) filter (where scope = 'COMMITTEE')::int as committee,
-           count(*) filter (where scope = 'PLENARY')::int as plenary
+           count(*) filter (where scope in ('PLENARY','ASAMBLEA'))::int as plenary
     from activity_events ${where}
     group by event_date
     order by event_date desc nulls last
@@ -618,17 +642,48 @@ export async function recordIngestionRun(
   });
 }
 
-/** Latest run per source (for the "Estado de monitoreo" health page). */
-export async function latestRunsBySource(
-  db: Database,
-): Promise<Array<{ source: string; finishedAt: Date | null; ok: boolean | null; seen: number; error: string | null; details: unknown }>> {
+export interface SourceHealth {
+  source: string;
+  finishedAt: Date | null;
+  ok: boolean | null;
+  seen: number;
+  error: string | null;
+  details: unknown;
+  /** Last time this source ran ok (so a transient failure doesn't hide freshness). */
+  lastSuccessAt: Date | null;
+  /** Median `seen` of prior successful runs — baseline for anomaly detection. */
+  baselineSeen: number | null;
+}
+
+/**
+ * Health of every source for the "Estado de monitoreo" page: the latest run, the last
+ * SUCCESSFUL run, and a baseline (median seen of prior ok runs) so the UI can flag a
+ * run that completed but returned anomalously few rows ("ran but suspiciously empty").
+ */
+export async function latestRunsBySource(db: Database): Promise<SourceHealth[]> {
   const rows = await db.execute(sql`
-    select distinct on (source)
-      source, finished_at as "finishedAt", ok, seen, error, details
-    from ingestion_runs
-    order by source, started_at desc
+    with latest as (
+      select distinct on (source)
+        source, finished_at as "finishedAt", ok, seen, error, details
+      from ingestion_runs order by source, started_at desc
+    ),
+    success as (
+      select distinct on (source) source, finished_at as "lastSuccessAt"
+      from ingestion_runs where ok order by source, started_at desc
+    ),
+    baseline as (
+      select source,
+             percentile_cont(0.5) within group (order by seen)::int as "baselineSeen"
+      from ingestion_runs where ok and seen > 0 group by source
+    )
+    select l.source, l."finishedAt", l.ok, l.seen, l.error, l.details,
+           s."lastSuccessAt", b."baselineSeen"
+    from latest l
+    left join success s on s.source = l.source
+    left join baseline b on b.source = l.source
+    order by l.source
   `);
-  return (rows as unknown as { rows: Array<{ source: string; finishedAt: Date | null; ok: boolean | null; seen: number; error: string | null; details: unknown }> }).rows;
+  return (rows as unknown as { rows: SourceHealth[] }).rows;
 }
 
 /** Most recent initiatives (by filing date), optionally filtered by category/risk. */

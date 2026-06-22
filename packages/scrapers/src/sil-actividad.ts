@@ -4,31 +4,29 @@
  * covered by `sil-diputados.ts`.
  *
  * This is the source of "what happened today": initiatives may sit unchanged in the
- * iniciativa endpoints for days while committees actively meet on them. Discovered by
- * inspecting the live SPA's "Sesiones" page network calls.
+ * iniciativa endpoints for days while committees actively meet on them.
  *
  *   comision/ordenes?page={p}&periodoId=0   -> Page<ComisionOrden>  (committee meetings/agenda)
  *   sesion/ordenes?page={p}&periodoId=0     -> Page<SesionOrden>    (plenary order-of-the-day)
  *
  * Neither payload carries a stable record id, so we synthesize a dedupe key from
- * (fecha, comisión/cámara, descripción). Each agenda item references one or more
- * initiatives by official code (e.g. "05646-2024-2028-CD"); we extract those so the
- * worker can link activity ↔ initiatives.
+ * (scope, fecha, comisión/cámara, kind) — NOT the full description, so an edited
+ * agenda updates the same row instead of spawning a duplicate. Each agenda item
+ * references initiatives by official code; we extract those to link activity ↔ bills.
  */
+import { extractCodes } from "./codes.js";
 import { fetchJson } from "./http.js";
 import type { Page } from "./sil-diputados.js";
 
 const ROOT = "https://www.diputadosrd.gob.do/sil/api";
 const REFERER = "https://www.diputadosrd.gob.do/sil/sesiones";
 const headers = { Referer: REFERER };
-
-/** Official initiative code pattern, e.g. 05646-2024-2028-CD. */
-const CODE_RE = /\d{5}-\d{4}-\d{4}-[A-Z]{2}/g;
+const MAX_PAGES = 200; // safety cap against an unbounded loop (pageSize=0/NaN, stale total)
 
 export interface SilComisionOrden {
-  fecha: string | null; // ISO datetime of the meeting
-  descripcion: string | null; // agenda text (lists referenced initiatives)
-  tipo: string | null; // "Reunión", "Encuentros con Funcionarios de Otros Poderes", …
+  fecha: string | null;
+  descripcion: string | null;
+  tipo: string | null;
   nombreComision: string | null;
   periodoLegislativo: number | null;
   [k: string]: unknown;
@@ -44,27 +42,25 @@ export interface SilSesionOrden {
 
 /** Canonical, source-agnostic agenda/activity event. */
 export interface RawActivityEvent {
-  source: string; // adapter key
+  source: string;
   /** COMMITTEE (comisión), PLENARY (pleno), or ASAMBLEA (asamblea nacional). */
   scope: "COMMITTEE" | "PLENARY" | "ASAMBLEA";
-  /** Chamber the activity belongs to. */
   chamber?: "DIPUTADOS" | "SENADO" | null;
-  /** Source page/PDF for this agenda item. */
   agendaUrl?: string | null;
-  /** ISO date (yyyy-mm-dd) of the activity. */
   date: string | null;
-  /** Activity kind reported by the source ("Reunión", "Encuentro…", "Orden del Día"). */
   kind: string | null;
-  /** Committee name (COMMITTEE scope) or chamber (PLENARY scope). */
   body: string | null;
-  /** Full agenda / purpose text. */
   description: string;
-  /** Official codes of initiatives referenced by this agenda item. */
+  /** Reading/processing statuses surfaced for this agenda item (structured). */
+  statuses?: string[];
   initiativeCodes: string[];
-  /** Stable-ish dedupe key synthesized from the content. */
   dedupeKey: string;
-  /** Untouched source payload. */
   raw: unknown;
+}
+
+export interface ActivityCollectResult {
+  events: RawActivityEvent[];
+  gaps: string[];
 }
 
 function isoDate(v: string | null | undefined): string | null {
@@ -73,79 +69,101 @@ function isoDate(v: string | null | undefined): string | null {
   return m ? m[1]! : null;
 }
 
-function extractCodes(text: string | null | undefined): string[] {
-  if (!text) return [];
-  return [...new Set((text.match(CODE_RE) ?? []))];
-}
-
-/** djb2 hash → short hex; used to dedupe agenda rows that carry no id. */
-function keyOf(...parts: Array<string | null | undefined>): string {
-  const s = parts.map((p) => p ?? "").join("|");
-  let h = 5381;
-  for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
-  return (h >>> 0).toString(16);
-}
-
 export class SilActividadAdapter {
   readonly source = "sil-actividad";
 
   constructor(private readonly root: string = ROOT) {}
 
-  private async *pages<T>(path: string): AsyncIterable<T> {
+  /**
+   * Fully paginate one endpoint with safety guards:
+   *  - hard MAX_PAGES cap;
+   *  - stop when a page returns fewer rows than pageSize (primary signal), or when
+   *    page*pageSize >= total — but never trust a zero/NaN pageSize to terminate;
+   *  - report a reconciliation gap when fewer rows were collected than `total`.
+   */
+  private async fetchAll<T>(
+    path: string,
+    label: string,
+  ): Promise<{ rows: T[]; expected: number; gap?: string }> {
+    const rows: T[] = [];
+    let expected = 0;
     let page = 1;
-    while (true) {
-      const env = await fetchJson<Page<T>>(
-        `${this.root}/${path}?page=${page}&periodoId=0`,
-        { headers },
-      );
+    while (page <= MAX_PAGES) {
+      const env = await fetchJson<Page<T>>(`${this.root}/${path}?page=${page}&periodoId=0`, { headers });
       if (!env?.results?.length) break;
-      for (const row of env.results) yield row;
-      if (page * env.pageSize >= env.total) break;
+      if (page === 1) expected = Number(env.total) || 0;
+      rows.push(...env.results);
+      const pageSize = Number(env.pageSize);
+      const total = Number(env.total);
+      // terminate on a short page (robust to bad pageSize/total)
+      if (!Number.isFinite(pageSize) || pageSize <= 0) break;
+      if (env.results.length < pageSize) break;
+      if (Number.isFinite(total) && page * pageSize >= total) break;
       page++;
     }
+    const gap =
+      expected > 0 && rows.length < expected
+        ? `SIL · ${label}: se recolectaron ${rows.length} de ${expected} esperados (posible recorte).`
+        : page > MAX_PAGES
+          ? `SIL · ${label}: se alcanzó el tope de ${MAX_PAGES} páginas.`
+          : undefined;
+    return { rows, expected, gap };
   }
 
-  /** All committee agenda/meeting items, mapped to canonical activity events. */
-  async *committeeOrders(): AsyncIterable<RawActivityEvent> {
-    for await (const r of this.pages<SilComisionOrden>("comision/ordenes/")) {
+  async committeeOrders(): Promise<{ events: RawActivityEvent[]; gap?: string }> {
+    const { rows, gap } = await this.fetchAll<SilComisionOrden>("comision/ordenes", "comisiones");
+    const events = rows.map((r): RawActivityEvent => {
       const description = (r.descripcion ?? "").replace(/\s+/g, " ").trim();
-      yield {
+      const date = isoDate(r.fecha);
+      const body = (r.nombreComision ?? "").trim() || null;
+      return {
         source: this.source,
         scope: "COMMITTEE",
         chamber: "DIPUTADOS",
-        date: isoDate(r.fecha),
+        date,
         kind: r.tipo ?? null,
-        body: (r.nombreComision ?? "").trim() || null,
+        body,
         description,
         initiativeCodes: extractCodes(r.descripcion),
-        dedupeKey: keyOf("C", isoDate(r.fecha), r.nombreComision, description),
+        dedupeKey: `sil-com|${date ?? "?"}|${body ?? "?"}|${r.tipo ?? "?"}`,
         raw: r,
       };
-    }
+    });
+    return { events, gap };
   }
 
-  /** Plenary order-of-the-day items, mapped to canonical activity events. */
-  async *plenaryOrders(): AsyncIterable<RawActivityEvent> {
-    for await (const r of this.pages<SilSesionOrden>("sesion/ordenes")) {
+  async plenaryOrders(): Promise<{ events: RawActivityEvent[]; gap?: string }> {
+    const { rows, gap } = await this.fetchAll<SilSesionOrden>("sesion/ordenes", "pleno");
+    const events = rows.map((r): RawActivityEvent => {
       const description = (r.descripcion ?? "").replace(/\s+/g, " ").trim();
-      yield {
+      const date = isoDate(r.fecha);
+      const body = (r.camara ?? "").trim() || null;
+      return {
         source: this.source,
         scope: "PLENARY",
         chamber: "DIPUTADOS",
-        date: isoDate(r.fecha),
+        date,
         kind: r.tipo ?? null,
-        body: (r.camara ?? "").trim() || null,
+        body,
         description,
         initiativeCodes: extractCodes(r.descripcion),
-        dedupeKey: keyOf("P", isoDate(r.fecha), r.camara, description),
+        dedupeKey: `sil-ple|${date ?? "?"}|${body ?? "?"}|${r.tipo ?? "?"}`,
         raw: r,
       };
-    }
+    });
+    return { events, gap };
   }
 
-  /** Both streams concatenated (committee first, then plenary). */
+  /** Collect committee + plenary activity with reconciliation gaps. */
+  async collect(): Promise<ActivityCollectResult> {
+    const [com, ple] = await Promise.all([this.committeeOrders(), this.plenaryOrders()]);
+    const gaps = [com.gap, ple.gap].filter(Boolean) as string[];
+    return { events: [...com.events, ...ple.events], gaps };
+  }
+
+  /** Generator interface (kept for callers that stream). */
   async *list(): AsyncIterable<RawActivityEvent> {
-    yield* this.committeeOrders();
-    yield* this.plenaryOrders();
+    const { events } = await this.collect();
+    yield* events;
   }
 }
