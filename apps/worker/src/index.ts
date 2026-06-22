@@ -13,6 +13,7 @@ import { loadEnv } from "./env.js";
 import { ingestSilDiputados } from "./ingest.js";
 import { ingestActivity } from "./ingest-activity.js";
 import { ingestDocuments, fetchDocumentFiles } from "./ingest-documents.js";
+import { ingestRegulatory } from "./ingest-regulatory.js";
 import { runDaily } from "./daily.js";
 import { rescoreAll } from "./rescore.js";
 
@@ -48,6 +49,17 @@ async function main() {
   const started = Date.now();
   try {
     await ensureSchema();
+
+    if (flag("regulatory")) {
+      console.log("🏛  Ingesting regulatory instruments (institutions)\n");
+      const r = await ingestRegulatory(db, { log: (m) => console.log(m) });
+      const secs = ((Date.now() - started) / 1000).toFixed(1);
+      const ok = r.filter((s) => s.ok).length;
+      const total = r.reduce((n, s) => n + s.count, 0);
+      const consultas = r.reduce((n, s) => n + s.consultas, 0);
+      console.log(`\n✔ done in ${secs}s — sources ok ${ok}/${r.length}, norms ${total}, consultas ${consultas}`);
+      return;
+    }
 
     if (flag("documents")) {
       console.log("📎 Ingesting official initiative documents (metadata + URLs)\n");

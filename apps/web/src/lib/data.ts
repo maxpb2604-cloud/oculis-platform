@@ -19,6 +19,9 @@ import {
   listCommissions,
   listInitiatives,
   listRecentInitiatives,
+  listRegulations,
+  regulatoryKpis,
+  regulationsByInstitution,
   type DbHandle,
   type InitiativeFilters,
 } from "@oculis/db";
@@ -124,4 +127,27 @@ export async function getMonitoringHealth() {
 export async function getCommissions(chamber?: string) {
   const d = await db();
   return listCommissions(d, { chamber });
+}
+
+// --- Regulatory monitoring ---
+
+export async function getRegulatoryOverview() {
+  const d = await db();
+  const [kpis, byInstitution, recent, consultas] = await Promise.all([
+    regulatoryKpis(d),
+    regulationsByInstitution(d),
+    listRegulations(d, { limit: 60 }),
+    listRegulations(d, { consultaOnly: true, limit: 40 }),
+  ]);
+  return { kpis, byInstitution, recent, consultas };
+}
+
+export async function getConsultas() {
+  const d = await db();
+  return listRegulations(d, { consultaOnly: true, limit: 100 });
+}
+
+export async function getRegulations(opts: { institution?: string; intervention?: string } = {}) {
+  const d = await db();
+  return listRegulations(d, { ...opts, limit: 200 });
 }

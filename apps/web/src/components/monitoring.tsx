@@ -133,6 +133,79 @@ export function StatusLegend() {
   );
 }
 
+// --- Regulatory monitoring building blocks ---
+
+export interface RegulationItem {
+  id: number;
+  institution: string;
+  regType: string | null;
+  title: string;
+  status: string | null;
+  interventionLevel: string | null;
+  category: string | null;
+  isConsulta: boolean;
+  publishedAt: string | null;
+  deadline: string | null;
+  url: string | null;
+}
+
+const INTERV = {
+  HIGH: { label: "Alta posibilidad de intervención", short: "Intervención ALTA", color: "#0b6e4f" },
+  INTERMEDIATE: { label: "Posibilidad intermedia", short: "Intervención MEDIA", color: "#d97706" },
+  LOW: { label: "Baja posibilidad (ya publicado)", short: "Intervención BAJA", color: "#64748b" },
+} as const;
+
+/** Possibility-of-intervention chip — the key regulatory signal (HIGH = act now). */
+export function InterventionChip({ level }: { level: string | null }) {
+  const m = INTERV[(level as keyof typeof INTERV)] ?? INTERV.LOW;
+  return (
+    <span title={m.label} aria-label={m.label}
+      className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-semibold"
+      style={{ background: `${m.color}1a`, color: m.color }}>
+      <span aria-hidden className="h-1.5 w-1.5 rounded-full" style={{ background: m.color }} />
+      {m.short}
+    </span>
+  );
+}
+
+export function RegulationRow({ item }: { item: RegulationItem }) {
+  return (
+    <div className="flex items-start gap-3 border-b px-5 py-3 last:border-0">
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="rounded-full px-2 py-0.5 text-[11px] font-semibold"
+            style={{ background: "var(--accent-soft)", color: "var(--accent)" }}>{item.institution}</span>
+          {item.regType && <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>{item.regType}</span>}
+          {item.isConsulta && (
+            <span className="rounded px-1.5 py-0.5 text-[10px] font-bold"
+              style={{ background: "var(--accent)", color: "#fff" }}>CONSULTA PÚBLICA</span>
+          )}
+        </div>
+        <div className="mt-1 text-sm font-medium leading-snug">{item.title}</div>
+        <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[11px]" style={{ color: "var(--text-muted)" }}>
+          {item.status && <span>{item.status}</span>}
+          {item.deadline && <span className="font-medium" style={{ color: "var(--warn)" }}>Plazo: {item.deadline}</span>}
+          {item.url && (
+            <a href={item.url} target="_blank" rel="noreferrer"
+              className="font-medium underline-offset-2 hover:underline" style={{ color: "var(--accent)" }}>
+              Ver documento ↗
+            </a>
+          )}
+        </div>
+      </div>
+      <div className="shrink-0 text-right">
+        <InterventionChip level={item.interventionLevel} />
+        {item.publishedAt && <div className="tnum mt-1 text-[11px]" style={{ color: "var(--text-muted)" }}>{item.publishedAt}</div>}
+      </div>
+    </div>
+  );
+}
+
+export function RegulationList({ items, empty }: { items: RegulationItem[]; empty: React.ReactNode }) {
+  if (!items.length) return <div className="px-5 py-8 text-center text-sm" style={{ color: "var(--text-muted)" }}>{empty}</div>;
+  return <div>{items.map((i) => <RegulationRow key={i.id} item={i} />)}</div>;
+}
+
 // --- Health (Estado de monitoreo) building blocks ---
 
 /** OK / WARN / ERROR pill using design tokens (dark-mode safe). */

@@ -10,13 +10,29 @@ export function Sidebar({ lang }: { lang: Lang }) {
   const pathname = usePathname();
   const q = lang === "en" ? "?lang=en" : "";
 
-  const nav = [
-    { href: "/hoy", label: lang === "es" ? "Hoy" : "Today", icon: IconCalendar, match: (p: string) => p.startsWith("/hoy") },
-    { href: "/diputados", label: "Diputados", icon: IconGavel, match: (p: string) => p.startsWith("/diputados") },
-    { href: "/senado", label: "Senado", icon: IconShield, match: (p: string) => p.startsWith("/senado") },
-    { href: "/initiatives", label: lang === "es" ? "Iniciativas" : "Initiatives", icon: IconList, match: (p: string) => p.startsWith("/initiatives") },
-    { href: "/monitoreo", label: lang === "es" ? "Estado de monitoreo" : "Monitoring", icon: IconPulse, match: (p: string) => p.startsWith("/monitoreo") },
-    { href: "/", label: lang === "es" ? "Resumen" : "Overview", icon: IconGrid, match: (p: string) => p === "/" },
+  const groups = [
+    {
+      title: lang === "es" ? "Monitoreo Legislativo" : "Legislative Monitoring",
+      items: [
+        { href: "/hoy", label: lang === "es" ? "Hoy" : "Today", icon: IconCalendar, match: (p: string) => p.startsWith("/hoy") },
+        { href: "/diputados", label: "Diputados", icon: IconGavel, match: (p: string) => p.startsWith("/diputados") },
+        { href: "/senado", label: "Senado", icon: IconShield, match: (p: string) => p.startsWith("/senado") },
+        { href: "/initiatives", label: lang === "es" ? "Iniciativas" : "Initiatives", icon: IconList, match: (p: string) => p.startsWith("/initiatives") },
+      ],
+    },
+    {
+      title: lang === "es" ? "Monitoreo Regulatorio" : "Regulatory Monitoring",
+      items: [
+        { href: "/regulatorio", label: lang === "es" ? "Resumen regulatorio" : "Overview", icon: IconShieldCheck, match: (p: string) => p === "/regulatorio" },
+        { href: "/regulatorio/consultas", label: lang === "es" ? "Consultas públicas" : "Public consultations", icon: IconMegaphone, match: (p: string) => p.startsWith("/regulatorio/consultas") },
+      ],
+    },
+    {
+      title: lang === "es" ? "Sistema" : "System",
+      items: [
+        { href: "/monitoreo", label: lang === "es" ? "Estado de monitoreo" : "Monitoring", icon: IconPulse, match: (p: string) => p.startsWith("/monitoreo") },
+      ],
+    },
   ];
 
   return (
@@ -30,34 +46,38 @@ export function Sidebar({ lang }: { lang: Lang }) {
           <div className="leading-tight">
             <div className="serif text-[17px] font-semibold">Oculis Auribus</div>
             <div className="eyebrow mt-0.5">
-              {lang === "es" ? "Inteligencia Legislativa" : "Legislative Intelligence"}
+              {lang === "es" ? "Legislativo · Regulatorio" : "Legislative · Regulatory"}
             </div>
           </div>
         </Link>
 
         <nav className="mt-7 flex flex-col gap-0.5">
-          <div className="eyebrow px-2 pb-2">{lang === "es" ? "Módulos" : "Modules"}</div>
-          {nav.map((n) => {
-            const active = n.match(pathname);
-            return (
-              <Link
-                key={n.href}
-                href={`${n.href}${q}`}
-                aria-current={active ? "page" : undefined}
-                className="group flex items-center gap-3 rounded-lg px-2.5 py-2 text-sm transition-colors hover:bg-[var(--surface-2)]"
-                style={{
-                  cursor: "pointer",
-                  color: active ? "var(--text)" : "var(--text-muted)",
-                  background: active ? "var(--accent-soft)" : "transparent",
-                  fontWeight: active ? 600 : 500,
-                  boxShadow: active ? "inset 2px 0 0 var(--accent)" : "none",
-                }}
-              >
-                <n.icon active={active} />
-                {n.label}
-              </Link>
-            );
-          })}
+          {groups.map((g) => (
+            <div key={g.title} className="mb-3">
+              <div className="eyebrow px-2 pb-2">{g.title}</div>
+              {g.items.map((n) => {
+                const active = n.match(pathname);
+                return (
+                  <Link
+                    key={n.href}
+                    href={`${n.href}${q}`}
+                    aria-current={active ? "page" : undefined}
+                    className="group flex items-center gap-3 rounded-lg px-2.5 py-2 text-sm transition-colors hover:bg-[var(--surface-2)]"
+                    style={{
+                      cursor: "pointer",
+                      color: active ? "var(--text)" : "var(--text-muted)",
+                      background: active ? "var(--accent-soft)" : "transparent",
+                      fontWeight: active ? 600 : 500,
+                      boxShadow: active ? "inset 2px 0 0 var(--accent)" : "none",
+                    }}
+                  >
+                    <n.icon active={active} />
+                    {n.label}
+                  </Link>
+                );
+              })}
+            </div>
+          ))}
         </nav>
       </div>
 
@@ -115,4 +135,10 @@ function IconCalendar({ active }: { active?: boolean }) {
 }
 function IconPulse({ active }: { active?: boolean }) {
   return (<svg {...ico(active)} viewBox="0 0 24 24"><path d="M3 12h4l2-6 4 12 2-6h6" /></svg>);
+}
+function IconShieldCheck({ active }: { active?: boolean }) {
+  return (<svg {...ico(active)} viewBox="0 0 24 24"><path d="M12 3 5 6v6c0 4 3 7 7 9 4-2 7-5 7-9V6l-7-3Z" /><path d="m9 12 2 2 4-4" /></svg>);
+}
+function IconMegaphone({ active }: { active?: boolean }) {
+  return (<svg {...ico(active)} viewBox="0 0 24 24"><path d="M3 11v2a1 1 0 0 0 1 1h2l5 4V6L6 10H4a1 1 0 0 0-1 1Z" /><path d="M15 8a4 4 0 0 1 0 8" /></svg>);
 }

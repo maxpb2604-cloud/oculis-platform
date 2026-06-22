@@ -7,3 +7,4 @@ export * from "./sil-actividad.js";
 export * from "./pdf.js";
 export * from "./dip-oficial.js";
 export * from "./senado.js";
+export * from "./regulatory.js";

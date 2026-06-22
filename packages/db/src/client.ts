@@ -187,6 +187,32 @@ const DDL: string[] = [
   `CREATE INDEX IF NOT EXISTS documents_initiative_idx ON documents (initiative_id)`,
   `CREATE INDEX IF NOT EXISTS documents_code_idx ON documents (initiative_code)`,
   `
+    CREATE TABLE IF NOT EXISTS regulations (
+      id serial PRIMARY KEY,
+      source text NOT NULL,
+      source_id text NOT NULL,
+      institution text NOT NULL,
+      reg_type text,
+      title text NOT NULL,
+      purpose text,
+      status text,
+      intervention_level text,
+      category text,
+      province text,
+      is_consulta boolean NOT NULL DEFAULT false,
+      published_at text,
+      deadline text,
+      url text,
+      needs_review boolean NOT NULL DEFAULT true,
+      raw jsonb,
+      first_seen_at timestamp NOT NULL DEFAULT now(),
+      last_seen_at timestamp NOT NULL DEFAULT now()
+    )`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS regulations_source_uq ON regulations (source, source_id)`,
+  `CREATE INDEX IF NOT EXISTS regulations_institution_idx ON regulations (institution)`,
+  `CREATE INDEX IF NOT EXISTS regulations_intervention_idx ON regulations (intervention_level)`,
+  `CREATE INDEX IF NOT EXISTS regulations_consulta_idx ON regulations (is_consulta)`,
+  `
     CREATE TABLE IF NOT EXISTS ingestion_runs (
       id serial PRIMARY KEY,
       source text NOT NULL,

@@ -213,6 +213,43 @@ export const documents = pgTable(
   }),
 );
 
+/**
+ * Regulatory instruments (norms/resolutions/reglamentos/NORDOM) from DR regulatory
+ * institutions — the REGULATORY twin of `initiatives`. Mirrors the columns of the
+ * Monitoreo Regulatorio workbook. The high-value signal is `interventionLevel`
+ * (HIGH when still a draft/consulta-pública, LOW once published).
+ */
+export const regulations = pgTable(
+  "regulations",
+  {
+    id: serial("id").primaryKey(),
+    source: text("source").notNull(), // adapter key, e.g. "reg-mispas"
+    sourceId: text("source_id").notNull(),
+    institution: text("institution").notNull(), // acronym, e.g. "MISPAS"
+    regType: text("reg_type"), // Reglamento | Resolución | Norma | NORDOM | …
+    title: text("title").notNull(),
+    purpose: text("purpose"),
+    status: text("status"), // regulatory lifecycle status (Spanish/English label)
+    interventionLevel: text("intervention_level"), // HIGH | INTERMEDIATE | LOW
+    category: text("category"), // our taxonomy, null until categorized
+    province: text("province"),
+    isConsulta: boolean("is_consulta").notNull().default(false), // public consultation / draft
+    publishedAt: text("published_at"), // ISO date
+    deadline: text("deadline"), // consulta comment deadline, if any
+    url: text("url"), // source page / PDF
+    needsReview: boolean("needs_review").notNull().default(true),
+    raw: jsonb("raw"),
+    firstSeenAt: timestamp("first_seen_at").notNull().defaultNow(),
+    lastSeenAt: timestamp("last_seen_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    uq: uniqueIndex("regulations_source_uq").on(t.source, t.sourceId),
+    byInstitution: index("regulations_institution_idx").on(t.institution),
+    byIntervention: index("regulations_intervention_idx").on(t.interventionLevel),
+    byConsulta: index("regulations_consulta_idx").on(t.isConsulta),
+  }),
+);
+
 /** Per-source crawl bookkeeping for incremental ingestion + health checks. */
 export const ingestionRuns = pgTable("ingestion_runs", {
   id: serial("id").primaryKey(),
@@ -241,3 +278,5 @@ export type NewCommission = typeof commissions.$inferInsert;
 export type Document = typeof documents.$inferSelect;
 export type NewDocument = typeof documents.$inferInsert;
 export type IngestionRun = typeof ingestionRuns.$inferSelect;
+export type Regulation = typeof regulations.$inferSelect;
+export type NewRegulation = typeof regulations.$inferInsert;

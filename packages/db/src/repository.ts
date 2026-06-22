@@ -11,10 +11,11 @@ import {
   documents,
   ingestionRuns,
   initiatives,
+  regulations,
   scoreInputs,
   statusEvents,
 } from "./schema.js";
-import type { NewCommission, NewDocument, NewInitiative } from "./schema.js";
+import type { NewCommission, NewDocument, NewInitiative, NewRegulation } from "./schema.js";
 
 export interface UpsertResult {
   id: number;
@@ -545,6 +546,119 @@ export async function activityCountsByDate(
     order by event_date desc nulls last
   `);
   return (rows as unknown as { rows: Array<{ date: string; committee: number; plenary: number }> }).rows;
+}
+
+// ---------------------------------------------------------------------------
+// Regulatory instruments (regulatory monitoring twin of initiatives)
+// ---------------------------------------------------------------------------
+
+export interface RegulationUpsertResult {
+  id: number;
+  inserted: boolean;
+}
+
+/** Idempotent upsert of a regulation keyed by (source, source_id). */
+export async function upsertRegulation(
+  db: Database,
+  r: NewRegulation,
+): Promise<RegulationUpsertResult> {
+  const existing = await db
+    .select({ id: regulations.id })
+    .from(regulations)
+    .where(and(eq(regulations.source, r.source), eq(regulations.sourceId, r.sourceId)))
+    .limit(1);
+  if (existing.length === 0) {
+    const [row] = await db.insert(regulations).values(r).returning({ id: regulations.id });
+    return { id: row!.id, inserted: true };
+  }
+  const id = existing[0]!.id;
+  await db
+    .update(regulations)
+    .set({
+      title: r.title,
+      regType: r.regType,
+      status: r.status,
+      interventionLevel: r.interventionLevel,
+      category: r.category,
+      isConsulta: r.isConsulta ?? false,
+      publishedAt: r.publishedAt,
+      deadline: r.deadline,
+      url: r.url,
+      lastSeenAt: sql`now()`,
+    })
+    .where(eq(regulations.id, id));
+  return { id, inserted: false };
+}
+
+export interface RegulationListItem {
+  id: number;
+  institution: string;
+  regType: string | null;
+  title: string;
+  status: string | null;
+  interventionLevel: string | null;
+  category: string | null;
+  isConsulta: boolean;
+  publishedAt: string | null;
+  deadline: string | null;
+  url: string | null;
+}
+
+export async function listRegulations(
+  db: Database,
+  opts: { institution?: string; intervention?: string; consultaOnly?: boolean; limit?: number } = {},
+): Promise<RegulationListItem[]> {
+  const conds = [];
+  if (opts.institution) conds.push(eq(regulations.institution, opts.institution));
+  if (opts.intervention) conds.push(eq(regulations.interventionLevel, opts.intervention));
+  if (opts.consultaOnly) conds.push(eq(regulations.isConsulta, true));
+  const where = conds.length ? and(...conds) : undefined;
+  return db
+    .select({
+      id: regulations.id,
+      institution: regulations.institution,
+      regType: regulations.regType,
+      title: regulations.title,
+      status: regulations.status,
+      interventionLevel: regulations.interventionLevel,
+      category: regulations.category,
+      isConsulta: regulations.isConsulta,
+      publishedAt: regulations.publishedAt,
+      deadline: regulations.deadline,
+      url: regulations.url,
+    })
+    .from(regulations)
+    .where(where)
+    .orderBy(sql`${regulations.publishedAt} desc nulls last`)
+    .limit(opts.limit ?? 200);
+}
+
+export interface RegulatoryKpis {
+  total: number;
+  consultas: number;
+  highIntervention: number;
+  institutions: number;
+}
+
+export async function regulatoryKpis(db: Database): Promise<RegulatoryKpis> {
+  const [row] = await db
+    .select({
+      total: sql<number>`count(*)::int`,
+      consultas: sql<number>`count(*) filter (where ${regulations.isConsulta})::int`,
+      highIntervention: sql<number>`count(*) filter (where ${regulations.interventionLevel} = 'HIGH')::int`,
+      institutions: sql<number>`count(distinct ${regulations.institution})::int`,
+    })
+    .from(regulations);
+  return row ?? { total: 0, consultas: 0, highIntervention: 0, institutions: 0 };
+}
+
+export async function regulationsByInstitution(db: Database): Promise<Bucket[]> {
+  const rows = await db
+    .select({ key: regulations.institution, count: sql<number>`count(*)::int` })
+    .from(regulations)
+    .groupBy(regulations.institution)
+    .orderBy(sql`2 desc`);
+  return rows.map((r) => ({ key: r.key ?? "N/D", count: r.count }));
 }
 
 // ---------------------------------------------------------------------------
