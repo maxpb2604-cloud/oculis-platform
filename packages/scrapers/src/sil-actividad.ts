@@ -45,8 +45,12 @@ export interface SilSesionOrden {
 /** Canonical, source-agnostic agenda/activity event. */
 export interface RawActivityEvent {
   source: string; // adapter key
-  /** COMMITTEE (comisión) or PLENARY (pleno). */
-  scope: "COMMITTEE" | "PLENARY";
+  /** COMMITTEE (comisión), PLENARY (pleno), or ASAMBLEA (asamblea nacional). */
+  scope: "COMMITTEE" | "PLENARY" | "ASAMBLEA";
+  /** Chamber the activity belongs to. */
+  chamber?: "DIPUTADOS" | "SENADO" | null;
+  /** Source page/PDF for this agenda item. */
+  agendaUrl?: string | null;
   /** ISO date (yyyy-mm-dd) of the activity. */
   date: string | null;
   /** Activity kind reported by the source ("Reunión", "Encuentro…", "Orden del Día"). */
@@ -108,6 +112,7 @@ export class SilActividadAdapter {
       yield {
         source: this.source,
         scope: "COMMITTEE",
+        chamber: "DIPUTADOS",
         date: isoDate(r.fecha),
         kind: r.tipo ?? null,
         body: (r.nombreComision ?? "").trim() || null,
@@ -126,6 +131,7 @@ export class SilActividadAdapter {
       yield {
         source: this.source,
         scope: "PLENARY",
+        chamber: "DIPUTADOS",
         date: isoDate(r.fecha),
         kind: r.tipo ?? null,
         body: (r.camara ?? "").trim() || null,

@@ -7,11 +7,14 @@ import type { Database } from "./client.js";
 import {
   activityEvents,
   activityInitiatives,
+  commissions,
+  documents,
+  ingestionRuns,
   initiatives,
   scoreInputs,
   statusEvents,
 } from "./schema.js";
-import type { NewInitiative } from "./schema.js";
+import type { NewCommission, NewDocument, NewInitiative } from "./schema.js";
 
 export interface UpsertResult {
   id: number;
@@ -370,11 +373,13 @@ export async function facets(db: Database) {
 
 export interface ActivityInput {
   source: string;
-  scope: "COMMITTEE" | "PLENARY";
+  scope: "COMMITTEE" | "PLENARY" | "ASAMBLEA";
+  chamber?: "DIPUTADOS" | "SENADO" | null;
   date: string | null;
   kind: string | null;
   body: string | null;
   description: string;
+  agendaUrl?: string | null;
   initiativeCodes: string[];
   dedupeKey: string;
   raw: unknown;
@@ -408,10 +413,12 @@ export async function upsertActivityEvent(
       .values({
         source: a.source,
         scope: a.scope,
+        chamber: a.chamber ?? null,
         eventDate: a.date,
         kind: a.kind,
         body: a.body,
         description: a.description,
+        agendaUrl: a.agendaUrl ?? null,
         dedupeKey: a.dedupeKey,
         raw: a.raw as object,
       })
@@ -420,9 +427,18 @@ export async function upsertActivityEvent(
     inserted = true;
   } else {
     id = existing[0]!.id;
+    // refresh enrichable fields too (chamber/agendaUrl were added later, so this
+    // backfills rows first seen before those columns existed)
     await db
       .update(activityEvents)
-      .set({ lastSeenAt: sql`now()` })
+      .set({
+        scope: a.scope,
+        chamber: a.chamber ?? null,
+        agendaUrl: a.agendaUrl ?? null,
+        kind: a.kind,
+        body: a.body,
+        lastSeenAt: sql`now()`,
+      })
       .where(eq(activityEvents.id, id));
   }
 
@@ -450,31 +466,36 @@ export async function upsertActivityEvent(
 export interface ActivityListItem {
   id: number;
   scope: string;
+  chamber: string | null;
   eventDate: string | null;
   kind: string | null;
   body: string | null;
   description: string;
+  agendaUrl: string | null;
   initiativeCount: number;
 }
 
 /** Activity for a given ISO date (default: all), newest first, with linked-bill counts. */
 export async function listActivity(
   db: Database,
-  opts: { date?: string; scope?: string; limit?: number } = {},
+  opts: { date?: string; scope?: string; chamber?: string; limit?: number } = {},
 ): Promise<ActivityListItem[]> {
-  const { date, scope, limit = 200 } = opts;
+  const { date, scope, chamber, limit = 200 } = opts;
   const conds = [];
   if (date) conds.push(eq(activityEvents.eventDate, date));
   if (scope) conds.push(eq(activityEvents.scope, scope));
+  if (chamber) conds.push(eq(activityEvents.chamber, chamber));
   const where = conds.length ? and(...conds) : undefined;
   return db
     .select({
       id: activityEvents.id,
       scope: activityEvents.scope,
+      chamber: activityEvents.chamber,
       eventDate: activityEvents.eventDate,
       kind: activityEvents.kind,
       body: activityEvents.body,
       description: activityEvents.description,
+      agendaUrl: activityEvents.agendaUrl,
       initiativeCount: sql<number>`count(${activityInitiatives.id})::int`,
     })
     .from(activityEvents)
@@ -500,6 +521,114 @@ export async function activityCountsByDate(
     order by event_date desc nulls last
   `);
   return (rows as unknown as { rows: Array<{ date: string; committee: number; plenary: number }> }).rows;
+}
+
+// ---------------------------------------------------------------------------
+// Commissions, documents, health — Phase 1 segmented sources
+// ---------------------------------------------------------------------------
+
+/** Upsert a committee (by source+chamber+name); refreshes president. */
+export async function upsertCommission(db: Database, c: NewCommission): Promise<void> {
+  await db
+    .insert(commissions)
+    .values(c)
+    .onConflictDoUpdate({
+      target: [commissions.source, commissions.chamber, commissions.name],
+      set: { president: c.president, sourceUrl: c.sourceUrl, updatedAt: sql`now()` },
+    });
+}
+
+export async function listCommissions(
+  db: Database,
+  opts: { chamber?: string } = {},
+): Promise<Array<{ chamber: string; name: string; president: string | null; sourceUrl: string | null }>> {
+  const where = opts.chamber ? eq(commissions.chamber, opts.chamber) : undefined;
+  return db
+    .select({
+      chamber: commissions.chamber,
+      name: commissions.name,
+      president: commissions.president,
+      sourceUrl: commissions.sourceUrl,
+    })
+    .from(commissions)
+    .where(where)
+    .orderBy(commissions.chamber, commissions.name);
+}
+
+/** Upsert a document (by source+source_doc_id); resolves initiativeId by code. */
+export async function upsertDocument(db: Database, d: NewDocument): Promise<boolean> {
+  let initiativeId = d.initiativeId ?? null;
+  if (!initiativeId && d.initiativeCode) {
+    const [m] = await db
+      .select({ id: initiatives.id })
+      .from(initiatives)
+      .where(eq(initiatives.code, d.initiativeCode))
+      .limit(1);
+    initiativeId = m?.id ?? null;
+  }
+  const res = await db
+    .insert(documents)
+    .values({ ...d, initiativeId })
+    .onConflictDoNothing()
+    .returning({ id: documents.id });
+  return res.length > 0;
+}
+
+/** Documents for one initiative (by id), newest upload first. */
+export async function listDocuments(
+  db: Database,
+  initiativeId: number,
+): Promise<Array<{ docType: string | null; extension: string | null; url: string | null; uploadedAt: string | null }>> {
+  return db
+    .select({
+      docType: documents.docType,
+      extension: documents.extension,
+      url: documents.url,
+      uploadedAt: documents.uploadedAt,
+    })
+    .from(documents)
+    .where(eq(documents.initiativeId, initiativeId))
+    .orderBy(sql`${documents.uploadedAt} desc nulls last`);
+}
+
+/** Record a per-source ingestion run for the health panel. */
+export async function recordIngestionRun(
+  db: Database,
+  run: {
+    source: string;
+    seen?: number;
+    inserted?: number;
+    updated?: number;
+    statusChanges?: number;
+    ok: boolean;
+    error?: string | null;
+    details?: unknown;
+  },
+): Promise<void> {
+  await db.insert(ingestionRuns).values({
+    source: run.source,
+    finishedAt: sql`now()`,
+    seen: run.seen ?? 0,
+    inserted: run.inserted ?? 0,
+    updated: run.updated ?? 0,
+    statusChanges: run.statusChanges ?? 0,
+    ok: run.ok,
+    error: run.error ?? null,
+    details: (run.details ?? null) as object,
+  });
+}
+
+/** Latest run per source (for the "Estado de monitoreo" health page). */
+export async function latestRunsBySource(
+  db: Database,
+): Promise<Array<{ source: string; finishedAt: Date | null; ok: boolean | null; seen: number; error: string | null; details: unknown }>> {
+  const rows = await db.execute(sql`
+    select distinct on (source)
+      source, finished_at as "finishedAt", ok, seen, error, details
+    from ingestion_runs
+    order by source, started_at desc
+  `);
+  return (rows as unknown as { rows: Array<{ source: string; finishedAt: Date | null; ok: boolean | null; seen: number; error: string | null; details: unknown }> }).rows;
 }
 
 /** Most recent initiatives (by filing date), optionally filtered by category/risk. */

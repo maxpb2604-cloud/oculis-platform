@@ -10,7 +10,9 @@
   "scripts": {
     "test": "npm run test --workspaces --if-present",
     "build": "npm run build --workspaces --if-present",
-    "typecheck": "npm run typecheck --workspaces --if-present"
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "daily": "npm run daily -w @oculis/worker",
+    "dev": "npm run dev -w @oculis/web"
   },
   "devDependencies": {
     "@types/pg": "^8.20.0",
@@ -21,6 +23,7 @@
   "dependencies": {
     "@electric-sql/pglite": "^0.5.3",
     "drizzle-orm": "^0.45.2",
-    "pg": "^8.22.0"
+    "pg": "^8.22.0",
+    "unpdf": "^1.6.2"
   }
 }

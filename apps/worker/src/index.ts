@@ -12,6 +12,7 @@ import { createDb } from "@oculis/db";
 import { loadEnv } from "./env.js";
 import { ingestSilDiputados } from "./ingest.js";
 import { ingestActivity } from "./ingest-activity.js";
+import { runDaily } from "./daily.js";
 import { rescoreAll } from "./rescore.js";
 
 loadEnv();
@@ -46,6 +47,20 @@ async function main() {
   const started = Date.now();
   try {
     await ensureSchema();
+
+    if (flag("daily")) {
+      console.log("🗓  FHC daily monitoring — both chambers\n");
+      const summaries = await runDaily(db, { log: (m) => console.log(m) });
+      const secs = ((Date.now() - started) / 1000).toFixed(1);
+      const okCount = summaries.filter((s) => s.ok).length;
+      const totalEvents = summaries.reduce((n, s) => n + s.events, 0);
+      const totalGaps = summaries.reduce((n, s) => n + s.gaps.length, 0);
+      console.log(
+        `\n✔ daily done in ${secs}s — sources ok ${okCount}/${summaries.length}, ` +
+          `events ${totalEvents}, flagged gaps ${totalGaps}`,
+      );
+      return;
+    }
 
     if (flag("activity")) {
       console.log("📅 Ingesting committee + plenary agenda activity\n");

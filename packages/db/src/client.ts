@@ -130,15 +130,19 @@ const DDL: string[] = [
       id serial PRIMARY KEY,
       source text NOT NULL,
       scope text NOT NULL,
+      chamber text,
       event_date text,
       kind text,
       body text,
       description text NOT NULL,
+      agenda_url text,
       dedupe_key text NOT NULL,
       raw jsonb,
       first_seen_at timestamp NOT NULL DEFAULT now(),
       last_seen_at timestamp NOT NULL DEFAULT now()
     )`,
+  `ALTER TABLE activity_events ADD COLUMN IF NOT EXISTS chamber text`,
+  `ALTER TABLE activity_events ADD COLUMN IF NOT EXISTS agenda_url text`,
   `CREATE UNIQUE INDEX IF NOT EXISTS activity_events_dedupe_uq ON activity_events (source, dedupe_key)`,
   `CREATE INDEX IF NOT EXISTS activity_events_date_idx ON activity_events (event_date)`,
   `CREATE INDEX IF NOT EXISTS activity_events_scope_idx ON activity_events (scope)`,
@@ -152,6 +156,35 @@ const DDL: string[] = [
   `CREATE UNIQUE INDEX IF NOT EXISTS activity_initiatives_uq ON activity_initiatives (activity_id, initiative_code)`,
   `CREATE INDEX IF NOT EXISTS activity_initiatives_code_idx ON activity_initiatives (initiative_code)`,
   `
+    CREATE TABLE IF NOT EXISTS commissions (
+      id serial PRIMARY KEY,
+      source text NOT NULL,
+      chamber text NOT NULL,
+      name text NOT NULL,
+      president text,
+      source_id text,
+      source_url text,
+      updated_at timestamp NOT NULL DEFAULT now()
+    )`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS commissions_uq ON commissions (source, chamber, name)`,
+  `CREATE INDEX IF NOT EXISTS commissions_chamber_idx ON commissions (chamber)`,
+  `
+    CREATE TABLE IF NOT EXISTS documents (
+      id serial PRIMARY KEY,
+      source text NOT NULL,
+      initiative_id integer REFERENCES initiatives(id) ON DELETE CASCADE,
+      initiative_code text,
+      doc_type text,
+      extension text,
+      url text,
+      uploaded_at text,
+      source_doc_id text,
+      first_seen_at timestamp NOT NULL DEFAULT now()
+    )`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS documents_uq ON documents (source, source_doc_id)`,
+  `CREATE INDEX IF NOT EXISTS documents_initiative_idx ON documents (initiative_id)`,
+  `CREATE INDEX IF NOT EXISTS documents_code_idx ON documents (initiative_code)`,
+  `
     CREATE TABLE IF NOT EXISTS ingestion_runs (
       id serial PRIMARY KEY,
       source text NOT NULL,
@@ -162,6 +195,8 @@ const DDL: string[] = [
       updated integer NOT NULL DEFAULT 0,
       status_changes integer NOT NULL DEFAULT 0,
       ok boolean,
-      error text
+      error text,
+      details jsonb
     )`,
+  `ALTER TABLE ingestion_runs ADD COLUMN IF NOT EXISTS details jsonb`,
 ];

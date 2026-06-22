@@ -11,10 +11,12 @@ export function Sidebar({ lang }: { lang: Lang }) {
   const q = lang === "en" ? "?lang=en" : "";
 
   const nav = [
-    { href: "/", label: lang === "es" ? "Resumen" : "Overview", icon: IconGrid, match: (p: string) => p === "/" },
-    { href: "/legislative", label: t.legislative, icon: IconGavel, match: (p: string) => p.startsWith("/legislative") },
-    { href: "/regulatory", label: t.regulatory, icon: IconShield, match: (p: string) => p.startsWith("/regulatory") },
+    { href: "/hoy", label: lang === "es" ? "Hoy" : "Today", icon: IconCalendar, match: (p: string) => p.startsWith("/hoy") },
+    { href: "/diputados", label: "Diputados", icon: IconGavel, match: (p: string) => p.startsWith("/diputados") },
+    { href: "/senado", label: "Senado", icon: IconShield, match: (p: string) => p.startsWith("/senado") },
     { href: "/initiatives", label: lang === "es" ? "Iniciativas" : "Initiatives", icon: IconList, match: (p: string) => p.startsWith("/initiatives") },
+    { href: "/monitoreo", label: lang === "es" ? "Estado de monitoreo" : "Monitoring", icon: IconPulse, match: (p: string) => p.startsWith("/monitoreo") },
+    { href: "/", label: lang === "es" ? "Resumen" : "Overview", icon: IconGrid, match: (p: string) => p === "/" },
   ];
 
   return (
@@ -107,4 +109,10 @@ function IconShield({ active }: { active?: boolean }) {
 }
 function IconList({ active }: { active?: boolean }) {
   return (<svg {...ico(active)} viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" /></svg>);
+}
+function IconCalendar({ active }: { active?: boolean }) {
+  return (<svg {...ico(active)} viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="17" rx="2" /><path d="M3 9h18M8 2v4M16 2v4" /></svg>);
+}
+function IconPulse({ active }: { active?: boolean }) {
+  return (<svg {...ico(active)} viewBox="0 0 24 24"><path d="M3 12h4l2-6 4 12 2-6h6" /></svg>);
 }

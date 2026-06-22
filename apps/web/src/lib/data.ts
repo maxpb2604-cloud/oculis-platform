@@ -6,6 +6,7 @@
 import "server-only";
 import {
   createDb,
+  activityCountsByDate,
   countByApprovalProbability,
   countByCategory,
   countByRisk,
@@ -13,6 +14,9 @@ import {
   dashboardKpis,
   facets,
   getInitiativeById,
+  latestRunsBySource,
+  listActivity,
+  listCommissions,
   listInitiatives,
   listRecentInitiatives,
   type DbHandle,
@@ -61,4 +65,47 @@ export async function browseInitiatives(f: InitiativeFilters) {
 export async function getInitiative(id: number) {
   const d = await db();
   return getInitiativeById(d, id);
+}
+
+// --- Phase 1: daily activity monitoring (both chambers) ---
+
+/** ISO yyyy-mm-dd for "today" in Dominican Republic time. */
+export function todayISO(): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Santo_Domingo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+}
+
+/** Activity for a specific day (default today), optionally filtered by chamber. */
+export async function getDayActivity(opts: { date?: string; chamber?: string } = {}) {
+  const d = await db();
+  const date = opts.date ?? todayISO();
+  const items = await listActivity(d, { date, chamber: opts.chamber, limit: 500 });
+  return { date, items };
+}
+
+/** Recent activity (no date filter) for a chamber — its standing feed. */
+export async function getChamberActivity(chamber: string, limit = 120) {
+  const d = await db();
+  return listActivity(d, { chamber, limit });
+}
+
+/** Per-day committee/plenary counts for the activity sparkline/calendar. */
+export async function getActivityCalendar(since?: string) {
+  const d = await db();
+  return activityCountsByDate(d, { since });
+}
+
+/** Health of every source for the "Estado de monitoreo" page. */
+export async function getMonitoringHealth() {
+  const d = await db();
+  return latestRunsBySource(d);
+}
+
+export async function getCommissions(chamber?: string) {
+  const d = await db();
+  return listCommissions(d, { chamber });
 }

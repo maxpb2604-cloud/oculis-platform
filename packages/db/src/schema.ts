@@ -124,12 +124,14 @@ export const activityEvents = pgTable(
   "activity_events",
   {
     id: serial("id").primaryKey(),
-    source: text("source").notNull(), // "sil-actividad"
-    scope: text("scope").notNull(), // COMMITTEE | PLENARY
+    source: text("source").notNull(), // "sil-actividad" | "dip-oficial" | "senado"
+    scope: text("scope").notNull(), // COMMITTEE | PLENARY | ASAMBLEA
+    chamber: text("chamber"), // DIPUTADOS | SENADO
     eventDate: text("event_date"), // ISO date (yyyy-mm-dd)
     kind: text("kind"), // "Reunión", "Encuentros…", "Orden del Día"
     body: text("body"), // committee name (COMMITTEE) or chamber (PLENARY)
     description: text("description").notNull(),
+    agendaUrl: text("agenda_url"), // source PDF / page for this agenda item
     // synthesized from content (the source carries no stable id) → dedupe re-scrapes
     dedupeKey: text("dedupe_key").notNull(),
     raw: jsonb("raw"),
@@ -163,6 +165,53 @@ export const activityInitiatives = pgTable(
   }),
 );
 
+/** Congressional committees (both chambers), with their current president. */
+export const commissions = pgTable(
+  "commissions",
+  {
+    id: serial("id").primaryKey(),
+    source: text("source").notNull(),
+    chamber: text("chamber").notNull(), // DIPUTADOS | SENADO
+    name: text("name").notNull(),
+    president: text("president"),
+    sourceId: text("source_id"), // id within the source when available
+    sourceUrl: text("source_url"),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    uq: uniqueIndex("commissions_uq").on(t.source, t.chamber, t.name),
+    byChamber: index("commissions_chamber_idx").on(t.chamber),
+  }),
+);
+
+/**
+ * Documents attached to an initiative (deposited text, committee reports, approved
+ * text…). Powers the "publicado / no publicado" indicator and the per-initiative
+ * document links. SEGMENTED from initiatives so we can track publication over time.
+ */
+export const documents = pgTable(
+  "documents",
+  {
+    id: serial("id").primaryKey(),
+    source: text("source").notNull(),
+    initiativeId: integer("initiative_id").references(() => initiatives.id, {
+      onDelete: "cascade",
+    }),
+    initiativeCode: text("initiative_code"), // code even if the bill isn't ingested yet
+    docType: text("doc_type"), // "PROYECTO DEPOSITADO", "INFORME COMISIÓN", …
+    extension: text("extension"), // "pdf"
+    url: text("url"), // official view/download URL
+    uploadedAt: text("uploaded_at"), // ISO date the source uploaded it
+    sourceDocId: text("source_doc_id"), // stable id within the source
+    firstSeenAt: timestamp("first_seen_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    uq: uniqueIndex("documents_uq").on(t.source, t.sourceDocId),
+    byInitiative: index("documents_initiative_idx").on(t.initiativeId),
+    byCode: index("documents_code_idx").on(t.initiativeCode),
+  }),
+);
+
 /** Per-source crawl bookkeeping for incremental ingestion + health checks. */
 export const ingestionRuns = pgTable("ingestion_runs", {
   id: serial("id").primaryKey(),
@@ -175,6 +224,8 @@ export const ingestionRuns = pgTable("ingestion_runs", {
   statusChanges: integer("status_changes").notNull().default(0),
   ok: boolean("ok"),
   error: text("error"),
+  // flagged gaps / health notes (e.g. Senate reCAPTCHA blocked a section)
+  details: jsonb("details"),
 });
 
 export type Initiative = typeof initiatives.$inferSelect;
@@ -184,3 +235,8 @@ export type ScoreInputRow = typeof scoreInputs.$inferSelect;
 export type ActivityEvent = typeof activityEvents.$inferSelect;
 export type NewActivityEvent = typeof activityEvents.$inferInsert;
 export type ActivityInitiative = typeof activityInitiatives.$inferSelect;
+export type Commission = typeof commissions.$inferSelect;
+export type NewCommission = typeof commissions.$inferInsert;
+export type Document = typeof documents.$inferSelect;
+export type NewDocument = typeof documents.$inferInsert;
+export type IngestionRun = typeof ingestionRuns.$inferSelect;

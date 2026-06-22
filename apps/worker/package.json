@@ -9,6 +9,8 @@
     "crawl": "tsx src/index.ts --pages 1 --enrich --delay 120",
     "crawl:full": "tsx src/index.ts --enrich --concurrency 6",
     "rescore": "tsx src/index.ts --rescore",
+    "daily": "tsx --env-file=../../.env src/index.ts --daily",
+    "activity": "tsx --env-file=../../.env src/index.ts --activity",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
