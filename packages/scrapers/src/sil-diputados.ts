@@ -75,14 +75,29 @@ export interface SilIniciativa {
 
 export interface SilProponente {
   principal?: boolean;
-  nombre?: string;
-  legislador?: string;
+  // The legislator's name lives in `nombreCompleto` (and nombres/apellidos) — NOT in
+  // a `nombre`/`legislador` field (those are absent in the live API).
+  nombreCompleto?: string | null;
+  nombres?: string | null;
+  apellidos?: string | null;
+  legisladorId?: number | null;
+  cargo?: string | null;
   representacion?: {
     provincia?: string;
-    funcion?: string;
+    funcion?: string; // "Diputado" | "Diputada" | "Senador" | …
     partido?: { nombre?: string; siglas?: string };
   };
   [k: string]: unknown;
+}
+
+/** Display name of a proponente (full name, falling back to nombres+apellidos). */
+export function proponenteName(p: SilProponente | undefined | null): string | null {
+  if (!p) return null;
+  const collapse = (s: string) => s.replace(/\s+/g, " ").trim();
+  const full = p.nombreCompleto ? collapse(p.nombreCompleto) : "";
+  if (full) return full;
+  const joined = collapse([p.nombres, p.apellidos].filter(Boolean).join(" "));
+  return joined || null;
 }
 
 export interface SilHistorico {
@@ -219,7 +234,7 @@ export class SilDiputadosAdapter implements SourceAdapter {
     }));
     return {
       ...raw,
-      sponsor: principal?.nombre ?? principal?.legislador ?? raw.sponsor,
+      sponsor: proponenteName(principal) ?? raw.sponsor,
       party: rep?.partido?.siglas ?? rep?.partido?.nombre ?? raw.party,
       province: rep?.provincia ?? raw.province,
       history: history.length ? history : raw.history,

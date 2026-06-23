@@ -1,5 +1,6 @@
 import { Sidebar } from "@/components/sidebar";
 import { TopBar } from "@/components/topbar";
+import { ShaderBg } from "@/components/shader-bg";
 import type { Lang } from "@/lib/i18n";
 
 /** Page chrome shared by every route: module rail + top bar + content area. */
@@ -24,12 +25,15 @@ export function AppShell({
     .toUpperCase();
 
   return (
-    <div className="flex">
-      <Sidebar lang={lang} />
-      <div className="min-w-0 flex-1">
-        <TopBar lang={lang} title={title} subtitle={subtitle} dateLabel={dateLabel} />
-        <main className="mx-auto max-w-[1320px] px-6 py-7">{children}</main>
+    <>
+      <ShaderBg />
+      <div className="relative z-10 flex">
+        <Sidebar lang={lang} />
+        <div className="min-w-0 flex-1">
+          <TopBar lang={lang} title={title} subtitle={subtitle} dateLabel={dateLabel} />
+          <main className="mx-auto max-w-[1320px] px-6 py-7">{children}</main>
+        </div>
       </div>
-    </div>
+    </>
   );
 }

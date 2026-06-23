@@ -133,6 +133,103 @@ export function StatusLegend() {
   );
 }
 
+// --- Daily deposits building blocks (the "depositadas hoy" feed) ---
+
+export interface DepositItem {
+  id: number;
+  code: string | null;
+  type: string | null;
+  title: string; // SIL descripción — plain-language summary
+  status: string | null;
+  sponsor: string | null;
+  sponsorRole: string | null;
+  sponsorCount: number | null;
+  party: string | null;
+  province: string | null;
+  filedAt: string | null;
+  sourceUrl: string | null;
+  docUploaded: boolean;
+  docUrl: string | null;
+  docType: string | null;
+}
+
+/** Document-status pill — the "¿está cargado el PDF?" signal the user asked for. */
+function DocStatus({ uploaded }: { uploaded: boolean }) {
+  const m = uploaded
+    ? { bg: "var(--accent-soft)", fg: "var(--accent)", label: "Documento depositado" }
+    : { bg: "var(--warn-soft)", fg: "var(--warn)", label: "Documento pendiente" };
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[11px] font-semibold"
+      style={{ background: m.bg, color: m.fg }}>
+      <span aria-hidden className="h-1.5 w-1.5 rounded-full" style={{ background: m.fg }} />
+      {m.label}
+    </span>
+  );
+}
+
+/**
+ * One deposited-initiative card: summary (descripción), who filed it (name + role +
+ * party/province), and whether its official document is uploaded — linked to the SIL
+ * page where it appears. Nothing more.
+ */
+export function DepositCard({ item }: { item: DepositItem }) {
+  const sponsorMeta = [item.party, item.province].filter(Boolean).join(" · ");
+  const others = (item.sponsorCount ?? 1) - 1;
+  return (
+    <div className="flex flex-col gap-2 border-b px-5 py-4 last:border-0">
+      <div className="flex items-center gap-2">
+        {item.code && (
+          <span className="tnum rounded px-1.5 py-0.5 text-[11px] font-semibold"
+            style={{ background: "var(--surface-2)" }}>{item.code}</span>
+        )}
+        {item.type && <span className="eyebrow">{item.type}</span>}
+        {item.filedAt && (
+          <span className="tnum ml-auto text-[11px]" style={{ color: "var(--text-muted)" }}>
+            {item.filedAt.slice(8, 10)}/{item.filedAt.slice(5, 7)}/{item.filedAt.slice(0, 4)}
+          </span>
+        )}
+      </div>
+
+      <div className="text-sm font-medium leading-snug">{item.title}</div>
+
+      {item.sponsor && (
+        <div className="flex flex-wrap items-center gap-x-1.5 text-[12px]" style={{ color: "var(--text-muted)" }}>
+          <span>Depositada por</span>
+          <span className="font-semibold" style={{ color: "var(--text)" }}>{item.sponsor}</span>
+          {item.sponsorRole && <span>· {item.sponsorRole}</span>}
+          {sponsorMeta && <span>· {sponsorMeta}</span>}
+          {others > 0 && (
+            <span className="rounded bg-[var(--surface-2)] px-1.5 py-0.5 font-medium">
+              +{others} proponente{others === 1 ? "" : "s"}
+            </span>
+          )}
+        </div>
+      )}
+
+      <div className="flex flex-wrap items-center gap-3">
+        <DocStatus uploaded={item.docUploaded} />
+        {item.sourceUrl && (
+          <a href={item.sourceUrl} target="_blank" rel="noreferrer"
+            className="text-[11px] font-medium underline-offset-2 hover:underline" style={{ color: "var(--accent)" }}>
+            Ver ficha en SIL ↗
+          </a>
+        )}
+        {item.docUploaded && item.docUrl && (
+          <a href={item.docUrl} target="_blank" rel="noreferrer"
+            className="text-[11px] font-medium underline-offset-2 hover:underline" style={{ color: "var(--accent)" }}>
+            Abrir documento ↗
+          </a>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export function DepositList({ items, empty }: { items: DepositItem[]; empty: React.ReactNode }) {
+  if (!items.length) return <div className="px-5 py-8 text-center text-sm" style={{ color: "var(--text-muted)" }}>{empty}</div>;
+  return <div>{items.map((i) => <DepositCard key={i.id} item={i} />)}</div>;
+}
+
 // --- Regulatory monitoring building blocks ---
 
 export interface RegulationItem {

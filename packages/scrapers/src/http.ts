@@ -16,6 +16,10 @@ export interface FetchOptions {
   timeoutMs?: number;
   retries?: number;
   headers?: Record<string, string>;
+  /** HTTP method (defaults to GET). Used by JSON APIs that require POST (e.g. GraphQL). */
+  method?: string;
+  /** Request body for non-GET methods. */
+  body?: string;
 }
 
 function retryable(err: unknown): boolean {
@@ -30,7 +34,7 @@ async function fetchResilient(
   accept: string,
   opts: FetchOptions,
 ): Promise<Response> {
-  const { timeoutMs = 30_000, retries = 3, headers = {} } = opts;
+  const { timeoutMs = 30_000, retries = 3, headers = {}, method, body } = opts;
   let lastErr: unknown;
   for (let attempt = 0; attempt <= retries; attempt++) {
     const ctrl = new AbortController();
@@ -38,6 +42,8 @@ async function fetchResilient(
     try {
       const res = await fetch(url, {
         signal: ctrl.signal,
+        method,
+        body,
         headers: browserHeaders({ Accept: accept, ...headers }),
       });
       if (!res.ok) throw new HttpError(res.status, url, await safeText(res));

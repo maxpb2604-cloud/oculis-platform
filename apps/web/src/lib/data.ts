@@ -17,9 +17,11 @@ import {
   latestRunsBySource,
   listActivity,
   listCommissions,
+  listDeposits,
   listInitiatives,
   listRecentInitiatives,
   listRegulations,
+  type DepositItem,
   regulatoryKpis,
   regulationsByInstitution,
   type DbHandle,
@@ -104,6 +106,30 @@ export async function getDayActivity(opts: { date?: string; senateWindowDays?: n
     listActivity(d, { dateFrom: since, dateTo: date, chamber: "SENADO", limit: 500 }),
   ]);
   return { date, senateSince: since, dip, sen };
+}
+
+/** Initiatives deposited on a given date (the "depositadas hoy" feed). */
+export async function getDeposits(date: string): Promise<DepositItem[]> {
+  const d = await db();
+  return listDeposits(d, { dateFrom: date, dateTo: date, limit: 200 });
+}
+
+export type { DepositItem };
+
+/** Initiatives deposited within an inclusive [from, to] date range. */
+export async function getDepositsRange(from: string, to: string): Promise<DepositItem[]> {
+  const d = await db();
+  return listDeposits(d, { dateFrom: from, dateTo: to, limit: 1000 });
+}
+
+/** Committee/plenary activity (both chambers) within an inclusive [from, to] range. */
+export async function getRangeActivity(from: string, to: string) {
+  const d = await db();
+  const [dip, sen] = await Promise.all([
+    listActivity(d, { dateFrom: from, dateTo: to, chamber: "DIPUTADOS", limit: 1000 }),
+    listActivity(d, { dateFrom: from, dateTo: to, chamber: "SENADO", limit: 1000 }),
+  ]);
+  return { dip, sen };
 }
 
 /** Recent activity (no date filter) for a chamber — its standing feed. */

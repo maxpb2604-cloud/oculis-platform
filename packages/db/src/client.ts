@@ -103,6 +103,8 @@ const DDL: string[] = [
   `CREATE INDEX IF NOT EXISTS initiatives_category_idx ON initiatives (category)`,
   `CREATE INDEX IF NOT EXISTS initiatives_risk_idx ON initiatives (risk_level)`,
   `CREATE INDEX IF NOT EXISTS initiatives_chamber_idx ON initiatives (chamber)`,
+  `ALTER TABLE initiatives ADD COLUMN IF NOT EXISTS sponsor_role text`,
+  `ALTER TABLE initiatives ADD COLUMN IF NOT EXISTS sponsor_count integer`,
   `
     CREATE TABLE IF NOT EXISTS status_events (
       id serial PRIMARY KEY,

@@ -27,12 +27,6 @@ export function Sidebar({ lang }: { lang: Lang }) {
         { href: "/regulatorio/consultas", label: lang === "es" ? "Consultas públicas" : "Public consultations", icon: IconMegaphone, match: (p: string) => p.startsWith("/regulatorio/consultas") },
       ],
     },
-    {
-      title: lang === "es" ? "Sistema" : "System",
-      items: [
-        { href: "/monitoreo", label: lang === "es" ? "Estado de monitoreo" : "Monitoring", icon: IconPulse, match: (p: string) => p.startsWith("/monitoreo") },
-      ],
-    },
   ];
 
   return (
@@ -41,12 +35,21 @@ export function Sidebar({ lang }: { lang: Lang }) {
       style={{ background: "var(--surface)" }}
     >
       <div>
-        <Link href={`/${q}`} className="flex items-center gap-2.5 px-2" style={{ cursor: "pointer" }}>
-          <EyeMark />
-          <div className="leading-tight">
-            <div className="serif text-[17px] font-semibold">Oculis Auribus</div>
-            <div className="eyebrow mt-0.5">
-              {lang === "es" ? "Legislativo · Regulatorio" : "Legislative · Regulatory"}
+        <Link href={`/${q}`} className="block px-1" style={{ cursor: "pointer" }}>
+          {/* Official Ferdinand Herrera Consultants logo, on a white plate so it reads in light + dark. */}
+          <div className="rounded-lg bg-white p-2.5 ring-1 ring-black/5">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/fhc-logo.jpg" alt="Ferdinand Herrera Consultants" className="w-full" />
+          </div>
+          {/* Oculis Auribus — primary platform brand. Blue icon adapts to light + dark. */}
+          <div className="mt-3 flex items-center gap-2">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/oculis-mark.png" alt="Oculis Auribus" className="h-7 w-7 shrink-0 object-contain" />
+            <div className="leading-tight">
+              <div className="serif text-[18px] font-semibold tracking-tight">Oculis Auribus</div>
+              <div className="eyebrow mt-0.5">
+                {lang === "es" ? "Monitoreo Legislativo · Regulatorio" : "Legislative · Regulatory Monitoring"}
+              </div>
             </div>
           </div>
         </Link>
@@ -101,16 +104,6 @@ export function Sidebar({ lang }: { lang: Lang }) {
   );
 }
 
-function EyeMark() {
-  return (
-    <svg width="30" height="30" viewBox="0 0 32 32" fill="none" aria-hidden>
-      <circle cx="16" cy="16" r="14.5" stroke="var(--accent)" strokeWidth="1.5" />
-      <path d="M5 16c3-5 7-7.5 11-7.5S24 11 27 16c-3 5-7 7.5-11 7.5S8 21 5 16Z" stroke="var(--accent)" strokeWidth="1.5" />
-      <circle cx="16" cy="16" r="3.4" fill="var(--accent)" />
-    </svg>
-  );
-}
-
 function ico(active?: boolean) {
   return {
     width: 17, height: 17, fill: "none",
@@ -132,9 +125,6 @@ function IconList({ active }: { active?: boolean }) {
 }
 function IconCalendar({ active }: { active?: boolean }) {
   return (<svg {...ico(active)} viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="17" rx="2" /><path d="M3 9h18M8 2v4M16 2v4" /></svg>);
-}
-function IconPulse({ active }: { active?: boolean }) {
-  return (<svg {...ico(active)} viewBox="0 0 24 24"><path d="M3 12h4l2-6 4 12 2-6h6" /></svg>);
 }
 function IconShieldCheck({ active }: { active?: boolean }) {
   return (<svg {...ico(active)} viewBox="0 0 24 24"><path d="M12 3 5 6v6c0 4 3 7 7 9 4-2 7-5 7-9V6l-7-3Z" /><path d="m9 12 2 2 4-4" /></svg>);

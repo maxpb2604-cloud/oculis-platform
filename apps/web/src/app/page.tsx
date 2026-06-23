@@ -49,7 +49,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ l
 
       <footer className="mt-10 flex items-center justify-between border-t pt-4 text-xs" style={{ color: "var(--text-muted)" }}>
         <span className="serif italic">{t.tagline}</span>
-        <span>© {new Date().getFullYear()} Oculis Auribus · Ferdinand Herrera Consultores</span>
+        <span>© {new Date().getFullYear()} Ferdinand Herrera Consultants · Oculis Auribus</span>
       </footer>
     </AppShell>
   );

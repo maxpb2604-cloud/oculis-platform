@@ -3,12 +3,12 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Oculis Auribus — Monitoreo Legislativo y Regulatorio",
-  description: "Seguimiento experto de legislación y regulaciones en República Dominicana.",
+  description: "Ferdinand Herrera Consultants — seguimiento experto de legislación y regulaciones en República Dominicana.",
 };
 
 // Set the theme class before paint to avoid a flash (respects saved choice / OS).
 const themeScript = `
-(function(){try{var t=localStorage.getItem('oculis-theme');
+(function(){try{var t=localStorage.getItem('fhc-theme');
 var d=t?t==='dark':window.matchMedia('(prefers-color-scheme: dark)').matches;
 if(d)document.documentElement.classList.add('dark');}catch(e){}})();
 `;

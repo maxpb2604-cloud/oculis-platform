@@ -44,7 +44,9 @@ export const initiatives = pgTable(
     categoryConfidence: real("category_confidence"),
 
     // --- sponsor / provenance ---
-    sponsor: text("sponsor"),
+    sponsor: text("sponsor"), // principal proponente (full name)
+    sponsorRole: text("sponsor_role"), // their function, e.g. "Diputado" / "Senador"
+    sponsorCount: integer("sponsor_count"), // total proponentes (for "y N más")
     party: text("party"),
     province: text("province"),
     committee: text("committee"),

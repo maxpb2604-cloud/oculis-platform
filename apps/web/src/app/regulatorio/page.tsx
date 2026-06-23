@@ -47,8 +47,8 @@ export default async function RegulatorioPage({ searchParams }: { searchParams: 
         <span className="font-semibold" style={{ color: "var(--text)" }}>Cómo leer la posibilidad de intervención:</span>{" "}
         <b style={{ color: "var(--accent)" }}>ALTA</b> = borrador o consulta pública (aún se puede influir) ·{" "}
         <b style={{ color: "var(--warn)" }}>MEDIA</b> = en revisión interna ·{" "}
-        <b>BAJA</b> = ya publicada (tarde para intervenir). Fuentes activas en esta fase: MISPAS, PROCONSUMIDOR — se irán
-        sumando las ~36 instituciones del mapa regulatorio.
+        <b>BAJA</b> = ya publicada (tarde para intervenir). Fuentes activas: MISPAS, PROCONSUMIDOR, INDOTEL,
+        INDOCAL, MICM, INTRANT — se irán sumando el resto de las ~36 instituciones del mapa regulatorio.
       </div>
     </AppShell>
   );

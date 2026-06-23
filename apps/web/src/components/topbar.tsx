@@ -23,7 +23,7 @@ export function TopBar({
     const el = document.documentElement;
     const next = !el.classList.contains("dark");
     el.classList.toggle("dark", next);
-    localStorage.setItem("oculis-theme", next ? "dark" : "light");
+    localStorage.setItem("fhc-theme", next ? "dark" : "light");
     setDark(next);
   }
 

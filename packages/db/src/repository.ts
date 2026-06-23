@@ -58,6 +58,9 @@ export async function upsertInitiative(
       type: data.type,
       sourceCategory: data.sourceCategory,
       sponsor: data.sponsor,
+      // undefined (bulk crawl) leaves the column untouched; the deposits sync sets them.
+      sponsorRole: data.sponsorRole,
+      sponsorCount: data.sponsorCount,
       party: data.party,
       province: data.province,
       committee: data.committee,
@@ -759,6 +762,100 @@ export async function listDocuments(
     .from(documents)
     .where(eq(documents.initiativeId, initiativeId))
     .orderBy(sql`${documents.uploadedAt} desc nulls last`);
+}
+
+export interface DepositItem {
+  id: number;
+  code: string | null;
+  type: string | null;
+  title: string; // SIL `descripcion` — the plain-language summary of the bill
+  status: string | null;
+  sponsor: string | null;
+  sponsorRole: string | null;
+  sponsorCount: number | null;
+  party: string | null;
+  province: string | null;
+  filedAt: string | null;
+  sourceUrl: string | null; // SIL initiative page (where the document is published)
+  docUploaded: boolean; // is the official PDF uploaded yet?
+  docUrl: string | null; // official view/download link, when available
+  docType: string | null;
+}
+
+/**
+ * Initiatives DEPOSITED within a date range (the "deposited today" feed). Each row
+ * carries its principal sponsor + whether its official document is uploaded yet, so the
+ * daily card needs no extra lookups. Diputados only (the SIL corpus is Diputados).
+ */
+export async function listDeposits(
+  db: Database,
+  opts: { dateFrom: string; dateTo?: string; limit?: number },
+): Promise<DepositItem[]> {
+  const { dateFrom, dateTo = opts.dateFrom, limit = 200 } = opts;
+  const rows = await db
+    .select({
+      id: initiatives.id,
+      code: initiatives.code,
+      type: initiatives.type,
+      title: initiatives.title,
+      status: initiatives.status,
+      sponsor: initiatives.sponsor,
+      sponsorRole: initiatives.sponsorRole,
+      sponsorCount: initiatives.sponsorCount,
+      party: initiatives.party,
+      province: initiatives.province,
+      filedAt: initiatives.filedAt,
+      sourceUrl: initiatives.sourceUrl,
+    })
+    .from(initiatives)
+    .where(
+      and(
+        eq(initiatives.chamber, "DIPUTADOS"),
+        sql`${initiatives.filedAt} >= ${dateFrom}`,
+        sql`${initiatives.filedAt} <= ${dateTo}`,
+      ),
+    )
+    .orderBy(sql`${initiatives.filedAt} desc nulls last`, sql`${initiatives.id} desc`)
+    .limit(limit);
+
+  if (rows.length === 0) return [];
+
+  // One follow-up query for the documents of all deposits, merged in memory.
+  const ids = rows.map((r) => r.id);
+  const docs = await db
+    .select({
+      initiativeId: documents.initiativeId,
+      docType: documents.docType,
+      url: documents.url,
+      uploadedAt: documents.uploadedAt,
+    })
+    .from(documents)
+    .where(inArray(documents.initiativeId, ids));
+
+  const byInitiative = new Map<number, typeof docs>();
+  for (const d of docs) {
+    if (d.initiativeId == null) continue;
+    const list = byInitiative.get(d.initiativeId) ?? [];
+    list.push(d);
+    byInitiative.set(d.initiativeId, list);
+  }
+
+  return rows.map((r): DepositItem => {
+    const list = byInitiative.get(r.id) ?? [];
+    // Prefer an uploaded doc, then the "depositado" text, for the surfaced link.
+    const best =
+      list.find((d) => d.uploadedAt && /deposit/i.test(d.docType ?? "")) ??
+      list.find((d) => d.uploadedAt) ??
+      list.find((d) => /deposit/i.test(d.docType ?? "")) ??
+      list[0] ??
+      null;
+    return {
+      ...r,
+      docUploaded: list.some((d) => d.uploadedAt != null),
+      docUrl: best?.url ?? null,
+      docType: best?.docType ?? null,
+    };
+  });
 }
 
 /** Record a per-source ingestion run for the health panel. */
