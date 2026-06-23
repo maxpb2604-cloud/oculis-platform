@@ -7,7 +7,7 @@
     # edit the ProgramArguments path below to your absolute repo path if it differs
     launchctl load ~/Library/LaunchAgents/com.fhc.monitoring.daily.plist
 
-  It runs scripts/daily.sh every day at 07:30 (and once at load). Logs land in
+  It runs scripts/daily-run.sh every day at 07:30. Logs land in
   app/.data/logs/. To stop: launchctl unload ~/Library/LaunchAgents/com.fhc.monitoring.daily.plist
 -->
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -18,7 +18,7 @@
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>
-        <string>/Users/emilpenabautista/Desktop/Oculis Auribus/app/scripts/daily.sh</string>
+        <string>/Users/emilpenabautista/Desktop/Oculis Auribus/app/scripts/daily-run.sh</string>
     </array>
     <key>StartCalendarInterval</key>
     <dict>
@@ -28,7 +28,7 @@
         <integer>30</integer>
     </dict>
     <key>RunAtLoad</key>
-    <true/>
+    <false/>
     <key>StandardOutPath</key>
     <string>/Users/emilpenabautista/Desktop/Oculis Auribus/app/.data/logs/launchd.out.log</string>
     <key>StandardErrorPath</key>
