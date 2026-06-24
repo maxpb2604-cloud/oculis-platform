@@ -141,6 +141,8 @@ export interface DepositItem {
   type: string | null;
   title: string; // SIL descripción — plain-language summary
   status: string | null;
+  chamber: string | null;
+  sourceId: string | null;
   sponsor: string | null;
   sponsorRole: string | null;
   sponsorCount: number | null;
@@ -154,10 +156,15 @@ export interface DepositItem {
 }
 
 /** Document-status pill — the "¿está cargado el PDF?" signal the user asked for. */
-function DocStatus({ uploaded }: { uploaded: boolean }) {
-  const m = uploaded
-    ? { bg: "var(--accent-soft)", fg: "var(--accent)", label: "Documento depositado" }
-    : { bg: "var(--warn-soft)", fg: "var(--warn)", label: "Documento pendiente" };
+function DocStatus({ uploaded, senado }: { uploaded: boolean; senado?: boolean }) {
+  // The Senate's document registry is behind a login, so document availability can't be
+  // verified publicly per-initiative — we flag it as "consult the portal" rather than
+  // claiming pending/uploaded.
+  const m = senado
+    ? { bg: "var(--surface-2)", fg: "var(--text-muted)", label: "Documento: consultar en el portal del Senado" }
+    : uploaded
+      ? { bg: "var(--accent-soft)", fg: "var(--accent)", label: "Documento depositado" }
+      : { bg: "var(--warn-soft)", fg: "var(--warn)", label: "Documento pendiente" };
   return (
     <span className="inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[11px] font-semibold"
       style={{ background: m.bg, color: m.fg }}>
@@ -175,8 +182,9 @@ function DocStatus({ uploaded }: { uploaded: boolean }) {
 export function DepositCard({ item }: { item: DepositItem }) {
   const sponsorMeta = [item.party, item.province].filter(Boolean).join(" · ");
   const others = (item.sponsorCount ?? 1) - 1;
+  const isSenado = item.chamber === "SENADO";
   return (
-    <div className="flex flex-col gap-2 border-b px-5 py-4 last:border-0">
+    <div data-initiative-id={item.id} className="flex cursor-pointer flex-col gap-2 border-b px-5 py-4 last:border-0 transition-colors hover:bg-[var(--surface-2)]">
       <div className="flex items-center gap-2">
         {item.code && (
           <span className="tnum rounded px-1.5 py-0.5 text-[11px] font-semibold"
@@ -207,14 +215,19 @@ export function DepositCard({ item }: { item: DepositItem }) {
       )}
 
       <div className="flex flex-wrap items-center gap-3">
-        <DocStatus uploaded={item.docUploaded} />
-        {item.sourceUrl && (
+        <DocStatus uploaded={item.docUploaded} senado={isSenado} />
+        {isSenado && item.sourceId ? (
+          <a href={`/api/senado/ficha/${item.sourceId}`} target="_blank" rel="noreferrer"
+            className="text-[11px] font-medium underline-offset-2 hover:underline" style={{ color: "var(--accent)" }}>
+            Abrir expediente en el Senado ↗
+          </a>
+        ) : item.sourceUrl ? (
           <a href={item.sourceUrl} target="_blank" rel="noreferrer"
             className="text-[11px] font-medium underline-offset-2 hover:underline" style={{ color: "var(--accent)" }}>
             Ver ficha en SIL ↗
           </a>
-        )}
-        {item.docUploaded && item.docUrl && (
+        ) : null}
+        {!isSenado && item.docUploaded && item.docUrl && (
           <a href={item.docUrl} target="_blank" rel="noreferrer"
             className="text-[11px] font-medium underline-offset-2 hover:underline" style={{ color: "var(--accent)" }}>
             Abrir documento ↗

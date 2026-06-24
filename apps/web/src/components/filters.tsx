@@ -52,8 +52,6 @@ export function Filters({ lang, facets }: { lang: Lang; facets: Facets }) {
 
       <Select label={lang === "es" ? "Categoría" : "Category"} value={sel("category")} onChange={(v) => navigate({ category: v })}
         options={facets.categories.map((c) => ({ value: c, label: labelFor(c) }))} allLabel={lang === "es" ? "Todas" : "All"} />
-      <Select label={lang === "es" ? "Riesgo" : "Risk"} value={sel("risk")} onChange={(v) => navigate({ risk: v })}
-        options={facets.risks.map((r) => ({ value: r, label: r }))} allLabel={lang === "es" ? "Todos" : "All"} />
       <Select label={lang === "es" ? "Partido" : "Party"} value={sel("party")} onChange={(v) => navigate({ party: v })}
         options={facets.parties.map((p) => ({ value: p, label: p }))} allLabel={lang === "es" ? "Todos" : "All"} />
       <Select label={lang === "es" ? "Estado" : "Status"} value={sel("status")} onChange={(v) => navigate({ status: v })}

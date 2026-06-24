@@ -1,6 +1,7 @@
 import { Sidebar } from "@/components/sidebar";
 import { TopBar } from "@/components/topbar";
 import { MeshBackground } from "@/components/ui/background-shader";
+import { InitiativeModalHost } from "@/components/initiative-modal";
 import type { Lang } from "@/lib/i18n";
 
 /** Page chrome shared by every route: module rail + top bar + content area. */
@@ -27,6 +28,7 @@ export function AppShell({
   return (
     <>
       <MeshBackground />
+      <InitiativeModalHost lang={lang} />
       <div className="relative z-10 flex">
         <Sidebar lang={lang} />
         <div className="min-w-0 flex-1">

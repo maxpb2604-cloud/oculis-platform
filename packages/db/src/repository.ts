@@ -229,6 +229,35 @@ export const countByApprovalProbability = (db: Database) =>
 export const countByChamber = (db: Database) => countBy(db, sql`chamber`);
 export const countByProvince = (db: Database) => countBy(db, sql`province`);
 
+export interface LegislatorRow {
+  province: string;
+  chamber: string | null;
+  sponsor: string;
+  role: string | null;
+  party: string | null;
+}
+
+/**
+ * Distinct legislators (sponsors of initiatives) grouped by province — used by the map's
+ * click panel. Only people who have appeared as a proponent are known here; it is not a
+ * full elected-roster source.
+ */
+export async function legislatorsByProvince(db: Database): Promise<LegislatorRow[]> {
+  const rows = await db
+    .selectDistinct({
+      province: initiatives.province,
+      chamber: initiatives.chamber,
+      sponsor: initiatives.sponsor,
+      role: initiatives.sponsorRole,
+      party: initiatives.party,
+    })
+    .from(initiatives)
+    .where(and(sql`${initiatives.sponsor} is not null`, sql`${initiatives.province} is not null`));
+  return rows
+    .filter((r): r is LegislatorRow => !!r.province && !!r.sponsor)
+    .sort((a, b) => a.sponsor.localeCompare(b.sponsor));
+}
+
 export interface DashboardKpis {
   total: number;
   highRisk: number;
@@ -770,6 +799,8 @@ export interface DepositItem {
   type: string | null;
   title: string; // SIL `descripcion` — the plain-language summary of the bill
   status: string | null;
+  chamber: string | null;
+  sourceId: string | null;
   sponsor: string | null;
   sponsorRole: string | null;
   sponsorCount: number | null;
@@ -799,6 +830,8 @@ export async function listDeposits(
       type: initiatives.type,
       title: initiatives.title,
       status: initiatives.status,
+      chamber: initiatives.chamber,
+      sourceId: initiatives.sourceId,
       sponsor: initiatives.sponsor,
       sponsorRole: initiatives.sponsorRole,
       sponsorCount: initiatives.sponsorCount,

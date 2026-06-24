@@ -43,12 +43,11 @@ export function Sidebar({ lang }: { lang: Lang }) {
               <img src="/fhc-logo.jpg" alt="Ferdinand Herrera Consultants" className="w-full" />
             </div>
           </Link>
-          {/* Oculis Auribus — primary platform brand → maps view. Blue icon adapts to light + dark. */}
+          {/* Oculis Auribus — primary platform brand → home. Blue icon adapts to light + dark. */}
           <Link
-            href={`/mapas${q ? `?${q.replace(/^&/, "")}` : ""}`}
+            href={`/${q}`}
             className="mt-3 flex items-center gap-2 rounded-lg p-1 transition-colors hover:bg-[var(--surface-2)]"
             style={{ cursor: "pointer" }}
-            title={lang === "es" ? "Ver mapas" : "View maps"}
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="/oculis-mark.png" alt="Oculis Auribus" className="h-7 w-7 shrink-0 object-contain" />

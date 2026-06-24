@@ -12,6 +12,7 @@ import {
   countByProvince,
   countByRisk,
   countByStatus,
+  legislatorsByProvince,
   dashboardKpis,
   facets,
   getInitiativeById,
@@ -89,6 +90,39 @@ export async function getInitiativesByProvince() {
 }
 
 export type ProvinceFC = Awaited<ReturnType<typeof getInitiativesByProvince>>;
+
+export interface Legislator {
+  name: string;
+  role: string | null;
+  party: string | null;
+}
+export type LegislatorsByProvince = Record<string, { diputados: Legislator[]; senadores: Legislator[] }>;
+
+/**
+ * Legislators (known from initiative sponsors) grouped by province → keyed by the same
+ * normalized province name used by the bubble map, so a clicked province resolves its
+ * deputies and senators. Note: only sponsors appear here, not a full elected roster.
+ */
+export async function getLegislatorsByProvince(): Promise<LegislatorsByProvince> {
+  const d = await db();
+  const rows = await legislatorsByProvince(d);
+  const norm = (s: string) =>
+    s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/\s+/g, " ").trim();
+  const ALIASES: Record<string, string> = {
+    nacional: "distrito nacional",
+    "santo domingo de guzman": "distrito nacional",
+    bahoruco: "baoruco",
+  };
+  const out: LegislatorsByProvince = {};
+  for (const r of rows) {
+    const key = ALIASES[norm(r.province)] ?? norm(r.province);
+    const bucket = (out[key] ??= { diputados: [], senadores: [] });
+    const leg: Legislator = { name: r.sponsor, role: r.role, party: r.party };
+    if (r.chamber === "SENADO") bucket.senadores.push(leg);
+    else bucket.diputados.push(leg);
+  }
+  return out;
+}
 
 export async function getInitiatives(opts: {
   limit?: number;

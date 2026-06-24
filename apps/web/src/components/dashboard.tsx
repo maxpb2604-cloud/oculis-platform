@@ -1,9 +1,8 @@
 import { CATEGORY_LABELS, type Category } from "@oculis/core";
 import { dict, type Lang } from "@/lib/i18n";
-import Link from "next/link";
-import { ApprovalBar, CategoryBar, RiskBar, StatusDonut } from "@/components/charts";
+import { ApprovalBar, CategoryBar, StatusDonut } from "@/components/charts";
 import { ProvinceBubbleMap } from "@/components/province-bubble-map";
-import type { DashboardData, ProvinceFC } from "@/lib/data";
+import type { DashboardData, ProvinceFC, LegislatorsByProvince } from "@/lib/data";
 
 export function Kpi({ label, value, accent }: { label: string; value: number; accent: string }) {
   return (
@@ -52,11 +51,11 @@ export function Insight({ lang, data }: { lang: Lang; data: DashboardData }) {
   const total = data.kpis.total;
   const pct = topCat && total ? Math.round((topCat.count / total) * 100) : 0;
   const catLabel = topCat ? CATEGORY_LABELS[topCat.key as Category] ?? topCat.key : "—";
-  const alto = data.byRisk.find((r) => r.key === "ALTO")?.count ?? 0;
+  const altaProb = data.byApproval.find((r) => r.key === "ALTA")?.count ?? 0;
   const text =
     lang === "es"
-      ? `Se monitorean ${total.toLocaleString()} iniciativas de la Cámara de Diputados. La categoría predominante es ${catLabel} (${pct}%); ${alto.toLocaleString()} presentan riesgo de negocio ALTO y ${data.kpis.needsReview.toLocaleString()} están pendientes de validación del analista.`
-      : `Tracking ${total.toLocaleString()} initiatives from the Chamber of Deputies. The leading category is ${catLabel} (${pct}%); ${alto.toLocaleString()} are HIGH business risk and ${data.kpis.needsReview.toLocaleString()} await analyst validation.`;
+      ? `Se monitorean ${total.toLocaleString()} iniciativas. La categoría predominante es ${catLabel} (${pct}%); ${altaProb.toLocaleString()} tienen probabilidad ALTA de aprobación y ${data.kpis.needsReview.toLocaleString()} están pendientes de validación del analista.`
+      : `Tracking ${total.toLocaleString()} initiatives. The leading category is ${catLabel} (${pct}%); ${altaProb.toLocaleString()} have HIGH approval probability and ${data.kpis.needsReview.toLocaleString()} await analyst validation.`;
   return (
     <div
       className="mb-5 rounded-xl border-l-2 p-5"
@@ -71,9 +70,8 @@ export function Insight({ lang, data }: { lang: Lang; data: DashboardData }) {
 export function KpiBand({ lang, data }: { lang: Lang; data: DashboardData }) {
   const t = dict[lang];
   return (
-    <section className="grid grid-cols-2 gap-4 md:grid-cols-4">
+    <section className="grid grid-cols-1 gap-4 sm:grid-cols-3">
       <Kpi label={t.totalBills} value={data.kpis.total} accent="var(--accent)" />
-      <Kpi label={t.highRisk} value={data.kpis.highRisk} accent="var(--risk-alto)" />
       <Kpi label={t.needsReview} value={data.kpis.needsReview} accent="var(--risk-medio)" />
       <Kpi label={t.published} value={data.kpis.published} accent="var(--risk-bajo)" />
     </section>
@@ -89,13 +87,14 @@ export function GeoOverview({
   lang,
   data,
   provinceFC,
+  legislators,
 }: {
   lang: Lang;
   data: DashboardData;
   provinceFC: ProvinceFC;
+  legislators: LegislatorsByProvince;
 }) {
   const t = dict[lang];
-  const q = lang === "en" ? "?lang=en" : "";
   return (
     <>
       <SectionHeading n="01" title={lang === "es" ? "Panorama" : "Overview"} />
@@ -104,12 +103,12 @@ export function GeoOverview({
           title={lang === "es" ? "Iniciativas por provincia" : "Initiatives by province"}
           flush
           action={
-            <Link href={`/mapas${q}`} className="text-xs font-medium hover:underline" style={{ color: "var(--accent)", cursor: "pointer" }}>
-              {lang === "es" ? "Ver mapas →" : "View maps →"}
-            </Link>
+            <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>
+              {lang === "es" ? "Clic en una provincia para ver legisladores" : "Click a province to see legislators"}
+            </span>
           }
         >
-          <ProvinceBubbleMap data={provinceFC} height={420} />
+          <ProvinceBubbleMap data={provinceFC} legislators={legislators} height={420} />
         </Panel>
         <Panel title={t.byStatus}>
           <StatusDonut data={data.byStatus} lang={lang} />
@@ -124,18 +123,11 @@ export function ChartGrid({ lang, data }: { lang: Lang; data: DashboardData }) {
   const t = dict[lang];
   return (
     <>
-      <SectionHeading n="02" title={lang === "es" ? "Análisis de Riesgo" : "Risk Analysis"} />
+      <SectionHeading n="02" title={lang === "es" ? "Probabilidad de Aprobación y Categoría" : "Approval Probability & Category"} />
       <section className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <Panel title={t.byRisk}>
-          <RiskBar data={data.byRisk} lang={lang} />
-        </Panel>
         <Panel title={t.byApproval}>
           <ApprovalBar data={data.byApproval} lang={lang} />
         </Panel>
-      </section>
-
-      <SectionHeading n="03" title={lang === "es" ? "Distribución Temática" : "Thematic Distribution"} />
-      <section className="grid grid-cols-1 gap-4">
         <Panel title={t.byCategory}>
           <CategoryBar data={data.byCategory} lang={lang} />
         </Panel>

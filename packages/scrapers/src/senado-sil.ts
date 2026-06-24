@@ -17,6 +17,14 @@ const ORIGIN = "http://www.senado.gov.do";
 const BASE = `${ORIGIN}/wfilemaster`;
 
 /**
+ * Public landing for Senate initiatives. The per-expediente Ficha lives in the legacy SIL
+ * behind a login, so it is NOT publicly linkable; this portal page is where a person looks
+ * up an initiative and its document. We surface this as each row's public source URL.
+ */
+export const SENADO_PORTAL_INICIATIVAS =
+  "https://www.senadord.gob.do/secretaria-general-legislativa/iniciativas-legislativas/";
+
+/**
  * Current legislative period (cuatrienio) → its `coleccion` id in the SIL. 53 is the
  * 2024-2028 period (the live one). Older periods exist (54+/lower ids) but the daily
  * deposits feed only needs the current collection.
@@ -154,9 +162,8 @@ export function parseExpedientesList(html: string, coleccion: number): SenadoExp
       title: stripTags(cells[2]!) || null,
       filedAt: ddmmyyyyToISO(stripTags(cells[3]!)),
       status: stripTags(cells[4]!) || null,
-      sourceUrl: idExpediente
-        ? `${BASE}/Ficha.aspx?IdExpediente=${idExpediente}&Coleccion=${coleccion}`
-        : null,
+      // The legacy Ficha needs a login, so we publish the public portal as the lookup link.
+      sourceUrl: SENADO_PORTAL_INICIATIVAS,
     });
   }
   return out;
@@ -204,4 +211,30 @@ export class SenadoSilAdapter {
     if (until) rows = rows.filter((r) => !r.filedAt || r.filedAt <= until);
     return rows;
   }
+
+  /**
+   * Fetch the full Ficha (detail/"Sistema de Gestión de Expedientes Digitales" record)
+   * for one expediente, as authenticated HTML. The session must be warmed by visiting the
+   * list first (it binds the active-period DB), so we do that before requesting the Ficha.
+   * Returns the raw HTML; callers (e.g. a proxy route) can serve it with a <base> tag so a
+   * browser without the login session can still view the page.
+   */
+  async fetchFicha(
+    idExpediente: string | number,
+    opts: { coleccion?: number; timeoutMs?: number } = {},
+  ): Promise<string> {
+    const { coleccion = SENADO_SIL_COLECCION_ACTUAL, timeoutMs } = opts;
+    const jar = await this.loginPublic(timeoutMs);
+    await req(`${this.base}/lista_expedientes.aspx?coleccion=${coleccion}`, jar, { timeoutMs }); // warm session
+    const res = await req(
+      `${this.base}/Ficha.aspx?IdExpediente=${idExpediente}&numeropagina=1&ContExpedientes=0&Coleccion=${coleccion}`,
+      jar,
+      { timeoutMs },
+    );
+    return res.text;
+  }
+
+  /** Origin of the legacy SIL, so a proxy can rewrite relative asset/link URLs. */
+  static readonly ORIGIN = ORIGIN;
+  static readonly BASE = BASE;
 }
