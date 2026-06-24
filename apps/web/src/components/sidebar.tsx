@@ -35,14 +35,21 @@ export function Sidebar({ lang }: { lang: Lang }) {
       style={{ background: "var(--surface)" }}
     >
       <div>
-        <Link href={`/${q}`} className="block px-1" style={{ cursor: "pointer" }}>
-          {/* Official Ferdinand Herrera Consultants logo, on a white plate so it reads in light + dark. */}
-          <div className="rounded-lg bg-white p-2.5 ring-1 ring-black/5">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/fhc-logo.jpg" alt="Ferdinand Herrera Consultants" className="w-full" />
-          </div>
-          {/* Oculis Auribus — primary platform brand. Blue icon adapts to light + dark. */}
-          <div className="mt-3 flex items-center gap-2">
+        <div className="px-1">
+          {/* Official Ferdinand Herrera Consultants logo → home. White plate so it reads in light + dark. */}
+          <Link href={`/${q}`} className="block" style={{ cursor: "pointer" }}>
+            <div className="rounded-lg bg-white p-2.5 ring-1 ring-black/5">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/fhc-logo.jpg" alt="Ferdinand Herrera Consultants" className="w-full" />
+            </div>
+          </Link>
+          {/* Oculis Auribus — primary platform brand → maps view. Blue icon adapts to light + dark. */}
+          <Link
+            href={`/mapas${q ? `?${q.replace(/^&/, "")}` : ""}`}
+            className="mt-3 flex items-center gap-2 rounded-lg p-1 transition-colors hover:bg-[var(--surface-2)]"
+            style={{ cursor: "pointer" }}
+            title={lang === "es" ? "Ver mapas" : "View maps"}
+          >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="/oculis-mark.png" alt="Oculis Auribus" className="h-7 w-7 shrink-0 object-contain" />
             <div className="leading-tight">
@@ -51,8 +58,8 @@ export function Sidebar({ lang }: { lang: Lang }) {
                 {lang === "es" ? "Monitoreo Legislativo · Regulatorio" : "Legislative · Regulatory Monitoring"}
               </div>
             </div>
-          </div>
-        </Link>
+          </Link>
+        </div>
 
         <nav className="mt-7 flex flex-col gap-0.5">
           {groups.map((g) => (

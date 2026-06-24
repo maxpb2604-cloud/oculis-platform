@@ -14,7 +14,7 @@ import { ingestSilDiputados } from "./ingest.js";
 import { ingestActivity } from "./ingest-activity.js";
 import { ingestDocuments, fetchDocumentFiles } from "./ingest-documents.js";
 import { ingestRegulatory } from "./ingest-regulatory.js";
-import { ingestDeposits } from "./ingest-deposits.js";
+import { ingestDeposits, ingestSenateDeposits } from "./ingest-deposits.js";
 import { runDaily } from "./daily.js";
 import { rescoreAll } from "./rescore.js";
 
@@ -86,10 +86,11 @@ async function main() {
       console.log("📥 Syncing recent deposits (initiatives + documents)\n");
       const sinceDays = arg("since-days") ? Number(arg("since-days")) : undefined;
       const r = await ingestDeposits(db, { sinceDays, log: (m) => console.log(m) });
+      const sen = await ingestSenateDeposits(db, { sinceDays, log: (m) => console.log(m) });
       const secs = ((Date.now() - started) / 1000).toFixed(1);
       console.log(
-        `\n✔ done in ${secs}s — ${r.deposits} deposits (${r.inserted} new), ` +
-          `${r.documents} new docs, ${r.withDocUploaded} con PDF cargado`,
+        `\n✔ done in ${secs}s — Diputados ${r.deposits} deposits (${r.inserted} new), ` +
+          `${r.documents} new docs · Senado ${sen.deposits} deposits (${sen.inserted} new)`,
       );
       return;
     }
@@ -97,15 +98,17 @@ async function main() {
     if (flag("daily")) {
       console.log("🗓  FHC daily monitoring — both chambers\n");
       const summaries = await runDaily(db, { log: (m) => console.log(m) });
-      // Deposits sync runs as part of the daily pass so "depositadas hoy" stays fresh.
+      // Deposits sync runs as part of the daily pass so "depositadas hoy" stays fresh —
+      // both chambers (Diputados via SIL API, Senado via the legacy MasterLex SIL).
       const dep = await ingestDeposits(db, { log: (m) => console.log(m) });
+      const senDep = await ingestSenateDeposits(db, { log: (m) => console.log(m) });
       const secs = ((Date.now() - started) / 1000).toFixed(1);
-      const okCount = summaries.filter((s) => s.ok).length + (dep.ok ? 1 : 0);
+      const okCount = summaries.filter((s) => s.ok).length + (dep.ok ? 1 : 0) + (senDep.ok ? 1 : 0);
       const totalEvents = summaries.reduce((n, s) => n + s.events, 0);
       const totalGaps = summaries.reduce((n, s) => n + s.gaps.length, 0);
       console.log(
-        `\n✔ daily done in ${secs}s — sources ok ${okCount}/${summaries.length + 1}, ` +
-          `events ${totalEvents}, deposits ${dep.deposits}, flagged gaps ${totalGaps}`,
+        `\n✔ daily done in ${secs}s — sources ok ${okCount}/${summaries.length + 2}, ` +
+          `events ${totalEvents}, deposits ${dep.deposits}+${senDep.deposits} (Dip+Sen), flagged gaps ${totalGaps}`,
       );
       return;
     }

@@ -1,8 +1,8 @@
 import Link from "next/link";
-import { getDashboardData } from "@/lib/data";
+import { getDashboardData, getInitiativesByProvince } from "@/lib/data";
 import { dict, type Lang } from "@/lib/i18n";
 import { AppShell } from "@/components/app-shell";
-import { ChartGrid, Insight, KpiBand, Panel, SectionHeading } from "@/components/dashboard";
+import { ChartGrid, GeoOverview, Insight, KpiBand, Panel, SectionHeading } from "@/components/dashboard";
 import { InitiativesTable } from "@/components/initiatives-table";
 
 export const dynamic = "force-dynamic";
@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 export default async function Page({ searchParams }: { searchParams: Promise<{ lang?: string }> }) {
   const lang: Lang = (await searchParams).lang === "en" ? "en" : "es";
   const t = dict[lang];
-  const data = await getDashboardData();
+  const [data, provinceFC] = await Promise.all([getDashboardData(), getInitiativesByProvince()]);
   const empty = data.kpis.total === 0;
   const q = lang === "en" ? "?lang=en" : "";
 
@@ -27,8 +27,10 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ l
         <EmptyState lang={lang} message={t.noData} />
       ) : (
         <>
+          <GeoOverview lang={lang} data={data} provinceFC={provinceFC} />
           <ChartGrid lang={lang} data={data} />
-          <SectionHeading n="03" title={lang === "es" ? "Iniciativas Recientes" : "Recent Initiatives"} />
+
+          <SectionHeading n="04" title={lang === "es" ? "Iniciativas Recientes" : "Recent Initiatives"} />
           <Panel
             title={t.recent}
             flush

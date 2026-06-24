@@ -789,9 +789,9 @@ export interface DepositItem {
  */
 export async function listDeposits(
   db: Database,
-  opts: { dateFrom: string; dateTo?: string; limit?: number },
+  opts: { dateFrom: string; dateTo?: string; limit?: number; chamber?: string },
 ): Promise<DepositItem[]> {
-  const { dateFrom, dateTo = opts.dateFrom, limit = 200 } = opts;
+  const { dateFrom, dateTo = opts.dateFrom, limit = 200, chamber = "DIPUTADOS" } = opts;
   const rows = await db
     .select({
       id: initiatives.id,
@@ -810,7 +810,7 @@ export async function listDeposits(
     .from(initiatives)
     .where(
       and(
-        eq(initiatives.chamber, "DIPUTADOS"),
+        eq(initiatives.chamber, chamber),
         sql`${initiatives.filedAt} >= ${dateFrom}`,
         sql`${initiatives.filedAt} <= ${dateTo}`,
       ),

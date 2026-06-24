@@ -1,6 +1,6 @@
 import { Sidebar } from "@/components/sidebar";
 import { TopBar } from "@/components/topbar";
-import { ShaderBg } from "@/components/shader-bg";
+import { MeshBackground } from "@/components/ui/background-shader";
 import type { Lang } from "@/lib/i18n";
 
 /** Page chrome shared by every route: module rail + top bar + content area. */
@@ -26,7 +26,7 @@ export function AppShell({
 
   return (
     <>
-      <ShaderBg />
+      <MeshBackground />
       <div className="relative z-10 flex">
         <Sidebar lang={lang} />
         <div className="min-w-0 flex-1">

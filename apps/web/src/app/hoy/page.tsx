@@ -1,9 +1,8 @@
 import Link from "next/link";
-import { getDayActivity, getDeposits, getDepositsRange, getRangeActivity, todayISO } from "@/lib/data";
+import { getDayActivity, getDeposits, getDepositsRange, getRangeActivity, getSenateDeposits, todayISO } from "@/lib/data";
 import type { Lang } from "@/lib/i18n";
 import { AppShell } from "@/components/app-shell";
-import { Panel } from "@/components/dashboard";
-import { ActivityList, DepositList, StatTile } from "@/components/monitoring";
+import { HoyChambers } from "@/components/hoy-chambers";
 import { LiveClock } from "@/components/live-clock";
 import { RangePicker } from "@/components/range-picker";
 
@@ -36,14 +35,19 @@ export default async function HoyPage({
   const isToday = !isRange && date === todayISO();
   const dlink = (iso: string) => `/hoy?date=${iso}${q}`;
 
-  const [activity, deposits] = await Promise.all([
+  const [activity, deposits, senDeposits] = await Promise.all([
     isRange ? getRangeActivity(from!, to!) : getDayActivity({ date }),
     isRange ? getDepositsRange(from!, to!) : getDeposits(date),
+    // Senate deposits: same range, or a 7-day lookback for the single-day view (its SIL lags).
+    isRange ? getDepositsRange(from!, to!, "SENADO") : getSenateDeposits(date, 7),
   ]);
   const { dip, sen } = activity;
-  const committee = [...dip, ...sen].filter((i) => i.scope === "COMMITTEE");
-  const plenary = [...dip, ...sen].filter((i) => i.scope === "PLENARY" || i.scope === "ASAMBLEA");
-  const docsUp = deposits.filter((d) => d.docUploaded).length;
+  const isCommittee = (i: { scope: string }) => i.scope === "COMMITTEE";
+  const isPlenary = (i: { scope: string }) => i.scope === "PLENARY" || i.scope === "ASAMBLEA";
+  const dipCommittee = dip.filter(isCommittee);
+  const senCommittee = sen.filter(isCommittee);
+  const dipPlenary = dip.filter(isPlenary);
+  const senPlenary = sen.filter(isPlenary);
 
   const fmt = (iso: string) =>
     new Intl.DateTimeFormat(es ? "es-DO" : "en-US", { day: "numeric", month: "short", year: "numeric" }).format(
@@ -117,37 +121,19 @@ export default async function HoyPage({
         </div>
       </div>
 
-      {/* Counts over the active window */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-        <StatTile value={deposits.length} label={es ? "Iniciativas depositadas" : "Initiatives deposited"} />
-        <StatTile value={committee.length} label={es ? "Movimientos en comisión" : "Committee movements"} accent="#8b5cf6" />
-        <StatTile value={`${docsUp}/${deposits.length || 0}`} label={es ? "Con documento cargado" : "With document uploaded"} accent="#0b6e4f" />
-      </div>
-
-      {/* 1 — Iniciativas depositadas */}
-      <div className="mt-6">
-        <Panel title={`${es ? "Iniciativas depositadas" : "Initiatives deposited"} · ${deposits.length}`} flush
-          action={isRange ? <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>{when}</span> : undefined}>
-          <DepositList
-            items={deposits}
-            empty={<>{es ? "No se depositaron iniciativas" : "No initiatives deposited"} {when}. {prevLink(es ? "ver día anterior" : "see previous day")}</>}
-          />
-        </Panel>
-      </div>
-
-      {/* 2 — Movimientos en comisiones (+ pleno secundario) */}
-      <div className="mt-6 grid grid-cols-1 gap-5 lg:grid-cols-2">
-        <Panel title={`${es ? "Movimientos en comisiones" : "Committee movements"} · ${committee.length}`} flush
-          action={<span className="text-[11px]" style={{ color: "var(--text-muted)" }}>{es ? "ambas cámaras" : "both chambers"}</span>}>
-          <ActivityList
-            items={committee}
-            empty={<>{es ? "Sin movimientos de comisión" : "No committee movements"} {when}. {prevLink(es ? "ver día anterior" : "see previous day")}</>}
-          />
-        </Panel>
-        <Panel title={`${es ? "Pleno y Asamblea" : "Floor & Assembly"} · ${plenary.length}`} flush>
-          <ActivityList items={plenary} empty={`${es ? "Sin sesiones de pleno/asamblea" : "No floor/assembly sessions"} ${when}.`} />
-        </Panel>
-      </div>
+      {/* Per-chamber feed — segmented toggle switches Diputados ⇄ Senadores */}
+      <HoyChambers
+        es={es}
+        when={when}
+        prevDayLink={prevLink(es ? "ver día anterior" : "see previous day")}
+        deposits={deposits}
+        senDeposits={senDeposits}
+        senDepositsWindow={!isRange}
+        dipCommittee={dipCommittee}
+        senCommittee={senCommittee}
+        dipPlenary={dipPlenary}
+        senPlenary={senPlenary}
+      />
 
       <p className="mt-4 text-[11px]" style={{ color: "var(--text-muted)" }}>
         {es

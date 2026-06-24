@@ -19,12 +19,14 @@ import {
 } from "@oculis/db";
 import {
   SilDiputadosAdapter,
+  SenadoSilAdapter,
   proponenteName,
   type SilDocumento,
   type SilIniciativa,
 } from "@oculis/scrapers";
 
 export const DEPOSITS_SOURCE = "sil-deposits";
+export const SENADO_DEPOSITS_SOURCE = "senado-sil-deposits";
 
 export interface DepositsSummary {
   source: string;
@@ -171,5 +173,62 @@ export async function ingestDeposits(
     await recordIngestionRun(db, { source: DEPOSITS_SOURCE, ok: false, error });
     log(`  ✖ FAILED: ${error}`);
     return { source: DEPOSITS_SOURCE, ok: false, windowFrom: since, deposits: 0, inserted: 0, documents: 0, withDocUploaded: 0, error };
+  }
+}
+
+/**
+ * Senate deposits sync. The Senate publishes deposited initiatives in the legacy
+ * MasterLex SIL (no documents/sponsor metadata in the list), so we upsert the lighter
+ * record (code, type, title, status, filing date) with chamber = "SENADO". Isolated
+ * from the Diputados sync so a legacy-site blip can't take down the main feed.
+ */
+export async function ingestSenateDeposits(
+  db: Database,
+  opts: { sinceDays?: number; today?: string; log?: (m: string) => void } = {},
+): Promise<DepositsSummary> {
+  const log = opts.log ?? (() => {});
+  const today = opts.today ?? new Date().toISOString().slice(0, 10);
+  const since = shiftISO(today, -(opts.sinceDays ?? 21));
+  const adapter = new SenadoSilAdapter();
+
+  log(`\n▶ ${SENADO_DEPOSITS_SOURCE} — Senate deposits since ${since}`);
+  try {
+    const rows = await adapter.listDeposits({ since, until: today });
+    log(`  ${rows.length} Senate initiatives deposited in window`);
+
+    let inserted = 0;
+    for (const r of rows) {
+      const record: NewInitiative = {
+        source: "senado-sil",
+        sourceId: r.idExpediente ?? r.code,
+        kind: "LEGISLATIVE",
+        code: r.code,
+        title: r.title ?? `${r.type ?? "Iniciativa"} ${r.code}`,
+        type: r.type,
+        status: r.status,
+        chamber: "SENADO",
+        sourceCategory: null,
+        filedAt: r.filedAt,
+        sourceUrl: r.sourceUrl,
+        raw: r as object,
+      };
+      const res = await upsertInitiative(db, record);
+      if (res.inserted) inserted++;
+    }
+
+    await recordIngestionRun(db, {
+      source: SENADO_DEPOSITS_SOURCE,
+      seen: rows.length,
+      inserted,
+      ok: true,
+      details: rows.length === 0 ? { gaps: [`Sin depósitos del Senado desde ${since}.`] } : null,
+    });
+    log(`  ✔ ${rows.length} Senate deposits (${inserted} new)`);
+    return { source: SENADO_DEPOSITS_SOURCE, ok: true, windowFrom: since, deposits: rows.length, inserted, documents: 0, withDocUploaded: 0 };
+  } catch (err) {
+    const error = (err as Error).message;
+    await recordIngestionRun(db, { source: SENADO_DEPOSITS_SOURCE, ok: false, error });
+    log(`  ✖ FAILED: ${error}`);
+    return { source: SENADO_DEPOSITS_SOURCE, ok: false, windowFrom: since, deposits: 0, inserted: 0, documents: 0, withDocUploaded: 0, error };
   }
 }

@@ -1,7 +1,9 @@
 import { CATEGORY_LABELS, type Category } from "@oculis/core";
 import { dict, type Lang } from "@/lib/i18n";
+import Link from "next/link";
 import { ApprovalBar, CategoryBar, RiskBar, StatusDonut } from "@/components/charts";
-import type { DashboardData } from "@/lib/data";
+import { ProvinceBubbleMap } from "@/components/province-bubble-map";
+import type { DashboardData, ProvinceFC } from "@/lib/data";
 
 export function Kpi({ label, value, accent }: { label: string; value: number; accent: string }) {
   return (
@@ -78,11 +80,51 @@ export function KpiBand({ lang, data }: { lang: Lang; data: DashboardData }) {
   );
 }
 
+/**
+ * Top "panorama" row: the province bubble map at half width, with the status donut
+ * beside it. The donut lives here (pulled out of the thematic section) so it isn't
+ * duplicated on the page.
+ */
+export function GeoOverview({
+  lang,
+  data,
+  provinceFC,
+}: {
+  lang: Lang;
+  data: DashboardData;
+  provinceFC: ProvinceFC;
+}) {
+  const t = dict[lang];
+  const q = lang === "en" ? "?lang=en" : "";
+  return (
+    <>
+      <SectionHeading n="01" title={lang === "es" ? "Panorama" : "Overview"} />
+      <section className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <Panel
+          title={lang === "es" ? "Iniciativas por provincia" : "Initiatives by province"}
+          flush
+          action={
+            <Link href={`/mapas${q}`} className="text-xs font-medium hover:underline" style={{ color: "var(--accent)", cursor: "pointer" }}>
+              {lang === "es" ? "Ver mapas →" : "View maps →"}
+            </Link>
+          }
+        >
+          <ProvinceBubbleMap data={provinceFC} height={420} />
+        </Panel>
+        <Panel title={t.byStatus}>
+          <StatusDonut data={data.byStatus} lang={lang} />
+          <Legend data={data.byStatus} />
+        </Panel>
+      </section>
+    </>
+  );
+}
+
 export function ChartGrid({ lang, data }: { lang: Lang; data: DashboardData }) {
   const t = dict[lang];
   return (
     <>
-      <SectionHeading n="01" title={lang === "es" ? "Análisis de Riesgo" : "Risk Analysis"} />
+      <SectionHeading n="02" title={lang === "es" ? "Análisis de Riesgo" : "Risk Analysis"} />
       <section className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Panel title={t.byRisk}>
           <RiskBar data={data.byRisk} lang={lang} />
@@ -92,14 +134,10 @@ export function ChartGrid({ lang, data }: { lang: Lang; data: DashboardData }) {
         </Panel>
       </section>
 
-      <SectionHeading n="02" title={lang === "es" ? "Distribución Temática" : "Thematic Distribution"} />
-      <section className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+      <SectionHeading n="03" title={lang === "es" ? "Distribución Temática" : "Thematic Distribution"} />
+      <section className="grid grid-cols-1 gap-4">
         <Panel title={t.byCategory}>
           <CategoryBar data={data.byCategory} lang={lang} />
-        </Panel>
-        <Panel title={t.byStatus}>
-          <StatusDonut data={data.byStatus} lang={lang} />
-          <Legend data={data.byStatus} />
         </Panel>
       </section>
     </>

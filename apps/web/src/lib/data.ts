@@ -9,6 +9,7 @@ import {
   activityCountsByDate,
   countByApprovalProbability,
   countByCategory,
+  countByProvince,
   countByRisk,
   countByStatus,
   dashboardKpis,
@@ -51,6 +52,43 @@ export async function getDashboardData() {
 }
 
 export type DashboardData = Awaited<ReturnType<typeof getDashboardData>>;
+
+/**
+ * Initiatives aggregated by sponsor province, joined to province centroids → a GeoJSON
+ * FeatureCollection ready for the bubble map. DB province names are normalized (accents
+ * stripped) and a few aliases merged ("Nacional" → Distrito Nacional, "Bahoruco" →
+ * Baoruco). Provinces with no initiatives still appear (count 0) so the map is complete.
+ */
+export async function getInitiativesByProvince() {
+  const { PROVINCIAS } = await import("./province-data");
+  const d = await db();
+  const buckets = await countByProvince(d);
+
+  const norm = (s: string) =>
+    s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/\s+/g, " ").trim();
+  const ALIASES: Record<string, string> = {
+    nacional: "distrito nacional",
+    "santo domingo de guzman": "distrito nacional",
+    bahoruco: "baoruco",
+  };
+  const resolve = (s: string) => ALIASES[norm(s)] ?? norm(s);
+
+  const counts = new Map<string, number>();
+  for (const b of buckets) {
+    if (!b.key || b.key === "N/D") continue;
+    const k = resolve(b.key);
+    counts.set(k, (counts.get(k) ?? 0) + b.count);
+  }
+
+  const features = PROVINCIAS.map((p) => ({
+    type: "Feature" as const,
+    properties: { nombre: p.properties.nombre, iniciativas: counts.get(norm(p.properties.nombre)) ?? 0 },
+    geometry: p.geometry,
+  }));
+  return { type: "FeatureCollection" as const, features };
+}
+
+export type ProvinceFC = Awaited<ReturnType<typeof getInitiativesByProvince>>;
 
 export async function getInitiatives(opts: {
   limit?: number;
@@ -100,7 +138,7 @@ function shiftISO(iso: string, days: number): string {
 export async function getDayActivity(opts: { date?: string; senateWindowDays?: number } = {}) {
   const d = await db();
   const date = opts.date ?? todayISO();
-  const since = shiftISO(date, -(opts.senateWindowDays ?? 6));
+  const since = shiftISO(date, -(opts.senateWindowDays ?? 7));
   const [dip, sen] = await Promise.all([
     listActivity(d, { date, chamber: "DIPUTADOS", limit: 500 }),
     listActivity(d, { dateFrom: since, dateTo: date, chamber: "SENADO", limit: 500 }),
@@ -108,18 +146,29 @@ export async function getDayActivity(opts: { date?: string; senateWindowDays?: n
   return { date, senateSince: since, dip, sen };
 }
 
-/** Initiatives deposited on a given date (the "depositadas hoy" feed). */
-export async function getDeposits(date: string): Promise<DepositItem[]> {
+/** Initiatives deposited on a given date (the "depositadas hoy" feed). Diputados by default. */
+export async function getDeposits(date: string, chamber = "DIPUTADOS"): Promise<DepositItem[]> {
   const d = await db();
-  return listDeposits(d, { dateFrom: date, dateTo: date, limit: 200 });
+  return listDeposits(d, { dateFrom: date, dateTo: date, limit: 200, chamber });
 }
 
 export type { DepositItem };
 
 /** Initiatives deposited within an inclusive [from, to] date range. */
-export async function getDepositsRange(from: string, to: string): Promise<DepositItem[]> {
+export async function getDepositsRange(from: string, to: string, chamber = "DIPUTADOS"): Promise<DepositItem[]> {
   const d = await db();
-  return listDeposits(d, { dateFrom: from, dateTo: to, limit: 1000 });
+  return listDeposits(d, { dateFrom: from, dateTo: to, limit: 1000, chamber });
+}
+
+/**
+ * Senate deposits ending at `date`, looking back `windowDays` (default 7). The Senate's
+ * SIL publishes with lag, so a single day is often empty — the short window mirrors the
+ * manual playbook ("revisar ese día y los anteriores") and keeps the feed non-empty.
+ */
+export async function getSenateDeposits(date: string, windowDays = 7): Promise<DepositItem[]> {
+  const d = await db();
+  const from = shiftISO(date, -(windowDays - 1));
+  return listDeposits(d, { dateFrom: from, dateTo: date, limit: 500, chamber: "SENADO" });
 }
 
 /** Committee/plenary activity (both chambers) within an inclusive [from, to] range. */
