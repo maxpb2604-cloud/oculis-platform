@@ -8,6 +8,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { langParam, langQuery } from "@/lib/i18n";
 
 const pad = (n: number) => String(n).padStart(2, "0");
 const toISO = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -81,8 +82,7 @@ export function RangePicker({
 
   const apply = (f: string, t: string) => {
     setOpen(false);
-    const q = es ? "" : "&lang=en";
-    router.push(`${basePath}?from=${f}&to=${t}${q}`);
+    router.push(`${basePath}?from=${f}&to=${t}${langParam(lang)}`);
   };
   const applySelection = () => {
     if (!start) return;
@@ -90,7 +90,7 @@ export function RangePicker({
   };
   const clearRange = () => {
     setOpen(false);
-    router.push(`${basePath}${es ? "" : "?lang=en"}`);
+    router.push(`${basePath}${langQuery(lang)}`);
   };
 
   const presets: { label: string; from: string; to: string }[] = (() => {
@@ -144,12 +144,12 @@ export function RangePicker({
 
           {/* Month header */}
           <div className="mb-2 flex items-center justify-between">
-            <button onClick={() => setView(addMonths(view, -1))} aria-label="Mes anterior"
+            <button onClick={() => setView(addMonths(view, -1))} aria-label={es ? "Mes anterior" : "Previous month"}
               className="flex h-7 w-7 items-center justify-center rounded-md hover:bg-[var(--surface-2)]" style={{ cursor: "pointer" }}>
               <Chevron dir="left" />
             </button>
             <span className="text-sm font-semibold first-letter:uppercase">{monthLabel}</span>
-            <button onClick={() => setView(addMonths(view, 1))} aria-label="Mes siguiente"
+            <button onClick={() => setView(addMonths(view, 1))} aria-label={es ? "Mes siguiente" : "Next month"}
               className="flex h-7 w-7 items-center justify-center rounded-md hover:bg-[var(--surface-2)]" style={{ cursor: "pointer" }}>
               <Chevron dir="right" />
             </button>

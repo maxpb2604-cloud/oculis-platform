@@ -2,21 +2,21 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { dict, type Lang } from "@/lib/i18n";
+import { langQuery, type Lang } from "@/lib/i18n";
 
 /** Left module rail — brand, real navigation, user footer. */
 export function Sidebar({ lang }: { lang: Lang }) {
-  const t = dict[lang];
   const pathname = usePathname();
-  const q = lang === "en" ? "?lang=en" : "";
+  const q = langQuery(lang);
 
   const groups = [
     {
       title: lang === "es" ? "Monitoreo Legislativo" : "Legislative Monitoring",
       items: [
         { href: "/hoy", label: lang === "es" ? "Hoy" : "Today", icon: IconCalendar, match: (p: string) => p.startsWith("/hoy") },
-        { href: "/diputados", label: "Diputados", icon: IconGavel, match: (p: string) => p.startsWith("/diputados") },
-        { href: "/senado", label: "Senado", icon: IconShield, match: (p: string) => p.startsWith("/senado") },
+        { href: "/diputados", label: lang === "es" ? "Diputados" : "Deputies", icon: IconGavel, match: (p: string) => p.startsWith("/diputados") },
+        { href: "/senado", label: lang === "es" ? "Senado" : "Senate", icon: IconShield, match: (p: string) => p.startsWith("/senado") },
+        { href: "/congreso", label: lang === "es" ? "Congresistas" : "Congress members", icon: IconUsers, match: (p: string) => p.startsWith("/congreso") },
         { href: "/initiatives", label: lang === "es" ? "Iniciativas" : "Initiatives", icon: IconList, match: (p: string) => p.startsWith("/initiatives") },
       ],
     },
@@ -39,7 +39,6 @@ export function Sidebar({ lang }: { lang: Lang }) {
           {/* Official Ferdinand Herrera Consultants logo → home. White plate so it reads in light + dark. */}
           <Link href={`/${q}`} className="block" style={{ cursor: "pointer" }}>
             <div className="rounded-lg bg-white p-2.5 ring-1 ring-black/5">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src="/fhc-logo.jpg" alt="Ferdinand Herrera Consultants" className="w-full" />
             </div>
           </Link>
@@ -49,7 +48,6 @@ export function Sidebar({ lang }: { lang: Lang }) {
             className="mt-3 flex items-center gap-2 rounded-lg p-1 transition-colors hover:bg-[var(--surface-2)]"
             style={{ cursor: "pointer" }}
           >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src="/oculis-mark.png" alt="Oculis Auribus" className="h-7 w-7 shrink-0 object-contain" />
             <div className="leading-tight">
               <div className="serif text-[18px] font-semibold tracking-tight">Oculis Auribus</div>
@@ -117,9 +115,6 @@ function ico(active?: boolean) {
     strokeWidth: 1.6, strokeLinecap: "round" as const, strokeLinejoin: "round" as const,
   };
 }
-function IconGrid({ active }: { active?: boolean }) {
-  return (<svg {...ico(active)} viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /></svg>);
-}
 function IconGavel({ active }: { active?: boolean }) {
   return (<svg {...ico(active)} viewBox="0 0 24 24"><path d="m14 13-7 7M11 6l7 7M9 4l6 6M16 9l4 4" /><path d="M3 21h8" /></svg>);
 }
@@ -137,4 +132,7 @@ function IconShieldCheck({ active }: { active?: boolean }) {
 }
 function IconMegaphone({ active }: { active?: boolean }) {
   return (<svg {...ico(active)} viewBox="0 0 24 24"><path d="M3 11v2a1 1 0 0 0 1 1h2l5 4V6L6 10H4a1 1 0 0 0-1 1Z" /><path d="M15 8a4 4 0 0 1 0 8" /></svg>);
+}
+function IconUsers({ active }: { active?: boolean }) {
+  return (<svg {...ico(active)} viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" /></svg>);
 }

@@ -20,6 +20,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<SP>
     search: sp.search,
     category: sp.category,
     risk: sp.risk,
+    approval: sp.approval,
     party: sp.party,
     status: sp.status,
     page,
@@ -32,7 +33,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<SP>
 
   const hrefForPage = (p: number) => {
     const params = new URLSearchParams();
-    for (const k of ["lang", "search", "category", "risk", "party", "status"] as const) {
+    for (const k of ["lang", "search", "category", "risk", "approval", "party", "status"] as const) {
       if (sp[k]) params.set(k, sp[k]!);
     }
     if (p > 1) params.set("page", String(p));

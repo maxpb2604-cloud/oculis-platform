@@ -1,4 +1,4 @@
-import { getChamberActivity } from "@/lib/data";
+import { getChamberActivity, getCommissionsWithMembers } from "@/lib/data";
 import type { Lang } from "@/lib/i18n";
 import { AppShell } from "@/components/app-shell";
 import { StatTile, type ActivityItem } from "@/components/monitoring";
@@ -10,23 +10,26 @@ export const dynamic = "force-dynamic";
 export default async function SenadoPage({ searchParams }: { searchParams: Promise<{ lang?: string }> }) {
   const lang: Lang = (await searchParams).lang === "en" ? "en" : "es";
   const es = lang === "es";
-  const items = (await getChamberActivity("SENADO", 200)) as ActivityItem[];
+  const [items, members] = await Promise.all([
+    getChamberActivity("SENADO", 200) as Promise<ActivityItem[]>,
+    getCommissionsWithMembers("SENADO"),
+  ]);
   const pleno = items.filter((i) => i.scope === "PLENARY");
   const asamblea = items.filter((i) => i.scope === "ASAMBLEA");
   const comisiones = items.filter((i) => i.scope === "COMMITTEE");
 
   return (
-    <AppShell lang={lang} title="Senado de la República" subtitle={es ? "Pleno, Asamblea y comisiones · actividad reciente" : "Floor, Assembly & committees · recent activity"}>
+    <AppShell lang={lang} title={es ? "Senado de la República" : "Senate of the Republic"} subtitle={es ? "Pleno, Asamblea y comisiones · actividad reciente" : "Floor, Assembly & committees · recent activity"}>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <StatTile value={items.length} label={es ? "Actividades" : "Activities"} />
         <StatTile value={pleno.length} label={es ? "Orden del día (Pleno)" : "Floor agenda"} accent="#3b82f6" />
-        <StatTile value={asamblea.length} label="Asamblea" accent="#0d9488" />
+        <StatTile value={asamblea.length} label={es ? "Asamblea" : "Assembly"} accent="#0d9488" />
         <StatTile value={comisiones.length} label={es ? "Agenda comisiones" : "Committee agendas"} accent="#8b5cf6" />
       </div>
 
       <div className="mt-7">
         <h2 className="serif mb-3 text-lg font-semibold">{es ? "Comisiones" : "Committees"}</h2>
-        <CommitteeBubbles items={comisiones} lang={lang} chamber="Senado" />
+        <CommitteeBubbles items={comisiones} lang={lang} chamber={es ? "Senado" : "Senate"} members={members} />
       </div>
 
       <div className="mt-8">

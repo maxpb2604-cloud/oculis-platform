@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { CATEGORY_LABELS, type Category } from "@oculis/core";
+import { Modal } from "@/components/ui/modal";
+import { formatISODate } from "@/lib/format";
 
 /**
  * Global "click any initiative → bubble" host. Mounted once in the app shell, it listens
@@ -52,37 +54,32 @@ export function InitiativeModalHost({ lang }: { lang: "es" | "en" }) {
 
   useEffect(() => {
     if (id == null) return;
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setId(null);
-    document.addEventListener("keydown", onKey);
+    // Escape / focus-trap handled by the shared <Modal> primitive.
     setLoading(true);
     setData(null);
     fetch(`/api/initiatives/${id}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => setData(d))
       .finally(() => setLoading(false));
-    return () => document.removeEventListener("keydown", onKey);
   }, [id]);
 
   if (id == null) return null;
 
-  const fmt = (iso: string | null) =>
-    iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}` : "—";
+  const fmt = (iso: string | null) => formatISODate(iso, lang);
   const catLabel = data?.category ? CATEGORY_LABELS[data.category as Category] ?? data.category : null;
   const sponsorMeta = data ? [data.party, data.province].filter(Boolean).join(" · ") : "";
   const others = (data?.sponsorCount ?? 1) - 1;
   const events = (data?.events ?? []).slice().reverse(); // newest first
 
   return (
-    <div
-      className="fixed inset-0 z-[1000] flex items-start justify-center overflow-y-auto p-4 sm:items-center"
-      style={{ background: "rgba(6,10,14,0.55)", backdropFilter: "blur(3px)" }}
-      onClick={() => setId(null)}
+    <Modal
+      open={id != null}
+      onClose={() => setId(null)}
+      labelledBy="ini-modal-title"
+      className="card relative my-8 w-full max-w-xl"
+      panelStyle={{ background: "var(--surface)" }}
     >
-      <div
-        className="card relative my-8 w-full max-w-xl"
-        style={{ background: "var(--surface)" }}
-        onClick={(e) => e.stopPropagation()}
-      >
+      <div>
         {/* header */}
         <div className="flex items-start justify-between gap-3 border-b px-5 py-3.5">
           <div className="min-w-0">
@@ -94,10 +91,10 @@ export function InitiativeModalHost({ lang }: { lang: "es" | "en" }) {
               )}
               {data?.type && <span className="eyebrow">{data.type}</span>}
               {data?.chamber && (
-                <span className="eyebrow">· {data.chamber === "SENADO" ? "Senado" : "Diputados"}</span>
+                <span className="eyebrow">· {data.chamber === "SENADO" ? (es ? "Senado" : "Senate") : (es ? "Diputados" : "Deputies")}</span>
               )}
             </div>
-            <div className="eyebrow mt-1">{es ? "Iniciativa" : "Initiative"}</div>
+            <div className="eyebrow mt-1" id="ini-modal-title">{es ? "Iniciativa" : "Initiative"}</div>
           </div>
           <button
             onClick={() => setId(null)}
@@ -198,7 +195,7 @@ export function InitiativeModalHost({ lang }: { lang: "es" | "en" }) {
           </div>
         )}
       </div>
-    </div>
+    </Modal>
   );
 }
 

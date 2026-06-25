@@ -12,13 +12,22 @@
     "build": "npm run build --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "daily": "npm run daily -w @oculis/worker",
-    "dev": "npm run dev -w @oculis/web"
+    "dev": "npm run dev -w @oculis/web",
+    "lint": "eslint .",
+    "format": "prettier --check \"**/*.{ts,tsx,js,jsx,json,css,md}\"",
+    "format:write": "prettier --write \"**/*.{ts,tsx,js,jsx,json,css,md}\""
   },
   "devDependencies": {
+    "@eslint/js": "^9.13.0",
     "@types/pg": "^8.20.0",
     "drizzle-kit": "^0.31.10",
+    "eslint": "^9.13.0",
+    "eslint-plugin-react-hooks": "^5.0.0",
+    "globals": "^15.11.0",
     "playwright": "^1.61.0",
-    "tsx": "^4.22.4"
+    "prettier": "^3.3.0",
+    "tsx": "^4.22.4",
+    "typescript-eslint": "^8.10.0"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.3",

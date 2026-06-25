@@ -74,6 +74,7 @@ export const initiatives = pgTable(
     byCategory: index("initiatives_category_idx").on(t.category),
     byRisk: index("initiatives_risk_idx").on(t.riskLevel),
     byChamber: index("initiatives_chamber_idx").on(t.chamber),
+    byFiledAt: index("initiatives_filed_at_idx").on(t.filedAt),
   }),
 );
 
@@ -252,21 +253,93 @@ export const regulations = pgTable(
   }),
 );
 
+/**
+ * Elected-legislator roster (both chambers) — the full membership of Congress, not just
+ * the subset that has sponsored an initiative. Populated by the roster scrapers
+ * (`roster-diputados` via the SIL JSON API, `roster-senado` via HTML). This is what lets
+ * the map and the /congreso page list every senator and deputy by province.
+ */
+export const legislators = pgTable(
+  "legislators",
+  {
+    id: serial("id").primaryKey(),
+    source: text("source").notNull(), // "roster-diputados" | "roster-senado"
+    sourceId: text("source_id").notNull(), // stable id within the source (API id or province slug)
+    chamber: text("chamber").notNull(), // DIPUTADOS | SENADO
+    fullName: text("full_name").notNull(),
+    province: text("province"), // represented province (Senate: 1 per province + DN)
+    circumscription: text("circumscription"), // circunscripción (Diputados), when applicable
+    party: text("party"), // full party name
+    partyShort: text("party_short"), // siglas, e.g. "PRM"
+    role: text("role"), // directive-board role, e.g. "Presidente del Senado", else null
+    representationLevel: text("representation_level"), // Provincial | Nacional | Exterior
+    period: text("period"), // e.g. "2024-2028"
+    photoUrl: text("photo_url"),
+    email: text("email"),
+    phone: text("phone"),
+    profession: text("profession"),
+    sourceUrl: text("source_url"),
+    raw: jsonb("raw"),
+    firstSeenAt: timestamp("first_seen_at").notNull().defaultNow(),
+    lastSeenAt: timestamp("last_seen_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    uq: uniqueIndex("legislators_source_uq").on(t.source, t.sourceId),
+    byChamber: index("legislators_chamber_idx").on(t.chamber),
+    byProvince: index("legislators_province_idx").on(t.province),
+  }),
+);
+
+/**
+ * Membership of a committee: who sits on each comisión and with what role (cargo).
+ * SEGMENTED from `commissions` (which carries only the president) so we can list
+ * president, vice-president, secretary and every member. One row per (commission, person).
+ */
+export const commissionMembers = pgTable(
+  "commission_members",
+  {
+    id: serial("id").primaryKey(),
+    source: text("source").notNull(),
+    chamber: text("chamber").notNull(), // DIPUTADOS | SENADO
+    commissionName: text("commission_name").notNull(),
+    commissionSourceId: text("commission_source_id"), // id within the source when available
+    legislatorName: text("legislator_name").notNull(),
+    legislatorSourceId: text("legislator_source_id"), // links to legislators.sourceId when known
+    cargo: text("cargo"), // Presidente | Vicepresidente | Secretario | Miembro
+    party: text("party"),
+    sourceUrl: text("source_url"),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    uq: uniqueIndex("commission_members_uq").on(t.source, t.commissionName, t.legislatorName),
+    byCommission: index("commission_members_commission_idx").on(t.commissionName),
+    byChamber: index("commission_members_chamber_idx").on(t.chamber),
+  }),
+);
+
 /** Per-source crawl bookkeeping for incremental ingestion + health checks. */
-export const ingestionRuns = pgTable("ingestion_runs", {
-  id: serial("id").primaryKey(),
-  source: text("source").notNull(),
-  startedAt: timestamp("started_at").notNull().defaultNow(),
-  finishedAt: timestamp("finished_at"),
-  seen: integer("seen").notNull().default(0),
-  inserted: integer("inserted").notNull().default(0),
-  updated: integer("updated").notNull().default(0),
-  statusChanges: integer("status_changes").notNull().default(0),
-  ok: boolean("ok"),
-  error: text("error"),
-  // flagged gaps / health notes (e.g. Senate reCAPTCHA blocked a section)
-  details: jsonb("details"),
-});
+export const ingestionRuns = pgTable(
+  "ingestion_runs",
+  {
+    id: serial("id").primaryKey(),
+    source: text("source").notNull(),
+    startedAt: timestamp("started_at").notNull().defaultNow(),
+    finishedAt: timestamp("finished_at"),
+    seen: integer("seen").notNull().default(0),
+    inserted: integer("inserted").notNull().default(0),
+    updated: integer("updated").notNull().default(0),
+    statusChanges: integer("status_changes").notNull().default(0),
+    ok: boolean("ok"),
+    error: text("error"),
+    // flagged gaps / health notes (e.g. Senate reCAPTCHA blocked a section)
+    details: jsonb("details"),
+  },
+  (t) => ({
+    // serves latestRunsBySource's `distinct on (source) … order by source, started_at desc`
+    bySourceStarted: index("ingestion_runs_source_started_idx").on(t.source, t.startedAt.desc()),
+  }),
+);
 
 export type Initiative = typeof initiatives.$inferSelect;
 export type NewInitiative = typeof initiatives.$inferInsert;
@@ -277,6 +350,10 @@ export type NewActivityEvent = typeof activityEvents.$inferInsert;
 export type ActivityInitiative = typeof activityInitiatives.$inferSelect;
 export type Commission = typeof commissions.$inferSelect;
 export type NewCommission = typeof commissions.$inferInsert;
+export type Legislator = typeof legislators.$inferSelect;
+export type NewLegislator = typeof legislators.$inferInsert;
+export type CommissionMember = typeof commissionMembers.$inferSelect;
+export type NewCommissionMember = typeof commissionMembers.$inferInsert;
 export type Document = typeof documents.$inferSelect;
 export type NewDocument = typeof documents.$inferInsert;
 export type IngestionRun = typeof ingestionRuns.$inferSelect;

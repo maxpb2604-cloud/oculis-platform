@@ -16,6 +16,7 @@ import { ingestDocuments, fetchDocumentFiles } from "./ingest-documents.js";
 import { ingestRegulatory } from "./ingest-regulatory.js";
 import { ingestDeposits, ingestSenateDeposits } from "./ingest-deposits.js";
 import { runDaily } from "./daily.js";
+import { ingestRoster } from "./ingest-roster.js";
 import { rescoreAll } from "./rescore.js";
 
 loadEnv();
@@ -110,6 +111,17 @@ async function main() {
         `\n✔ daily done in ${secs}s — sources ok ${okCount}/${summaries.length + 2}, ` +
           `events ${totalEvents}, deposits ${dep.deposits}+${senDep.deposits} (Dip+Sen), flagged gaps ${totalGaps}`,
       );
+      return;
+    }
+
+    if (flag("roster")) {
+      console.log("🏛  Ingesting legislator roster + committee membership (both chambers)\n");
+      const summaries = await ingestRoster(db, { log: (m) => console.log(m) });
+      const secs = ((Date.now() - started) / 1000).toFixed(1);
+      const ok = summaries.filter((s) => s.ok).length;
+      const legs = summaries.reduce((n, s) => n + s.legislators, 0);
+      const mem = summaries.reduce((n, s) => n + s.memberships, 0);
+      console.log(`\n✔ done in ${secs}s — sources ok ${ok}/${summaries.length}, legisladores ${legs}, membresías ${mem}`);
       return;
     }
 

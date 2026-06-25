@@ -10,6 +10,7 @@
     "crawl:full": "tsx src/index.ts --enrich --concurrency 6",
     "rescore": "tsx src/index.ts --rescore",
     "daily": "tsx src/index.ts --daily",
+    "roster": "tsx src/index.ts --roster",
     "activity": "tsx src/index.ts --activity",
     "typecheck": "tsc --noEmit"
   },

@@ -13,6 +13,7 @@
  * Each source is isolated: a failure in one is recorded and never aborts the others.
  */
 import {
+  backfillActivityInitiativeIds,
   latestRunsBySource,
   recordIngestionRun,
   upsertActivityEvent,
@@ -105,6 +106,20 @@ export async function runDaily(db: Database, opts: { log?: Log } = {}): Promise<
   summaries.push(
     await runSource(db, "senado", baseline, () => new SenadoAdapter().collect({ parsePdfs: false }), log),
   );
+
+  // After today's agenda activity is persisted, resolve any activity↔initiative links that
+  // were stored with a NULL initiative_id because the referenced bill hadn't been ingested
+  // yet (the common Phase-1 case). The deposits sync (run by the caller right after runDaily)
+  // and the SIL corpus ingest add those bills, so re-running the backfill here closes the gap.
+  // Re-scoring/categorization of freshly-deposited rows are deliberately NOT triggered here —
+  // they have their own entrypoints (`worker --rescore`, and categorization within the SIL
+  // corpus ingest) so the daily pass stays a cheap, source-isolated agenda+deposits sweep.
+  try {
+    const backfilled = await backfillActivityInitiativeIds(db);
+    log(`\n▶ backfill activity↔initiative links\n  ✔ ${backfilled} link(s) resolved`);
+  } catch (err) {
+    log(`\n▶ backfill activity↔initiative links\n  ✖ FAILED: ${(err as Error).message}`);
+  }
 
   return summaries;
 }

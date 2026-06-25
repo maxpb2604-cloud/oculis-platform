@@ -42,6 +42,8 @@
   --danger-soft: #f6e7e6;
   --warn: #b07d2a;
   --warn-soft: #f6eedb;
+
+  --modal-overlay: rgba(17, 32, 26, 0.45);
 }
 .dark {
   --bg: #080b0a;
@@ -65,6 +67,16 @@
   --danger-soft: #241715;
   --warn: #d2a24a;
   --warn-soft: #241f12;
+
+  --modal-overlay: rgba(0, 0, 0, 0.6);
+}
+
+/* Keyboard-only focus ring, app-wide. Mouse clicks don't trigger :focus-visible, so this
+   stays clean for pointer users while giving keyboard users a clear, theme-aware indicator. */
+:where(a, button, input, select, textarea, [role="button"], [tabindex]):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 6px;
 }
 
 html,

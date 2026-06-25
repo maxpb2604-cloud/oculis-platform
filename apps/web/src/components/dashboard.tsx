@@ -108,7 +108,7 @@ export function GeoOverview({
             </span>
           }
         >
-          <ProvinceBubbleMap data={provinceFC} legislators={legislators} height={420} />
+          <ProvinceBubbleMap data={provinceFC} legislators={legislators} height={420} lang={lang} />
         </Panel>
         <Panel title={t.byStatus}>
           <StatusDonut data={data.byStatus} lang={lang} />

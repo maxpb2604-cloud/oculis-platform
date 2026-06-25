@@ -191,21 +191,32 @@ export class SenadoAdapter {
             continue;
           }
           const year = text.match(/A[ÑN]O\s+(\d{4})/i)?.[1] ?? f.created_time?.slice(0, 4) ?? "";
+          // Fallback date for any committee whose per-day marker didn't parse: the agenda's
+          // own week (from the file title "DEL 22 AL 26 DE JUNIO 2026") or its upload date.
+          // A null date would make the meeting invisible on the date-filtered "Hoy" view.
+          const weekFallback = parseSenadoDate(f.post_title) ?? f.created_time?.slice(0, 10) ?? null;
+          let undatedInWeek = 0;
           for (const c of parseSenateCommitteeAgenda(text, year)) {
+            if (!c.date) undatedInWeek++;
+            const date = c.date ?? weekFallback;
             events.push({
               source: this.source,
               scope: "COMMITTEE",
               chamber: "SENADO",
               agendaUrl: viewer,
-              date: c.date,
+              date,
               kind: c.hora ? `Reunión · ${c.hora}` : "Reunión",
               body: c.committee,
               description: c.asunto || "Reunión de comisión",
               statuses: [],
               initiativeCodes: c.expedientes,
-              dedupeKey: `senado-com|${c.date ?? "?"}|${c.committee}`,
-              raw: { ...c, fileId: f.ID, week: f.post_title },
+              // include the committee body so two committees on the fallback date don't collide
+              dedupeKey: `senado-com|${date ?? "?"}|${c.committee}`,
+              raw: { ...c, fileId: f.ID, week: f.post_title, dateInferred: !c.date },
             });
+          }
+          if (undatedInWeek > 0) {
+            gaps.push(`Senado · ${undatedInWeek} comisión(es) sin día exacto en "${f.post_title}" — se usó la fecha de la semana/archivo.`);
           }
         }
         if (committeeParseFailures) {
@@ -230,6 +241,18 @@ export class SenadoAdapter {
           }
         }
         const date = parseSenadoDate(f.post_title) ?? f.created_time?.slice(0, 10) ?? null;
+        // The WPFD file ID is volatile: the Senate re-uploads the same orden del día under
+        // a new ID (and the same session can appear under two categories), which keyed on
+        // `f.ID` spawned duplicate rows on "Hoy". Key on the session's own document code in
+        // the title when present (e.g. "00119-PLO-24-06-2026"), else (scope + date), so
+        // re-uploads collapse onto the same row. Fall back to the file ID only as a last
+        // resort (untitled/unparseable files).
+        const sesionCode = f.post_title.match(/\d{3,5}-[A-Z]{2,4}[-\d]*\d{4}/)?.[0] ?? null;
+        const dedupeKey = sesionCode
+          ? `senado-doc|${cat.scope}|${sesionCode}`
+          : date
+            ? `senado-doc|${cat.scope}|${date}`
+            : `senado|${cat.id}|${f.ID}`;
         events.push({
           source: this.source,
           scope: cat.scope,
@@ -241,7 +264,7 @@ export class SenadoAdapter {
           description: f.post_title.replace(/\s+/g, " ").trim(),
           statuses,
           initiativeCodes: codes,
-          dedupeKey: `senado|${cat.id}|${f.ID}`,
+          dedupeKey,
           raw: f,
         });
       }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
 
 /** Top bar — page title (serif), generated date, language + theme controls. */
 export function TopBar({
@@ -14,6 +15,7 @@ export function TopBar({
   subtitle: string;
   dateLabel: string;
 }) {
+  const pathname = usePathname();
   const [dark, setDark] = useState(false);
   useEffect(() => {
     setDark(document.documentElement.classList.contains("dark"));
@@ -56,7 +58,7 @@ export function TopBar({
             {lang.toUpperCase()}
           </span>
           <a
-            href={`/?lang=${other}`}
+            href={other === "en" ? `${pathname}?lang=en` : pathname}
             className="px-2.5 py-1.5 transition-colors hover:bg-[var(--surface-2)]"
             style={{ cursor: "pointer", color: "var(--text-muted)" }}
           >

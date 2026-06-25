@@ -14,6 +14,7 @@ export interface Row {
   province: string | null;
   filedAt: string | null;
   sourceUrl: string | null;
+  needsReview: boolean;
 }
 
 const RISK_TONE: Record<string, { fg: string; bg: string }> = {
@@ -64,6 +65,7 @@ export function InitiativesTable({ rows, lang }: { rows: Row[]; lang: Lang }) {
             <th className="px-3 py-2.5 font-semibold">{t.title}</th>
             <th className="px-3 py-2.5 font-semibold">{t.category}</th>
             <th className="px-3 py-2.5 font-semibold">{t.status}</th>
+            <th className="px-3 py-2.5 font-semibold">{t.risk}</th>
             <th className="px-3 py-2.5 font-semibold">{t.approval}</th>
             <th className="px-5 py-2.5 font-semibold">{t.province}</th>
           </tr>
@@ -78,12 +80,32 @@ export function InitiativesTable({ rows, lang }: { rows: Row[]; lang: Lang }) {
               <td className="tnum whitespace-nowrap px-5 py-2.5 font-mono text-xs" style={{ color: "var(--text-muted)" }}>
                 {r.code ?? "—"}
               </td>
-              <td className="max-w-[460px] px-3 py-2.5">{r.title}</td>
+              <td className="max-w-[460px] px-3 py-2.5">
+                <div className="flex items-center gap-2">
+                  <span className="min-w-0 truncate">{r.title}</span>
+                  {r.needsReview && (
+                    <span
+                      className="shrink-0 rounded px-1.5 py-0.5 text-[9.5px] font-semibold uppercase tracking-wide"
+                      style={{ color: "var(--warn)", background: "var(--warn-soft)" }}
+                      title={
+                        lang === "es"
+                          ? "Clasificación automática (IA), pendiente de validación"
+                          : "Auto-classified (AI), pending validation"
+                      }
+                    >
+                      {lang === "es" ? "IA · pendiente" : "AI · pending"}
+                    </span>
+                  )}
+                </div>
+              </td>
               <td className="px-3 py-2.5" style={{ color: "var(--text-muted)" }}>
                 {r.category ? CATEGORY_LABELS[r.category as Category] ?? r.category : "—"}
               </td>
               <td className="px-3 py-2.5" style={{ color: "var(--text-muted)" }}>
                 {r.status ?? "—"}
+              </td>
+              <td className="px-3 py-2.5">
+                <RiskPill level={r.riskLevel} />
               </td>
               <td className="px-3 py-2.5">
                 <ApprovalPill level={r.approvalProbability} />
@@ -95,7 +117,7 @@ export function InitiativesTable({ rows, lang }: { rows: Row[]; lang: Lang }) {
           ))}
           {rows.length === 0 && (
             <tr>
-              <td colSpan={6} className="px-5 py-10 text-center text-sm" style={{ color: "var(--text-muted)" }}>
+              <td colSpan={7} className="px-5 py-10 text-center text-sm" style={{ color: "var(--text-muted)" }}>
                 {lang === "es" ? "Sin resultados." : "No results."}
               </td>
             </tr>
