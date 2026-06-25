@@ -9,10 +9,6 @@
  */
 import { chromium } from "playwright";
 
-const TARGETS = [
-  "https://www.diputadosrd.gob.do/sil/iniciativas",
-  "https://www.diputadosrd.gob.do/sil/",
-];
 const API_MATCH = /\/sil\/api\//i;
 
 const browser = await chromium.launch({ headless: true });

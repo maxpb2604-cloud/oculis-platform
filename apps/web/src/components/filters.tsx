@@ -29,8 +29,14 @@ export function Filters({ lang, facets }: { lang: Lang; facets: Facets }) {
   }
 
   const labelFor = (cat: string) => CATEGORY_LABELS[cat as Category] ?? cat;
+  const RISK_LABELS: Record<string, { es: string; en: string }> = {
+    ALTO: { es: "Alto", en: "High" },
+    MEDIO: { es: "Medio", en: "Medium" },
+    BAJO: { es: "Bajo", en: "Low" },
+  };
+  const riskLabel = (r: string) => RISK_LABELS[r]?.[lang] ?? r;
   const sel = (k: string) => sp.get(k) ?? "";
-  const anyFilter = ["search", "category", "risk", "party", "status"].some((k) => sp.get(k));
+  const anyFilter = ["search", "category", "risk", "approval", "party", "status"].some((k) => sp.get(k));
 
   return (
     <div className="card mb-4 flex flex-wrap items-center gap-2 p-3">
@@ -52,6 +58,8 @@ export function Filters({ lang, facets }: { lang: Lang; facets: Facets }) {
 
       <Select label={lang === "es" ? "Categoría" : "Category"} value={sel("category")} onChange={(v) => navigate({ category: v })}
         options={facets.categories.map((c) => ({ value: c, label: labelFor(c) }))} allLabel={lang === "es" ? "Todas" : "All"} />
+      <Select label={lang === "es" ? "Riesgo" : "Risk"} value={sel("risk")} onChange={(v) => navigate({ risk: v })}
+        options={facets.risks.map((r) => ({ value: r, label: riskLabel(r) }))} allLabel={lang === "es" ? "Todos" : "All"} />
       <Select label={lang === "es" ? "Partido" : "Party"} value={sel("party")} onChange={(v) => navigate({ party: v })}
         options={facets.parties.map((p) => ({ value: p, label: p }))} allLabel={lang === "es" ? "Todos" : "All"} />
       <Select label={lang === "es" ? "Estado" : "Status"} value={sel("status")} onChange={(v) => navigate({ status: v })}

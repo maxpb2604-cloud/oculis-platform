@@ -8,4 +8,7 @@ export * from "./pdf.js";
 export * from "./dip-oficial.js";
 export * from "./senado.js";
 export * from "./senado-sil.js";
+export * from "./roster.js";
+export * from "./roster-diputados.js";
+export * from "./roster-senado.js";
 export * from "./regulatory.js";

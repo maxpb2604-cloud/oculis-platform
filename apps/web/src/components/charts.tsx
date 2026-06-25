@@ -14,6 +14,7 @@ import {
   YAxis,
 } from "recharts";
 import { CATEGORY_LABELS, type Category } from "@oculis/core";
+import { t, type Lang } from "@/lib/i18n";
 
 interface Bucket {
   key: string;
@@ -97,7 +98,24 @@ function BarPanel({
           onClick={(d: { key?: string }) => onSelect?.(d.key ?? "")}
         >
           {rows.map((r, i) => (
-            <Cell key={i} fill={colorMap?.[r.key] ?? "var(--accent)"} />
+            <Cell
+              key={i}
+              fill={colorMap?.[r.key] ?? "var(--accent)"}
+              // Clickable bars navigate, so make them keyboard-operable (Enter/Space).
+              role={onSelect ? "button" : undefined}
+              tabIndex={onSelect ? 0 : undefined}
+              aria-label={onSelect ? `${r.label}: ${r.count}` : undefined}
+              onKeyDown={
+                onSelect
+                  ? (e: React.KeyboardEvent) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        onSelect(r.key);
+                      }
+                    }
+                  : undefined
+              }
+            />
           ))}
           <LabelList
             dataKey="count"
@@ -114,8 +132,8 @@ function BarPanel({
 export const RiskBar = ({ data, lang }: { data: Bucket[]; lang: string }) => (
   <BarPanel data={data} colorMap={RISK_COLORS} onSelect={useFilterNav("risk", lang)} />
 );
-export const ApprovalBar = ({ data }: { data: Bucket[]; lang: string }) => (
-  <BarPanel data={data} colorMap={PROB_COLORS} />
+export const ApprovalBar = ({ data, lang }: { data: Bucket[]; lang: string }) => (
+  <BarPanel data={data} colorMap={PROB_COLORS} onSelect={useFilterNav("approval", lang)} />
 );
 export const CategoryBar = ({ data, lang }: { data: Bucket[]; lang: string }) => (
   <BarPanel
@@ -125,7 +143,7 @@ export const CategoryBar = ({ data, lang }: { data: Bucket[]; lang: string }) =>
   />
 );
 
-export function StatusDonut({ data, lang }: { data: Bucket[]; lang: string }) {
+export function StatusDonut({ data, lang }: { data: Bucket[]; lang: Lang }) {
   const nav = useFilterNav("status", lang);
   const total = data.reduce((s, d) => s + d.count, 0);
   return (
@@ -153,7 +171,7 @@ export function StatusDonut({ data, lang }: { data: Bucket[]; lang: string }) {
       </ResponsiveContainer>
       <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
         <div className="tnum serif text-2xl font-semibold">{total.toLocaleString()}</div>
-        <div className="eyebrow">Total</div>
+        <div className="eyebrow">{t(lang, "total")}</div>
       </div>
     </div>
   );

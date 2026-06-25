@@ -10,19 +10,26 @@ import { useEffect, useRef, useState } from "react";
  */
 export type Chamber = "diputados" | "senadores";
 
-const OPTIONS: { value: Chamber; label: string; icon: React.ReactNode }[] = [
-  { value: "diputados", label: "Diputados", icon: <IconUsers /> },
-  { value: "senadores", label: "Senadores", icon: <IconColumns /> },
+const LABELS: Record<Chamber, { es: string; en: string }> = {
+  diputados: { es: "Diputados", en: "Deputies" },
+  senadores: { es: "Senadores", en: "Senators" },
+};
+
+const OPTIONS: { value: Chamber; icon: React.ReactNode }[] = [
+  { value: "diputados", icon: <IconUsers /> },
+  { value: "senadores", icon: <IconColumns /> },
 ];
 
 export function ChamberToggle({
   value,
   onChange,
   className = "",
+  lang = "es",
 }: {
   value: Chamber;
   onChange: (v: Chamber) => void;
   className?: string;
+  lang?: "es" | "en";
 }) {
   const refs = useRef<Record<Chamber, HTMLButtonElement | null>>({
     diputados: null,
@@ -38,7 +45,7 @@ export function ChamberToggle({
   return (
     <div
       role="tablist"
-      aria-label="Cámara"
+      aria-label={lang === "es" ? "Cámara" : "Chamber"}
       className={`relative inline-flex items-center gap-1 rounded-full border p-1 ${className}`}
       style={{ background: "var(--surface-2)", borderColor: "var(--border)" }}
     >
@@ -71,7 +78,7 @@ export function ChamberToggle({
             style={{ color: active ? "#fff" : "var(--text-muted)" }}
           >
             <span className="h-4 w-4">{opt.icon}</span>
-            <span>{opt.label}</span>
+            <span>{LABELS[opt.value][lang]}</span>
           </button>
         );
       })}

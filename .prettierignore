@@ -1,0 +1,10 @@
+node_modules/
+dist/
+build/
+.next/
+coverage/
+.data/
+.pgdata/
+**/*.tsbuildinfo
+package-lock.json
+**/drizzle/**

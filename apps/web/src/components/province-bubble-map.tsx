@@ -4,12 +4,11 @@ import { useEffect, useRef, useState } from "react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 import { DR_CENTER, DR_ZOOM } from "@/lib/province-data";
+import { resolveProvince } from "@/lib/provinces";
+import { t, type Lang } from "@/lib/i18n";
 import type { ProvinceFC, LegislatorsByProvince, Legislator } from "@/lib/data";
 
 const TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN ?? "";
-
-const norm = (s: string) =>
-  s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/\s+/g, " ").trim();
 
 interface Selected {
   nombre: string;
@@ -20,19 +19,21 @@ interface Selected {
 
 /**
  * "Iniciativas por provincia" bubble map — proportional circles by initiative count.
- * Clicking a province opens a readable side panel listing its legislators (deputies and
- * senators known from initiative sponsors). Driven by real data from the DB.
+ * Clicking a province opens a readable side panel listing its full elected roster — every
+ * senator and deputy for that province (from the `legislators` table). Driven by real DB data.
  */
 export function ProvinceBubbleMap({
   data,
   legislators,
   height = 420,
   labelThreshold = 25,
+  lang = "es",
 }: {
   data: ProvinceFC;
   legislators?: LegislatorsByProvince;
   height?: number;
   labelThreshold?: number;
+  lang?: Lang;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -42,7 +43,7 @@ export function ProvinceBubbleMap({
 
   useEffect(() => {
     if (!TOKEN) {
-      setErr("Falta NEXT_PUBLIC_MAPBOX_TOKEN");
+      setErr(t(lang, "mapMissingToken"));
       return;
     }
     if (!ref.current) return;
@@ -93,7 +94,7 @@ export function ProvinceBubbleMap({
             const f = e.features?.[0];
             if (!f) return;
             const p = f.properties as { nombre: string; iniciativas: number };
-            const legs = legislators?.[norm(p.nombre)] ?? { diputados: [], senadores: [] };
+            const legs = legislators?.[resolveProvince(p.nombre)] ?? { diputados: [], senadores: [] };
             setSel({ nombre: p.nombre, iniciativas: p.iniciativas, diputados: legs.diputados, senadores: legs.senadores });
           };
           map!.on("click", "prov-circles", onClick);
@@ -103,46 +104,65 @@ export function ProvinceBubbleMap({
           setErr((e as Error).message);
         }
       });
-      map.on("error", (e) => setErr(e.error?.message ?? "Error de Mapbox"));
+      map.on("error", (e) => setErr(e.error?.message ?? t(lang, "mapError")));
     } catch (e) {
       setErr((e as Error).message);
     }
     return () => map?.remove();
-  }, [data, maxVal, labelThreshold, legislators]);
+  }, [data, maxVal, labelThreshold, legislators, lang]);
 
   return (
     <div className="relative">
-      <div ref={ref} style={{ height, width: "100%", background: "#0a0f14" }} />
+      <div
+        ref={ref}
+        role="application"
+        aria-label={t(lang, "mapAriaLabel")}
+        style={{ height, width: "100%", background: "#0a0f14" }}
+      />
       {err && (
-        <div className="absolute inset-0 flex items-center justify-center p-4 text-center text-[12px]"
+        <div role="status" className="absolute inset-0 flex items-center justify-center p-4 text-center text-[12px]"
           style={{ background: "rgba(8,11,10,0.85)", color: "var(--text-muted)" }}>
           {err}
         </div>
       )}
 
-      {/* Legend */}
-      <div className="absolute bottom-3 left-3 flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-[10px] font-medium text-white/85"
+      {/* Legend (decorative colour scale) */}
+      <div aria-hidden className="absolute bottom-3 left-3 flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-[10px] font-medium text-white/85"
         style={{ background: "rgba(8,11,10,0.7)", backdropFilter: "blur(4px)" }}>
-        <span>Menos</span>
+        <span>{t(lang, "mapLess")}</span>
         <span className="h-2 w-24 rounded-full" style={{ background: "linear-gradient(90deg,#274b6b,#5aa8e6,#bfe3ff)" }} />
-        <span>Más</span>
+        <span>{t(lang, "mapMore")}</span>
       </div>
 
       {/* Click panel — readable list of legislators for the selected province */}
       {sel && (
-        <div className="absolute right-3 top-3 bottom-3 w-[270px] overflow-y-auto rounded-xl p-4 text-white shadow-xl"
+        <div className="absolute right-3 top-3 bottom-3 flex w-[270px] flex-col rounded-xl text-white shadow-xl"
           style={{ background: "rgba(10,15,20,0.94)", backdropFilter: "blur(8px)", border: "1px solid rgba(255,255,255,0.12)" }}>
-          <div className="flex items-start justify-between gap-2">
-            <div>
-              <div className="serif text-[15px] font-semibold leading-tight">{sel.nombre}</div>
-              <div className="mt-0.5 text-[11px] text-white/60">{sel.iniciativas} iniciativa(s)</div>
+          {/* Scrollable content */}
+          <div className="min-h-0 flex-1 overflow-y-auto p-4">
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <div className="serif text-[15px] font-semibold leading-tight">{sel.nombre}</div>
+                <div className="mt-0.5 text-[11px] text-white/60">
+                  {sel.iniciativas} {t(lang, sel.iniciativas === 1 ? "initiative" : "initiativePlural")}
+                </div>
+              </div>
+              <button onClick={() => setSel(null)} aria-label={t(lang, "close")}
+                className="rounded-md px-1.5 text-white/60 hover:text-white" style={{ background: "rgba(255,255,255,0.08)" }}>✕</button>
             </div>
-            <button onClick={() => setSel(null)} aria-label="Cerrar"
-              className="rounded-md px-1.5 text-white/60 hover:text-white" style={{ background: "rgba(255,255,255,0.08)" }}>✕</button>
+
+            <LegGroup title={t(lang, "senators")} legs={sel.senadores} empty={t(lang, "noSenator")} />
+            <LegGroup title={t(lang, "deputies")} legs={sel.diputados} empty={t(lang, "noDeputies")} />
           </div>
 
-          <LegGroup title="Diputados" legs={sel.diputados} empty="Sin diputados con iniciativas registradas." />
-          <LegGroup title="Senadores" legs={sel.senadores} empty="Roster de senadores aún no integrado en la plataforma." />
+          {/* Sticky close button at the bottom */}
+          <div className="border-t p-3" style={{ borderColor: "rgba(255,255,255,0.12)" }}>
+            <button onClick={() => setSel(null)}
+              className="w-full rounded-lg py-2 text-[13px] font-semibold text-white transition hover:brightness-110"
+              style={{ background: "rgba(255,255,255,0.12)" }}>
+              {t(lang, "close")}
+            </button>
+          </div>
         </div>
       )}
     </div>

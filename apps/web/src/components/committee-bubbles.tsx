@@ -3,12 +3,15 @@
 /**
  * Committee "bubbles" for the Diputados / Senado pages. Each committee is one bubble
  * showing a brief of its recent agenda (last few days). Clicking opens a large modal
- * ("huge bubble") with the full agenda by day, statuses, initiatives and a members
- * section. Membership isn't in the open SIL feed yet, so that section is honestly
- * marked pending rather than faked.
+ * ("huge bubble") with the full agenda by day, statuses, initiatives and — when the
+ * roster has been ingested — the committee's real composition (president, vice-president,
+ * secretary and members), matched from the `commission_members` table by committee name.
  */
 import { useEffect, useMemo, useState } from "react";
+import { Modal } from "@/components/ui/modal";
 import { StatusChip, type ActivityItem } from "@/components/monitoring";
+import { formatISODayMonth } from "@/lib/format";
+import type { CommissionWithMembers } from "@/lib/data";
 
 interface Group {
   name: string;
@@ -18,15 +21,62 @@ interface Group {
   initiatives: number;
 }
 
-const fmtDM = (iso: string | null) => (iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}` : "");
 const fmtFull = (iso: string | null, locale: string) =>
   iso ? new Intl.DateTimeFormat(locale, { day: "numeric", month: "long", year: "numeric" }).format(new Date(iso + "T12:00:00")) : "";
 
-export function CommitteeBubbles({ items, lang, chamber }: { items: ActivityItem[]; lang: "es" | "en"; chamber: string }) {
+const CARGO_COLOR: Record<string, string> = {
+  Presidente: "var(--risk-bajo)",
+  Vicepresidente: "var(--accent)",
+  Secretario: "var(--accent)",
+};
+const CARGO_SOFT: Record<string, string> = {
+  Presidente: "var(--risk-bajo-soft)",
+  Vicepresidente: "var(--accent-soft)",
+  Secretario: "var(--accent-soft)",
+};
+
+/** Normalize a committee name for fuzzy matching between the agenda feed and the roster. */
+const normCommittee = (s: string) =>
+  s
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/\bcomision(es)?\b|\bpermanente\b|\bespecial\b|\bbicameral\b|\bde\b|\bla\b|\bdel\b|\by\b/g, " ")
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+export function CommitteeBubbles({
+  items,
+  lang,
+  chamber,
+  members,
+}: {
+  items: ActivityItem[];
+  lang: "es" | "en";
+  chamber: string;
+  members?: CommissionWithMembers[];
+}) {
   const es = lang === "es";
   const locale = es ? "es-DO" : "en-US";
   const [q, setQ] = useState("");
   const [openName, setOpenName] = useState<string | null>(null);
+
+  // Index roster membership by normalized committee name for matching against agenda bodies.
+  const membersByName = useMemo(() => {
+    const m = new Map<string, CommissionWithMembers>();
+    for (const c of members ?? []) m.set(normCommittee(c.name), c);
+    return m;
+  }, [members]);
+  const findMembers = (name: string): CommissionWithMembers | null => {
+    const key = normCommittee(name);
+    if (membersByName.has(key)) return membersByName.get(key)!;
+    // fall back to a contains-match (agenda often uses a short name)
+    for (const [k, v] of membersByName) {
+      if (k && (k.includes(key) || key.includes(k))) return v;
+    }
+    return null;
+  };
 
   const groups = useMemo<Group[]>(() => {
     const map = new Map<string, ActivityItem[]>();
@@ -65,13 +115,11 @@ export function CommitteeBubbles({ items, lang, chamber }: { items: ActivityItem
   const filtered = ql ? groups.filter((g) => g.name.toLowerCase().includes(ql)) : groups;
   const open = openName ? groups.find((g) => g.name === openName) ?? null : null;
 
+  // Lock body scroll while the modal is open. Escape / focus-trap come from <Modal>.
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpenName(null);
-    document.addEventListener("keydown", onKey);
     document.body.style.overflow = "hidden";
     return () => {
-      document.removeEventListener("keydown", onKey);
       document.body.style.overflow = "";
     };
   }, [open]);
@@ -114,9 +162,9 @@ export function CommitteeBubbles({ items, lang, chamber }: { items: ActivityItem
                 </span>
               </div>
               <div className="flex flex-col gap-1.5">
-                {g.meetings.slice(0, 3).map((m, i) => (
-                  <div key={i} className="flex gap-2 text-[12px]">
-                    <span className="tnum shrink-0 font-semibold" style={{ color: "var(--accent)" }}>{fmtDM(m.eventDate)}</span>
+                {g.meetings.slice(0, 3).map((m) => (
+                  <div key={m.id} className="flex gap-2 text-[12px]">
+                    <span className="tnum shrink-0 font-semibold" style={{ color: "var(--accent)" }}>{formatISODayMonth(m.eventDate, lang)}</span>
                     <span className="line-clamp-1" style={{ color: "var(--text-muted)" }}>{m.description || (es ? "(sin detalle)" : "(no detail)")}</span>
                   </div>
                 ))}
@@ -132,20 +180,18 @@ export function CommitteeBubbles({ items, lang, chamber }: { items: ActivityItem
 
       {/* "Huge bubble" modal */}
       {open && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4"
-          style={{ background: "rgba(8,12,18,0.5)", backdropFilter: "blur(3px)" }}
-          onClick={() => setOpenName(null)}
+        <Modal
+          open
+          onClose={() => setOpenName(null)}
+          labelledBy="committee-modal-title"
+          className="relative flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-3xl border shadow-2xl"
+          panelStyle={{ background: "var(--surface)", borderColor: "var(--border)" }}
         >
-          <div
-            className="relative flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-3xl border shadow-2xl"
-            style={{ background: "var(--surface)", borderColor: "var(--border)" }}
-            onClick={(e) => e.stopPropagation()}
-          >
+          <div className="flex max-h-[85vh] flex-col">
             <div className="flex items-start justify-between gap-3 border-b px-6 py-4">
               <div className="min-w-0">
                 <div className="eyebrow">{chamber} · {es ? "Comisión" : "Committee"}</div>
-                <h3 className="serif mt-1 text-xl font-semibold leading-tight">{open.name}</h3>
+                <h3 id="committee-modal-title" className="serif mt-1 text-xl font-semibold leading-tight">{open.name}</h3>
                 <div className="mt-1 text-[12px]" style={{ color: "var(--text-muted)" }}>
                   {open.count} {es ? "reuniones" : "meetings"} · {open.initiatives} {es ? "iniciativas" : "initiatives"}
                   {open.latest && ` · ${es ? "última" : "latest"} ${fmtFull(open.latest, locale)}`}
@@ -160,15 +206,15 @@ export function CommitteeBubbles({ items, lang, chamber }: { items: ActivityItem
             <div className="overflow-y-auto px-6 py-4">
               <div className="eyebrow mb-3">{es ? "Agenda por día" : "Agenda by day"}</div>
               <div className="flex flex-col gap-4">
-                {open.meetings.map((m, i) => (
-                  <div key={i} className="border-l-2 pl-3" style={{ borderColor: "var(--accent)" }}>
+                {open.meetings.map((m) => (
+                  <div key={m.id} className="border-l-2 pl-3" style={{ borderColor: "var(--accent)" }}>
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="text-sm font-semibold">{fmtFull(m.eventDate, locale)}</span>
                       {m.kind && <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>· {m.kind}</span>}
                     </div>
                     {m.description && <p className="mt-1 text-[13px] leading-relaxed">{m.description}</p>}
                     {(m.statuses?.length ?? 0) > 0 && (
-                      <div className="mt-1.5 flex flex-wrap gap-1.5">{m.statuses!.map((s, j) => <StatusChip key={j} raw={s} />)}</div>
+                      <div className="mt-1.5 flex flex-wrap gap-1.5">{m.statuses!.map((s, j) => <StatusChip key={`${m.id}-${j}`} raw={s} />)}</div>
                     )}
                     {m.agendaUrl && (
                       <a href={m.agendaUrl} target="_blank" rel="noreferrer"
@@ -180,16 +226,43 @@ export function CommitteeBubbles({ items, lang, chamber }: { items: ActivityItem
                 ))}
               </div>
 
-              <div className="eyebrow mb-2 mt-6">{es ? "Integrantes" : "Members"}</div>
-              <div className="rounded-xl border border-dashed px-4 py-3 text-[12px]" style={{ borderColor: "var(--border-strong)", color: "var(--text-muted)" }}>
-                {es
-                  ? "La composición (presidente, vicepresidente, secretario y miembros) no se publica en el feed abierto de SIL; pendiente de integrar desde el portal oficial de la Cámara."
-                  : "Membership (chair, vice-chair, secretary, members) is not exposed by the open SIL feed; pending integration from the Chamber's official portal."}
-              </div>
+              <CommitteeMembers committee={findMembers(open.name)} es={es} />
             </div>
           </div>
-        </div>
+        </Modal>
       )}
     </div>
+  );
+}
+
+/** Real committee composition (from the roster), or an honest note if not yet ingested. */
+function CommitteeMembers({ committee, es }: { committee: CommissionWithMembers | null; es: boolean }) {
+  return (
+    <>
+      <div className="eyebrow mb-2 mt-6">{es ? "Integrantes" : "Members"}{committee ? ` · ${committee.members.length}` : ""}</div>
+      {committee && committee.members.length > 0 ? (
+        <ul className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+          {committee.members.map((m, i) => (
+            <li key={`${m.name}-${m.cargo ?? ""}-${i}`} className="flex items-center justify-between gap-2 rounded-lg px-3 py-1.5 text-[12.5px]" style={{ background: "var(--surface-2)" }}>
+              <span className="min-w-0 truncate">{m.name}</span>
+              <span className="flex shrink-0 items-center gap-1.5">
+                {m.party && <span className="text-[10.5px]" style={{ color: "var(--text-muted)" }}>{m.party}</span>}
+                {m.cargo && m.cargo !== "Miembro" && (
+                  <span className="rounded px-1.5 py-0.5 text-[10px] font-semibold" style={{ background: CARGO_SOFT[m.cargo] ?? "var(--surface-2)", color: CARGO_COLOR[m.cargo] ?? "var(--text-muted)" }}>
+                    {m.cargo}
+                  </span>
+                )}
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <div className="rounded-xl border border-dashed px-4 py-3 text-[12px]" style={{ borderColor: "var(--border-strong)", color: "var(--text-muted)" }}>
+          {es
+            ? "Composición no disponible para esta comisión. Ejecuta la ingesta del roster (npm run roster) para integrarla."
+            : "Membership not available for this committee. Run the roster ingestion (npm run roster) to integrate it."}
+        </div>
+      )}
+    </>
   );
 }

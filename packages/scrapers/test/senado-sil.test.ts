@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseExpedientesList } from "../src/senado-sil.js";
+import { parseExpedientesList, SENADO_PORTAL_INICIATIVAS } from "../src/senado-sil.js";
 
 // Real row shapes from lista_expedientes.aspx?coleccion=53 (trimmed).
 const SAMPLE_HTML = `
@@ -35,7 +35,9 @@ describe("senado-sil: parseExpedientesList", () => {
       title: null, // blank title cell → null
       filedAt: "2026-06-23",
       status: "Depositada",
-      sourceUrl: "http://www.senado.gov.do/wfilemaster/Ficha.aspx?IdExpediente=39660&Coleccion=53",
+      // Per-expediente Ficha.aspx URLs are auth-gated (served via the /api/senado/ficha
+      // proxy), so the public sourceUrl is the iniciativas landing page by design.
+      sourceUrl: SENADO_PORTAL_INICIATIVAS,
     });
     expect(second).toMatchObject({
       code: "01628-2026-PLO-SE",

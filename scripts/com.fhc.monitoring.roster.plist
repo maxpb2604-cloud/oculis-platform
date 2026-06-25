@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  FHC roster launchd job (SEMANAL).
+
+  Corre scripts/roster-run.sh una vez por semana: lunes 04:30 LOCAL. La Mac está en
+  America/Santo_Domingo (AST, UTC-4, sin horario de verano), así que esta hora local
+  equivale a la cadencia AST deseada sin conversión.
+
+  El roster (190 diputados + 32 senadores + comisiones) cambia poco, por eso es semanal
+  y separado de com.fhc.monitoring.daily (alta frecuencia, 6×/día).
+
+  launchd ejecuta los StartCalendarInterval perdidos mientras la Mac dormía una vez al
+  despertar, así que si la máquina está apagada el lunes 04:30 se pone al día al encender.
+
+  Instalar / actualizar (una vez):
+    cp "scripts/com.fhc.monitoring.roster.plist" ~/Library/LaunchAgents/
+    launchctl unload ~/Library/LaunchAgents/com.fhc.monitoring.roster.plist 2>/dev/null
+    launchctl load   ~/Library/LaunchAgents/com.fhc.monitoring.roster.plist
+
+  Correr ahora (prueba manual):  launchctl start com.fhc.monitoring.roster
+  Logs:                          app/.data/logs/ (roster-YYYY-MM-DD.log + launchd.roster.*.log)
+  Detener:                       launchctl unload ~/Library/LaunchAgents/com.fhc.monitoring.roster.plist
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.fhc.monitoring.roster</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/emilpenabautista/Oculis Auribus/app/scripts/roster-run.sh</string>
+    </array>
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>4</integer><key>Minute</key><integer>30</integer></dict>
+    </array>
+    <key>RunAtLoad</key>
+    <false/>
+    <key>StandardOutPath</key>
+    <string>/Users/emilpenabautista/Oculis Auribus/app/.data/logs/launchd.roster.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/emilpenabautista/Oculis Auribus/app/.data/logs/launchd.roster.err.log</string>
+</dict>
+</plist>

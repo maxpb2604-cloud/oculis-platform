@@ -2,13 +2,22 @@
 <!--
   FHC daily monitoring launchd job.
 
-  Install (one time):
-    cp scripts/com.fhc.monitoring.daily.plist ~/Library/LaunchAgents/
-    # edit the ProgramArguments path below to your absolute repo path if it differs
-    launchctl load ~/Library/LaunchAgents/com.fhc.monitoring.daily.plist
+  Runs scripts/daily-run.sh 6×/day at 00:00, 05:00, 09:00, 13:00, 17:00, 21:00
+  LOCAL time. The Mac is on America/Santo_Domingo (AST, UTC-4, no DST), so these
+  local hours equal the intended AST cadence with no conversion. If the machine's
+  timezone ever changes, these fire at the new local time — re-check then.
 
-  It runs scripts/daily-run.sh every day at 07:30. Logs land in
-  app/.data/logs/. To stop: launchctl unload ~/Library/LaunchAgents/com.fhc.monitoring.daily.plist
+  launchd runs StartCalendarInterval jobs that were missed while the Mac slept
+  once after wake, so overnight/asleep runs are caught up automatically.
+
+  Install / update (one time):
+    cp "scripts/com.fhc.monitoring.daily.plist" ~/Library/LaunchAgents/
+    launchctl unload ~/Library/LaunchAgents/com.fhc.monitoring.daily.plist 2>/dev/null
+    launchctl load   ~/Library/LaunchAgents/com.fhc.monitoring.daily.plist
+
+  Run once now (manual test):  launchctl start com.fhc.monitoring.daily
+  Logs:                        app/.data/logs/ (daily-YYYY-MM-DD.log + launchd.*.log)
+  Stop:                        launchctl unload ~/Library/LaunchAgents/com.fhc.monitoring.daily.plist
 -->
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -18,20 +27,22 @@
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>
-        <string>/Users/emilpenabautista/Desktop/Oculis Auribus/app/scripts/daily-run.sh</string>
+        <string>/Users/emilpenabautista/Oculis Auribus/app/scripts/daily-run.sh</string>
     </array>
     <key>StartCalendarInterval</key>
-    <dict>
-        <key>Hour</key>
-        <integer>7</integer>
-        <key>Minute</key>
-        <integer>30</integer>
-    </dict>
+    <array>
+        <dict><key>Hour</key><integer>0</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>5</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>9</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>13</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>17</integer><key>Minute</key><integer>0</integer></dict>
+        <dict><key>Hour</key><integer>21</integer><key>Minute</key><integer>0</integer></dict>
+    </array>
     <key>RunAtLoad</key>
     <false/>
     <key>StandardOutPath</key>
-    <string>/Users/emilpenabautista/Desktop/Oculis Auribus/app/.data/logs/launchd.out.log</string>
+    <string>/Users/emilpenabautista/Oculis Auribus/app/.data/logs/launchd.out.log</string>
     <key>StandardErrorPath</key>
-    <string>/Users/emilpenabautista/Desktop/Oculis Auribus/app/.data/logs/launchd.err.log</string>
+    <string>/Users/emilpenabautista/Oculis Auribus/app/.data/logs/launchd.err.log</string>
 </dict>
 </plist>

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { getDayActivity, getDeposits, getDepositsRange, getRangeActivity, getSenateDeposits, todayISO } from "@/lib/data";
-import type { Lang } from "@/lib/i18n";
+import { langParam, langQuery, type Lang } from "@/lib/i18n";
 import { AppShell } from "@/components/app-shell";
 import { HoyChambers } from "@/components/hoy-chambers";
 import { LiveClock } from "@/components/live-clock";
@@ -25,7 +25,7 @@ export default async function HoyPage({
   const sp = await searchParams;
   const lang: Lang = sp.lang === "en" ? "en" : "es";
   const es = lang === "es";
-  const q = es ? "" : "&lang=en";
+  const q = langParam(lang);
 
   const from = sp.from;
   const to = sp.to;
@@ -44,10 +44,23 @@ export default async function HoyPage({
   const { dip, sen } = activity;
   const isCommittee = (i: { scope: string }) => i.scope === "COMMITTEE";
   const isPlenary = (i: { scope: string }) => i.scope === "PLENARY" || i.scope === "ASAMBLEA";
-  const dipCommittee = dip.filter(isCommittee);
-  const senCommittee = sen.filter(isCommittee);
-  const dipPlenary = dip.filter(isPlenary);
-  const senPlenary = sen.filter(isPlenary);
+  // Defense-in-depth de-dup: collapse rows that are the same session/meeting (same date +
+  // body + description) even if they slipped in under different dedupe keys (e.g. a Senate
+  // orden del día re-uploaded under a new WPFD file ID). Keeps the page honest without a
+  // DB backfill.
+  const dedupeActivity = <T extends { eventDate: string | null; body: string | null; description: string }>(items: T[]): T[] => {
+    const seen = new Set<string>();
+    return items.filter((i) => {
+      const k = `${i.eventDate ?? ""}|${(i.body ?? "").trim()}|${i.description.replace(/\s+/g, " ").trim().slice(0, 140)}`;
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
+  };
+  const dipCommittee = dedupeActivity(dip.filter(isCommittee));
+  const senCommittee = dedupeActivity(sen.filter(isCommittee));
+  const dipPlenary = dedupeActivity(dip.filter(isPlenary));
+  const senPlenary = dedupeActivity(sen.filter(isPlenary));
 
   const fmt = (iso: string) =>
     new Intl.DateTimeFormat(es ? "es-DO" : "en-US", { day: "numeric", month: "short", year: "numeric" }).format(
@@ -95,20 +108,20 @@ export default async function HoyPage({
               <span aria-hidden className="h-1.5 w-1.5 rounded-full" style={{ background: "var(--accent)" }} />
               {fmt(from!)} — {fmt(to!)}
             </span>
-            <Link href={`/hoy${es ? "" : "?lang=en"}`} className="text-[12px] font-medium underline" style={{ color: "var(--accent)" }}>
+            <Link href={`/hoy${langQuery(lang)}`} className="text-[12px] font-medium underline" style={{ color: "var(--accent)" }}>
               {es ? "volver a hoy" : "back to today"}
             </Link>
           </>
         ) : (
           <>
             <span className="eyebrow mr-1">{es ? "Mostrando" : "Showing"}</span>
-            <Link href={dlink(shift(date, -1))} className="card px-2.5 py-1 text-sm" aria-label="Día anterior">←</Link>
+            <Link href={dlink(shift(date, -1))} className="card px-2.5 py-1 text-sm" aria-label={es ? "Día anterior" : "Previous day"}>←</Link>
             <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold"
               style={{ background: "var(--accent-soft)", color: "var(--accent)" }}>
               <span aria-hidden className="h-1.5 w-1.5 rounded-full" style={{ background: "var(--accent)" }} />
               {isToday ? (es ? "HOY" : "TODAY") : (es ? "FECHA" : "DATE")} · {date}
             </span>
-            <Link href={dlink(shift(date, 1))} className="card px-2.5 py-1 text-sm" aria-label="Día siguiente">→</Link>
+            <Link href={dlink(shift(date, 1))} className="card px-2.5 py-1 text-sm" aria-label={es ? "Día siguiente" : "Next day"}>→</Link>
             {!isToday && (
               <Link href={dlink(todayISO())} className="text-[12px] font-medium underline" style={{ color: "var(--accent)" }}>
                 {es ? "volver a hoy" : "back to today"}
@@ -138,7 +151,7 @@ export default async function HoyPage({
       <p className="mt-4 text-[11px]" style={{ color: "var(--text-muted)" }}>
         {es
           ? 'Iniciativas depositadas: Cámara de Diputados (SIL). Cada ficha enlaza a la página oficial de la iniciativa, donde aparece su documento; "Documento pendiente" indica que el PDF aún no ha sido cargado por la Cámara.'
-          : 'Deposited initiatives: Chamber of Deputies (SIL). Each card links to the official initiative page where its document appears; "Documento pendiente" means the PDF has not been uploaded yet.'}
+          : 'Deposited initiatives: Chamber of Deputies (SIL). Each card links to the official initiative page where its document appears; "Document pending" means the PDF has not been uploaded yet.'}
       </p>
     </AppShell>
   );

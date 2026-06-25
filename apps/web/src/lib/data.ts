@@ -4,6 +4,9 @@
  * worker writes to. A single shared handle is cached across requests.
  */
 import "server-only";
+import { unstable_cache } from "next/cache";
+import { normProvince, resolveProvince } from "./provinces";
+export { normProvince, resolveProvince } from "./provinces";
 import {
   createDb,
   activityCountsByDate,
@@ -13,6 +16,11 @@ import {
   countByRisk,
   countByStatus,
   legislatorsByProvince,
+  listLegislators,
+  commissionsWithMembers,
+  legislatorCommittees,
+  type RosterMember,
+  type CommissionWithMembers,
   dashboardKpis,
   facets,
   getInitiativeById,
@@ -65,14 +73,8 @@ export async function getInitiativesByProvince() {
   const d = await db();
   const buckets = await countByProvince(d);
 
-  const norm = (s: string) =>
-    s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/\s+/g, " ").trim();
-  const ALIASES: Record<string, string> = {
-    nacional: "distrito nacional",
-    "santo domingo de guzman": "distrito nacional",
-    bahoruco: "baoruco",
-  };
-  const resolve = (s: string) => ALIASES[norm(s)] ?? norm(s);
+  const norm = normProvince;
+  const resolve = resolveProvince;
 
   const counts = new Map<string, number>();
   for (const b of buckets) {
@@ -99,23 +101,39 @@ export interface Legislator {
 export type LegislatorsByProvince = Record<string, { diputados: Legislator[]; senadores: Legislator[] }>;
 
 /**
- * Legislators (known from initiative sponsors) grouped by province → keyed by the same
- * normalized province name used by the bubble map, so a clicked province resolves its
- * deputies and senators. Note: only sponsors appear here, not a full elected roster.
+ * Full elected roster grouped by province → keyed by the same normalized province name
+ * used by the bubble map, so a clicked province resolves every one of its deputies and
+ * senators (not just bill sponsors). Falls back to the sponsor-derived list only if the
+ * roster table is empty (e.g. before the first `roster` ingestion run).
  */
 export async function getLegislatorsByProvince(): Promise<LegislatorsByProvince> {
   const d = await db();
+  const roster = await listLegislators(d);
+  if (roster.length === 0) return getSponsorLegislatorsByProvince();
+
+  const out: LegislatorsByProvince = {};
+  for (const r of roster) {
+    if (!r.province) continue; // "En el Exterior" etc. — no province point on the map
+    const key = resolveProvince(r.province);
+    const bucket = (out[key] ??= { diputados: [], senadores: [] });
+    const leg: Legislator = {
+      name: r.fullName,
+      role: r.role ?? r.circumscription ?? (r.chamber === "SENADO" ? "Senador/a" : "Diputado/a"),
+      party: r.partyShort ?? r.party,
+    };
+    if (r.chamber === "SENADO") bucket.senadores.push(leg);
+    else bucket.diputados.push(leg);
+  }
+  return out;
+}
+
+/** Legacy sponsor-derived fallback (used only when the roster table is empty). */
+async function getSponsorLegislatorsByProvince(): Promise<LegislatorsByProvince> {
+  const d = await db();
   const rows = await legislatorsByProvince(d);
-  const norm = (s: string) =>
-    s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/\s+/g, " ").trim();
-  const ALIASES: Record<string, string> = {
-    nacional: "distrito nacional",
-    "santo domingo de guzman": "distrito nacional",
-    bahoruco: "baoruco",
-  };
   const out: LegislatorsByProvince = {};
   for (const r of rows) {
-    const key = ALIASES[norm(r.province)] ?? norm(r.province);
+    const key = resolveProvince(r.province);
     const bucket = (out[key] ??= { diputados: [], senadores: [] });
     const leg: Legislator = { name: r.sponsor, role: r.role, party: r.party };
     if (r.chamber === "SENADO") bucket.senadores.push(leg);
@@ -123,6 +141,65 @@ export async function getLegislatorsByProvince(): Promise<LegislatorsByProvince>
   }
   return out;
 }
+
+export type { RosterMember, CommissionWithMembers };
+
+/** A legislator plus the committees they sit on (with their cargo) — powers the profile modal. */
+export interface LegislatorProfile extends RosterMember {
+  committees: Array<{ name: string; cargo: string | null }>;
+}
+
+export interface CongresoData {
+  legislators: LegislatorProfile[];
+  commissions: CommissionWithMembers[];
+  /** Distinct party siglas present, sorted, for the filter UI. */
+  parties: string[];
+  /** Distinct province names (display form), sorted; "Exterior" sentinel for ultramar. */
+  provinces: string[];
+}
+
+/**
+ * Everything the /congresistas page needs: the full roster (both chambers), each enriched
+ * with their committee seats, plus the standalone committee composition and the facet
+ * lists (parties, provinces) for client-side filtering.
+ *
+ * Cached for 5 min: the roster changes weekly (the `roster` ingestion), so re-querying
+ * ~2.8k rows on every page view is wasteful. `revalidate` keeps it fresh enough.
+ */
+async function _getCongreso(): Promise<CongresoData> {
+  const d = await db();
+  const [roster, commissions, seats] = await Promise.all([
+    listLegislators(d),
+    commissionsWithMembers(d),
+    legislatorCommittees(d),
+  ]);
+
+  // Index committee seats: Diputados link reliably by sourceId; Senado has no member id,
+  // so fall back to a normalized-name key.
+  const nameKey = (s: string) => normProvince(s);
+  const bySourceId = new Map<string, Array<{ name: string; cargo: string | null }>>();
+  const byName = new Map<string, Array<{ name: string; cargo: string | null }>>();
+  for (const s of seats) {
+    const entry = { name: s.commissionName, cargo: s.cargo };
+    if (s.legislatorSourceId) {
+      (bySourceId.get(s.legislatorSourceId) ?? bySourceId.set(s.legislatorSourceId, []).get(s.legislatorSourceId)!).push(entry);
+    }
+    const nk = nameKey(s.legislatorName);
+    (byName.get(nk) ?? byName.set(nk, []).get(nk)!).push(entry);
+  }
+
+  const legislators: LegislatorProfile[] = roster.map((l) => ({
+    ...l,
+    committees: bySourceId.get(l.sourceId) ?? byName.get(nameKey(l.fullName)) ?? [],
+  }));
+
+  const parties = [...new Set(roster.map((l) => l.partyShort).filter((p): p is string => !!p))].sort();
+  const provinces = [...new Set(roster.map((l) => l.province).filter((p): p is string => !!p))].sort(
+    (a, b) => a.localeCompare(b, "es"),
+  );
+  return { legislators, commissions, parties, provinces };
+}
+export const getCongreso = unstable_cache(_getCongreso, ["congreso-roster"], { revalidate: 300 });
 
 export async function getInitiatives(opts: {
   limit?: number;
@@ -237,6 +314,17 @@ export async function getCommissions(chamber?: string) {
   const d = await db();
   return listCommissions(d, { chamber });
 }
+
+/** Committees with full membership (president/VP/secretary/members) for a chamber.
+ *  Cached 5 min — composition changes weekly with the roster ingestion. */
+export const getCommissionsWithMembers = unstable_cache(
+  async (chamber?: string): Promise<CommissionWithMembers[]> => {
+    const d = await db();
+    return commissionsWithMembers(d, { chamber });
+  },
+  ["commissions-with-members"],
+  { revalidate: 300 },
+);
 
 // --- Regulatory monitoring ---
 

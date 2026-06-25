@@ -103,6 +103,7 @@ const DDL: string[] = [
   `CREATE INDEX IF NOT EXISTS initiatives_category_idx ON initiatives (category)`,
   `CREATE INDEX IF NOT EXISTS initiatives_risk_idx ON initiatives (risk_level)`,
   `CREATE INDEX IF NOT EXISTS initiatives_chamber_idx ON initiatives (chamber)`,
+  `CREATE INDEX IF NOT EXISTS initiatives_filed_at_idx ON initiatives (filed_at)`,
   `ALTER TABLE initiatives ADD COLUMN IF NOT EXISTS sponsor_role text`,
   `ALTER TABLE initiatives ADD COLUMN IF NOT EXISTS sponsor_count integer`,
   `
@@ -123,10 +124,19 @@ const DDL: string[] = [
       sponsor_record text,
       executive_support text,
       stakeholder_support text,
-      social_pressure_count integer,
+      social_pressure_count integer CHECK (social_pressure_count >= 0),
       provenance jsonb,
       updated_at timestamp NOT NULL DEFAULT now()
     )`,
+  // Idempotently enforce the non-negative guard on already-created tables too (the
+  // CREATE above only applies it to a fresh DB). Verified safe against current data
+  // (min social_pressure_count = 1). Postgres has no ADD CONSTRAINT IF NOT EXISTS, so
+  // guard on pg_constraint name.
+  `DO $$ BEGIN
+     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'score_inputs_social_pressure_count_check') THEN
+       ALTER TABLE score_inputs ADD CONSTRAINT score_inputs_social_pressure_count_check CHECK (social_pressure_count >= 0);
+     END IF;
+   END $$`,
   `
     CREATE TABLE IF NOT EXISTS activity_events (
       id serial PRIMARY KEY,
@@ -172,6 +182,50 @@ const DDL: string[] = [
     )`,
   `CREATE UNIQUE INDEX IF NOT EXISTS commissions_uq ON commissions (source, chamber, name)`,
   `CREATE INDEX IF NOT EXISTS commissions_chamber_idx ON commissions (chamber)`,
+  `
+    CREATE TABLE IF NOT EXISTS legislators (
+      id serial PRIMARY KEY,
+      source text NOT NULL,
+      source_id text NOT NULL,
+      chamber text NOT NULL,
+      full_name text NOT NULL,
+      province text,
+      circumscription text,
+      party text,
+      party_short text,
+      role text,
+      representation_level text,
+      period text,
+      photo_url text,
+      email text,
+      phone text,
+      profession text,
+      source_url text,
+      raw jsonb,
+      first_seen_at timestamp NOT NULL DEFAULT now(),
+      last_seen_at timestamp NOT NULL DEFAULT now(),
+      updated_at timestamp NOT NULL DEFAULT now()
+    )`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS legislators_source_uq ON legislators (source, source_id)`,
+  `CREATE INDEX IF NOT EXISTS legislators_chamber_idx ON legislators (chamber)`,
+  `CREATE INDEX IF NOT EXISTS legislators_province_idx ON legislators (province)`,
+  `
+    CREATE TABLE IF NOT EXISTS commission_members (
+      id serial PRIMARY KEY,
+      source text NOT NULL,
+      chamber text NOT NULL,
+      commission_name text NOT NULL,
+      commission_source_id text,
+      legislator_name text NOT NULL,
+      legislator_source_id text,
+      cargo text,
+      party text,
+      source_url text,
+      updated_at timestamp NOT NULL DEFAULT now()
+    )`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS commission_members_uq ON commission_members (source, commission_name, legislator_name)`,
+  `CREATE INDEX IF NOT EXISTS commission_members_commission_idx ON commission_members (commission_name)`,
+  `CREATE INDEX IF NOT EXISTS commission_members_chamber_idx ON commission_members (chamber)`,
   `
     CREATE TABLE IF NOT EXISTS documents (
       id serial PRIMARY KEY,
@@ -229,4 +283,5 @@ const DDL: string[] = [
       details jsonb
     )`,
   `ALTER TABLE ingestion_runs ADD COLUMN IF NOT EXISTS details jsonb`,
+  `CREATE INDEX IF NOT EXISTS ingestion_runs_source_started_idx ON ingestion_runs (source, started_at DESC)`,
 ];

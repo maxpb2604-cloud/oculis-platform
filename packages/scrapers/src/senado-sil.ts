@@ -144,7 +144,7 @@ function stripTags(html: string): string {
 }
 
 /** Parse the `lista_expedientes.aspx` HTML into one row per deposited initiative. */
-export function parseExpedientesList(html: string, coleccion: number): SenadoExpediente[] {
+export function parseExpedientesList(html: string, _coleccion: number): SenadoExpediente[] {
   const out: SenadoExpediente[] = [];
   const rows = html.match(/<tr[^>]*>[\s\S]*?<\/tr>/gi) ?? [];
   for (const row of rows) {

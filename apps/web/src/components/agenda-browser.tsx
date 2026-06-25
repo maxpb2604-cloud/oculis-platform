@@ -8,6 +8,7 @@
  */
 import { useMemo, useState } from "react";
 import { ScopeChip, StatusChip, type ActivityItem } from "@/components/monitoring";
+import { formatISODate } from "@/lib/format";
 
 export interface AgendaSection {
   key: string;
@@ -23,12 +24,10 @@ function rowTitle(item: ActivityItem, es: boolean): string {
 
 function AgendaRow({ item, es }: { item: ActivityItem; es: boolean }) {
   const statuses = item.statuses ?? [];
-  const date = item.eventDate
-    ? `${item.eventDate.slice(8, 10)}/${item.eventDate.slice(5, 7)}/${item.eventDate.slice(0, 4)}`
-    : null;
+  const date = item.eventDate ? formatISODate(item.eventDate, es ? "es" : "en") : null;
   return (
     <div className="flex items-start gap-3 border-b px-4 py-3 last:border-0">
-      <div className="pt-0.5"><ScopeChip scope={item.scope} /></div>
+      <div className="pt-0.5"><ScopeChip scope={item.scope} lang={es ? "es" : "en"} /></div>
       <div className="min-w-0 flex-1">
         <div className="text-sm font-medium leading-snug">{rowTitle(item, es)}</div>
         <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px]" style={{ color: "var(--text-muted)" }}>
@@ -107,7 +106,7 @@ export function AgendaBrowser({ sections, lang }: { sections: AgendaSection[]; l
               <span className="tnum text-[12px] font-semibold" style={{ color: "var(--text-muted)" }}>{s.items.length}</span>
             </div>
             {s.items.length === 0 ? (
-              <div className="px-4 py-8 text-center text-sm" style={{ color: "var(--text-muted)" }}>
+              <div role="status" className="px-4 py-8 text-center text-sm" style={{ color: "var(--text-muted)" }}>
                 {ql ? (es ? "Sin coincidencias para la búsqueda." : "No matches for your search.") : (es ? "Sin actividad reciente." : "No recent activity.")}
               </div>
             ) : (

@@ -8,14 +8,23 @@ import {
   activityEvents,
   activityInitiatives,
   commissions,
+  commissionMembers,
   documents,
   ingestionRuns,
   initiatives,
+  legislators,
   regulations,
   scoreInputs,
   statusEvents,
 } from "./schema.js";
-import type { NewCommission, NewDocument, NewInitiative, NewRegulation } from "./schema.js";
+import type {
+  NewCommission,
+  NewCommissionMember,
+  NewDocument,
+  NewInitiative,
+  NewLegislator,
+  NewRegulation,
+} from "./schema.js";
 
 export interface UpsertResult {
   id: number;
@@ -290,12 +299,14 @@ export interface InitiativeListItem {
   province: string | null;
   filedAt: string | null;
   sourceUrl: string | null;
+  needsReview: boolean;
 }
 
 export interface InitiativeFilters {
   search?: string;
   category?: string;
   risk?: string;
+  approval?: string;
   party?: string;
   status?: string;
   chamber?: string;
@@ -314,6 +325,7 @@ function filterConds(f: InitiativeFilters) {
   const conds = [];
   if (f.category) conds.push(eq(initiatives.category, f.category));
   if (f.risk) conds.push(eq(initiatives.riskLevel, f.risk));
+  if (f.approval) conds.push(eq(initiatives.approvalProbability, f.approval));
   if (f.party) conds.push(eq(initiatives.party, f.party));
   if (f.status) conds.push(eq(initiatives.status, f.status));
   if (f.chamber) conds.push(eq(initiatives.chamber, f.chamber));
@@ -354,6 +366,7 @@ export async function listInitiatives(
       province: initiatives.province,
       filedAt: initiatives.filedAt,
       sourceUrl: initiatives.sourceUrl,
+      needsReview: initiatives.needsReview,
     })
     .from(initiatives)
     .where(where)
@@ -986,9 +999,186 @@ export async function listRecentInitiatives(
       province: initiatives.province,
       filedAt: initiatives.filedAt,
       sourceUrl: initiatives.sourceUrl,
+      needsReview: initiatives.needsReview,
     })
     .from(initiatives)
     .where(where)
     .orderBy(sql`${initiatives.filedAt} desc nulls last`)
     .limit(limit);
+}
+
+// ---------------------------------------------------------------------------
+// Legislator roster + committee membership (full elected Congress)
+// ---------------------------------------------------------------------------
+
+/** Upsert a legislator (by source+source_id); refreshes the mutable roster fields. */
+export async function upsertLegislator(db: Database, l: NewLegislator): Promise<void> {
+  await db
+    .insert(legislators)
+    .values(l)
+    .onConflictDoUpdate({
+      target: [legislators.source, legislators.sourceId],
+      set: {
+        chamber: l.chamber,
+        fullName: l.fullName,
+        province: l.province,
+        circumscription: l.circumscription,
+        party: l.party,
+        partyShort: l.partyShort,
+        role: l.role,
+        representationLevel: l.representationLevel,
+        period: l.period,
+        photoUrl: l.photoUrl,
+        email: l.email,
+        phone: l.phone,
+        profession: l.profession,
+        sourceUrl: l.sourceUrl,
+        raw: l.raw,
+        lastSeenAt: sql`now()`,
+        updatedAt: sql`now()`,
+      },
+    });
+}
+
+/** Upsert a committee membership row (by source+commission+person); refreshes cargo. */
+export async function upsertCommissionMember(db: Database, m: NewCommissionMember): Promise<void> {
+  await db
+    .insert(commissionMembers)
+    .values(m)
+    .onConflictDoUpdate({
+      target: [commissionMembers.source, commissionMembers.commissionName, commissionMembers.legislatorName],
+      set: {
+        chamber: m.chamber,
+        commissionSourceId: m.commissionSourceId,
+        legislatorSourceId: m.legislatorSourceId,
+        cargo: m.cargo,
+        party: m.party,
+        sourceUrl: m.sourceUrl,
+        updatedAt: sql`now()`,
+      },
+    });
+}
+
+export interface RosterMember {
+  id: number;
+  sourceId: string;
+  chamber: string;
+  fullName: string;
+  province: string | null;
+  circumscription: string | null;
+  party: string | null;
+  partyShort: string | null;
+  role: string | null;
+  representationLevel: string | null;
+  period: string | null;
+  photoUrl: string | null;
+  email: string | null;
+  phone: string | null;
+  profession: string | null;
+  sourceUrl: string | null;
+}
+
+/** Full roster, optionally filtered by chamber/province/party. Ordered by chamber, name. */
+export async function listLegislators(
+  db: Database,
+  opts: { chamber?: string; province?: string; party?: string } = {},
+): Promise<RosterMember[]> {
+  const conds = [];
+  if (opts.chamber) conds.push(eq(legislators.chamber, opts.chamber));
+  if (opts.province) conds.push(eq(legislators.province, opts.province));
+  if (opts.party) conds.push(eq(legislators.partyShort, opts.party));
+  const where = conds.length ? and(...conds) : undefined;
+  return db
+    .select({
+      id: legislators.id,
+      sourceId: legislators.sourceId,
+      chamber: legislators.chamber,
+      fullName: legislators.fullName,
+      province: legislators.province,
+      circumscription: legislators.circumscription,
+      party: legislators.party,
+      partyShort: legislators.partyShort,
+      role: legislators.role,
+      representationLevel: legislators.representationLevel,
+      period: legislators.period,
+      photoUrl: legislators.photoUrl,
+      email: legislators.email,
+      phone: legislators.phone,
+      profession: legislators.profession,
+      sourceUrl: legislators.sourceUrl,
+    })
+    .from(legislators)
+    .where(where)
+    .orderBy(legislators.chamber, legislators.fullName);
+}
+
+export interface LegislatorCommittee {
+  legislatorSourceId: string | null;
+  legislatorName: string;
+  chamber: string;
+  commissionName: string;
+  cargo: string | null;
+}
+
+/** Every committee seat as a flat list — used to attach committees to each legislator. */
+export async function legislatorCommittees(db: Database): Promise<LegislatorCommittee[]> {
+  return db
+    .select({
+      legislatorSourceId: commissionMembers.legislatorSourceId,
+      legislatorName: commissionMembers.legislatorName,
+      chamber: commissionMembers.chamber,
+      commissionName: commissionMembers.commissionName,
+      cargo: commissionMembers.cargo,
+    })
+    .from(commissionMembers)
+    .orderBy(commissionMembers.commissionName);
+}
+
+export interface CommissionWithMembers {
+  chamber: string;
+  name: string;
+  members: Array<{ name: string; cargo: string | null; party: string | null }>;
+}
+
+/** Every committee with its full membership (president/VP/secretary/members), grouped. */
+export async function commissionsWithMembers(
+  db: Database,
+  opts: { chamber?: string } = {},
+): Promise<CommissionWithMembers[]> {
+  const where = opts.chamber ? eq(commissionMembers.chamber, opts.chamber) : undefined;
+  const rows = await db
+    .select({
+      chamber: commissionMembers.chamber,
+      name: commissionMembers.commissionName,
+      memberName: commissionMembers.legislatorName,
+      cargo: commissionMembers.cargo,
+      party: commissionMembers.party,
+    })
+    .from(commissionMembers)
+    .where(where)
+    .orderBy(commissionMembers.chamber, commissionMembers.commissionName);
+
+  // Officers first (Presidente, Vicepresidente, Secretario), then plain members A→Z.
+  const rank = (c: string | null) =>
+    c === "Presidente" ? 0 : c === "Vicepresidente" ? 1 : c === "Secretario" ? 2 : 3;
+  const byCommission = new Map<string, CommissionWithMembers>();
+  for (const r of rows) {
+    const key = `${r.chamber}::${r.name}`;
+    const entry = byCommission.get(key) ?? { chamber: r.chamber, name: r.name, members: [] };
+    entry.members.push({ name: r.memberName, cargo: r.cargo, party: r.party });
+    byCommission.set(key, entry);
+  }
+  const out = [...byCommission.values()];
+  for (const c of out) {
+    c.members.sort((a, b) => rank(a.cargo) - rank(b.cargo) || a.name.localeCompare(b.name));
+  }
+  return out;
+}
+
+/** Full roster grouped by province → { diputados, senadores }, keyed by raw province name. */
+export async function rosterByProvince(
+  db: Database,
+): Promise<Array<{ province: string | null; member: RosterMember }>> {
+  const rows = await listLegislators(db);
+  return rows.map((member) => ({ province: member.province, member }));
 }

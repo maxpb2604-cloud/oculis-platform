@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { getDashboardData, getInitiativesByProvince, getLegislatorsByProvince } from "@/lib/data";
-import { dict, type Lang } from "@/lib/i18n";
+import { dict, langQuery, type Lang } from "@/lib/i18n";
 import { AppShell } from "@/components/app-shell";
-import { ChartGrid, GeoOverview, Insight, KpiBand, Panel, SectionHeading } from "@/components/dashboard";
+import { ChartGrid, GeoOverview, KpiBand, Panel, SectionHeading } from "@/components/dashboard";
 import { InitiativesTable } from "@/components/initiatives-table";
 
 export const dynamic = "force-dynamic";
@@ -16,7 +16,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ l
     getLegislatorsByProvince(),
   ]);
   const empty = data.kpis.total === 0;
-  const q = lang === "en" ? "?lang=en" : "";
+  const q = langQuery(lang);
 
   return (
     <AppShell
@@ -24,11 +24,10 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ l
       title={lang === "es" ? "Resumen Ejecutivo" : "Executive Summary"}
       subtitle={`${t.legislative} · ${t.source}`}
     >
-      {!empty && <Insight lang={lang} data={data} />}
       <KpiBand lang={lang} data={data} />
 
       {empty ? (
-        <EmptyState lang={lang} message={t.noData} />
+        <EmptyState message={t.noData} />
       ) : (
         <>
           <GeoOverview lang={lang} data={data} provinceFC={provinceFC} legislators={legislators} />
@@ -61,7 +60,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ l
   );
 }
 
-function EmptyState({ lang, message }: { lang: Lang; message: string }) {
+function EmptyState({ message }: { message: string }) {
   return (
     <div className="card mt-6 border-dashed p-12 text-center text-sm" style={{ color: "var(--text-muted)" }}>
       {message}

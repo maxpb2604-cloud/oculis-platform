@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { CATEGORY_LABELS, type Category } from "@oculis/core";
 import { getInitiative } from "@/lib/data";
-import { dict, type Lang } from "@/lib/i18n";
+import { dict, langQuery, type Lang } from "@/lib/i18n";
 import { AppShell } from "@/components/app-shell";
 import { Panel, SectionHeading } from "@/components/dashboard";
 import { RiskPill } from "@/components/initiatives-table";
@@ -19,7 +19,7 @@ export default async function Page({
   const { id } = await params;
   const lang: Lang = (await searchParams).lang === "en" ? "en" : "es";
   const t = dict[lang];
-  const q = lang === "en" ? "?lang=en" : "";
+  const q = langQuery(lang);
 
   const ini = await getInitiative(Number(id));
   if (!ini) notFound();
