@@ -290,6 +290,80 @@ export class RssFeedAdapter implements FeedAdapter {
   }
 }
 
+/** Clean a Google-News source label ("El Nacional — La voz…", "elcaribe.com.do") → name. */
+function cleanOutlet(s: string | null): string | null {
+  if (!s) return null;
+  const o = s.split(/[—|–]/)[0]!.trim();
+  const map: Record<string, string> = {
+    "elcaribe.com.do": "El Caribe",
+    "listindiario.com": "Listín Diario",
+    "acento.com.do": "Acento",
+    "hoy.com.do": "Hoy",
+    "elnacional.com.do": "El Nacional",
+    "diariolibre.com": "Diario Libre",
+    "n.com.do": "N Digital",
+    "eldia.com.do": "El Día",
+  };
+  return map[o.toLowerCase()] ?? o;
+}
+
+/**
+ * Google News RSS adapter — the reliable path for outlets whose own RSS is dead/redirected
+ * (Listín, Acento, El Nacional, Hoy, El Caribe). Queries Google News restricted to DR sites
+ * + Congress terms, so results are recent, DR-specific, and source-attributed. The item's
+ * outlet is parsed from the "Headline - Outlet" title and stored as `author` (shown on the
+ * card). Items older than ~5 weeks are dropped (Google sometimes mixes in stale results).
+ */
+export class GoogleNewsAdapter implements FeedAdapter {
+  readonly source: string;
+  readonly kind: FeedKind = "NEWS";
+  constructor(private readonly opts: { source: string; query: string }) {
+    this.source = opts.source;
+  }
+
+  async collect(): Promise<{ items: RawFeedItem[]; gaps: string[] }> {
+    const url = `https://news.google.com/rss/search?q=${encodeURIComponent(this.opts.query)}&hl=es-419&gl=DO&ceid=DO:es-419`;
+    const items: RawFeedItem[] = [];
+    const gaps: string[] = [];
+    const cutoff = Date.now() - 35 * 86_400_000;
+    try {
+      const rss = await readRichRss(url);
+      const seen = new Set<string>();
+      for (const r of rss) {
+        if (!r.title) continue;
+        if (r.publishedAt && Date.parse(r.publishedAt) < cutoff) continue; // drop stale
+        const idx = r.title.lastIndexOf(" - ");
+        const outlet = cleanOutlet(idx > 0 ? r.title.slice(idx + 3) : null);
+        const title = idx > 0 ? r.title.slice(0, idx).trim() : r.title;
+        const sourceId = r.guid ?? r.link ?? title;
+        if (seen.has(sourceId)) continue;
+        seen.add(sourceId);
+        items.push({
+          source: this.source,
+          sourceId,
+          kind: "NEWS",
+          title,
+          summary: null, // Google News descriptions are just a link, not a usable summary
+          imageUrl: null,
+          url: r.link,
+          author: outlet,
+          handle: null,
+          platform: "RSS",
+          category: null,
+          publishedAt: r.publishedAt,
+          chamber: null,
+          initiativeCodes: extractCodes(title),
+          raw: r,
+        });
+      }
+      if (rss.length === 0) gaps.push(`${this.source}: 0 ítems de Google News.`);
+    } catch (err) {
+      gaps.push(`${this.source}: ${(err as Error).message}`);
+    }
+    return { items, gaps };
+  }
+}
+
 /** Official chamber news — everything they publish is in scope (no keyword filter). */
 export function officialFeedAdapters(): FeedAdapter[] {
   return [
@@ -312,11 +386,25 @@ export function officialFeedAdapters(): FeedAdapter[] {
 }
 
 /**
- * Respected DR press. Returns ALL items; the worker applies precise relevance (Congress /
- * cabinet-change signals + mentions of a known legislator/commission/bill) so a story that
- * names a congressperson without a keyword still passes, while crime/sports noise is dropped.
+ * Respected DR press. Diario Libre's own RSS still works (direct article links); the other
+ * outlets (Listín, Acento, El Nacional, Hoy, El Caribe…) killed/redirected their feeds, so
+ * a single Google-News adapter — restricted to those DR sites + Congress terms — supplies
+ * recent, source-attributed Congress news from them. The worker still applies relevance.
  */
 export function pressFeedAdapters(): FeedAdapter[] {
+  const sites = [
+    "listindiario.com",
+    "acento.com.do",
+    "elnacional.com.do",
+    "hoy.com.do",
+    "elcaribe.com.do",
+    "n.com.do",
+    "eldia.com.do",
+  ]
+    .map((s) => `site:${s}`)
+    .join(" OR ");
+  const terms =
+    '(congreso OR senado OR senador OR diputados OR "cámara de diputados" OR legislación OR legislativo OR gabinete)';
   return [
     new RssFeedAdapter({
       source: "feed-diariolibre",
@@ -326,31 +414,7 @@ export function pressFeedAdapters(): FeedAdapter[] {
         "https://www.diariolibre.com/rss/actualidad.xml",
       ],
     }),
-    new RssFeedAdapter({
-      source: "feed-listin",
-      kind: "NEWS",
-      feeds: ["https://listindiario.com/rss/lo-ultimo/", "https://listindiario.com/feed/"],
-    }),
-    new RssFeedAdapter({
-      source: "feed-acento",
-      kind: "NEWS",
-      feeds: ["https://acento.com.do/politica/feed/", "https://acento.com.do/feed/"],
-    }),
-    new RssFeedAdapter({
-      source: "feed-elnacional",
-      kind: "NEWS",
-      feeds: ["https://elnacional.com.do/feed/"],
-    }),
-    new RssFeedAdapter({
-      source: "feed-hoy",
-      kind: "NEWS",
-      feeds: ["https://hoy.com.do/feed/"],
-    }),
-    new RssFeedAdapter({
-      source: "feed-elcaribe",
-      kind: "NEWS",
-      feeds: ["https://www.elcaribe.com.do/feed/"],
-    }),
+    new GoogleNewsAdapter({ source: "feed-prensa", query: `(${sites}) ${terms} when:14d` }),
   ];
 }
 

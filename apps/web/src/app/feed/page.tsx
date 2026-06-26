@@ -4,6 +4,7 @@ import {
   getFeedTrending,
   getSuggestedAccounts,
   getInitiativeByCode,
+  todayISO,
 } from "@/lib/data";
 import { type Lang } from "@/lib/i18n";
 import { shortBillName } from "@/lib/format";
@@ -63,6 +64,7 @@ export default async function FeedPage({ searchParams }: { searchParams: Promise
             initial={page.items}
             nextCursor={page.nextCursor}
             filters={filters}
+            today={todayISO()}
           />
         )}
         <FeedRail
