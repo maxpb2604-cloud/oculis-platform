@@ -29,7 +29,29 @@ interface Detail {
   filedAt: string | null;
   sourceUrl: string | null;
   events?: { status: string; eventDate: string | null; note: string | null }[];
+  relatedNews?: {
+    id: number;
+    kind: string;
+    title: string;
+    url: string | null;
+    source: string;
+    publishedAt: string | null;
+  }[];
 }
+
+/** Friendly source label for the related-news badges. */
+const NEWS_SRC: Record<string, string> = {
+  "feed-senado": "Senado",
+  "feed-diputados": "Diputados",
+  "feed-diariolibre": "Diario Libre",
+  "feed-listin": "Listín",
+  "feed-acento": "Acento",
+  "feed-elnacional": "El Nacional",
+  "feed-hoy": "Hoy",
+  "feed-elcaribe": "El Caribe",
+  "feed-x": "X",
+  "feed-legislative": "Señal",
+};
 
 export function InitiativeModalHost({ lang }: { lang: "es" | "en" }) {
   const es = lang === "es";
@@ -192,6 +214,36 @@ export function InitiativeModalHost({ lang }: { lang: "es" | "en" }) {
                 <span className="text-sm" style={{ color: "var(--text-muted)" }}>{es ? "Sin enlace." : "No link."}</span>
               )}
             </Section>
+
+            {data.relatedNews && data.relatedNews.length > 0 && (
+              <Section title={es ? "Noticias relacionadas" : "Related news"}>
+                <ul className="flex flex-col gap-2">
+                  {data.relatedNews.slice(0, 6).map((n) => (
+                    <li key={n.id} className="leading-snug">
+                      {n.url ? (
+                        <a
+                          href={n.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-[13px] hover:underline"
+                          style={{ color: "var(--text)" }}
+                        >
+                          <span
+                            className="mr-1.5 rounded px-1 py-0.5 text-[9.5px] font-semibold uppercase tracking-wide"
+                            style={{ color: "var(--accent)", background: "var(--accent-soft)" }}
+                          >
+                            {NEWS_SRC[n.source] ?? n.kind}
+                          </span>
+                          {n.title}
+                        </a>
+                      ) : (
+                        <span className="text-[13px]">{n.title}</span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </Section>
+            )}
           </div>
         )}
       </div>

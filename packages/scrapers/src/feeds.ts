@@ -3,7 +3,7 @@
  *
  * Three kinds of source feed the Congress timeline, all link-back-able and verifiable:
  *  - OFFICIAL: Senado + Cámara de Diputados news (their WordPress RSS).
- *  - NEWS: respected DR papers' RSS, keyword-filtered for Congress/legislation.
+ *  - NEWS: respected DR papers' RSS (the worker filters to Congress/cabinet relevance).
  *  - SOCIAL: X / Instagram via a CREDENTIAL-GATED adapter driven by the curated
  *    account registry (`feed_accounts`). With no API token it returns nothing (the
  *    accounts remain a browsable directory); with a token it pulls recent posts.
@@ -49,12 +49,74 @@ export interface FeedAdapter {
 
 // --- RSS/Atom reader with image + author extraction (no XML dependency) ---
 
+/** Named HTML entities common in DR-Spanish RSS (accents, punctuation, symbols). */
+const NAMED_ENTITIES: Record<string, string> = {
+  amp: "&",
+  lt: "<",
+  gt: ">",
+  quot: '"',
+  apos: "'",
+  nbsp: " ",
+  aacute: "á",
+  eacute: "é",
+  iacute: "í",
+  oacute: "ó",
+  uacute: "ú",
+  Aacute: "Á",
+  Eacute: "É",
+  Iacute: "Í",
+  Oacute: "Ó",
+  Uacute: "Ú",
+  ntilde: "ñ",
+  Ntilde: "Ñ",
+  uuml: "ü",
+  Uuml: "Ü",
+  ccedil: "ç",
+  Ccedil: "Ç",
+  iquest: "¿",
+  iexcl: "¡",
+  ordf: "ª",
+  ordm: "º",
+  deg: "°",
+  middot: "·",
+  laquo: "«",
+  raquo: "»",
+  hellip: "…",
+  mdash: "—",
+  ndash: "–",
+  lsquo: "‘",
+  rsquo: "’",
+  ldquo: "“",
+  rdquo: "”",
+  euro: "€",
+  trade: "™",
+  copy: "©",
+  reg: "®",
+};
+
+function decodeOnce(s: string): string {
+  return s
+    .replace(/&#[xX]([0-9a-fA-F]+);/g, (_, h) => safeCodePoint(parseInt(h, 16)))
+    .replace(/&#(\d+);/g, (_, n) => safeCodePoint(parseInt(n, 10)))
+    .replace(/&([a-zA-Z][a-zA-Z0-9]+);/g, (m, name) => NAMED_ENTITIES[name] ?? m);
+}
+/** Decode numeric (&#243; / &#xF3;) and named (&aacute;) HTML entities — twice, to
+ *  handle the double-encoding some feeds emit (e.g. "&amp;#37;" → "&#37;" → "%"). */
+function decodeEntities(s: string): string {
+  const once = decodeOnce(s);
+  return /&(#\d|#x|[a-zA-Z]+;)/.test(once) ? decodeOnce(once) : once;
+}
+function safeCodePoint(n: number): string {
+  if (!Number.isFinite(n) || n < 0 || n > 0x10ffff) return "";
+  try {
+    return String.fromCodePoint(n);
+  } catch {
+    return "";
+  }
+}
+
 const strip = (s: string) =>
-  s
-    .replace(/<!\[CDATA\[|\]\]>/g, "")
-    .replace(/<[^>]+>/g, "")
-    .replace(/&nbsp;/g, " ")
-    .replace(/&amp;/g, "&")
+  decodeEntities(s.replace(/<!\[CDATA\[|\]\]>/g, "").replace(/<[^>]+>/g, ""))
     .replace(/\s+/g, " ")
     .trim();
 
@@ -141,9 +203,27 @@ export async function readRichRss(url: string): Promise<RichRssItem[]> {
   });
 }
 
-/** Keep only items that actually concern Congress / legislation (for general press feeds). */
+/**
+ * Precise Congress/legislation signal. Deliberately specific — it does NOT match bare
+ * "ley" / "comisión" / "resolución" (which appear in crime/judicial stories: "comisión
+ * de un delito", "ley seca"), only legislative contexts.
+ */
 export const CONGRESS_RE =
-  /\b(congreso|senad[oa]|senador|diputad|c[áa]mara\s+(de\s+)?diputad|legislaci|legislativ|ley(es)?|proyecto\s+de\s+ley|resoluci[óo]n|comisi[óo]n|pleno|bicameral|reglamento)\b/i;
+  /\b(congreso\s+nacional|congreso|senado|senador(?:es|a)?|diputad[oa]s?|c[áa]mara\s+de\s+diputad|c[áa]mara\s+baja|c[áa]mara\s+alta|legislaci[óo]n|legislativ[oa]s?|legislador(?:es|a)?|proyecto\s+de\s+ley|proyecto\s+de\s+resoluci[óo]n|ley\s+(?:de|org[áa]nica|general|n[úu]m|que|sobre)|pieza\s+legislativa|bicameral|hemiciclo|curul|pleno\s+(?:del?\s+)?(?:senado|congreso|c[áa]mara))\b/i;
+
+/**
+ * Cabinet / congressist CHANGES (the user wants these too): a change verb (juramenta,
+ * destituye, designa, nombra, renuncia, sustituye, releva, ratifica, toma posesión) near
+ * an official role (ministro, gabinete, cónsul, embajador, director, senador, diputado…),
+ * or a bare "gabinete" mention.
+ */
+export const CABINET_RE =
+  /\bgabinete\b|\b(?:juramenta\w*|juramentaci[óo]n|destituy\w*|destituci[óo]n|design[aó]\w*|designaci[óo]n|nombr[aó]\w*|nombramiento|renunci[aó]\w*|sustituy\w*|relev[aó]\w*|ratific\w*|posesion\w*|toma\s+de\s+posesi[óo]n)\b[^.;]{0,45}\b(ministr[oa]s?|gabinete|c[óo]nsul|embajador(?:a)?|director(?:a)?\s+general|superintendent\w*|procurador\w*|viceministr\w*|senador(?:es|a)?|diputad[oa]s?)\b/i;
+
+/** Whether a piece of text concerns Congress, legislation, or a cabinet/congressist change. */
+export function isCongressRelevant(text: string): boolean {
+  return CONGRESS_RE.test(text) || CABINET_RE.test(text);
+}
 
 export interface RssAdapterOpts {
   source: string;
@@ -231,14 +311,16 @@ export function officialFeedAdapters(): FeedAdapter[] {
   ];
 }
 
-/** Respected DR press — keyword-filtered to Congress/legislation to cut noise. */
+/**
+ * Respected DR press. Returns ALL items; the worker applies precise relevance (Congress /
+ * cabinet-change signals + mentions of a known legislator/commission/bill) so a story that
+ * names a congressperson without a keyword still passes, while crime/sports noise is dropped.
+ */
 export function pressFeedAdapters(): FeedAdapter[] {
-  const k = CONGRESS_RE;
   return [
     new RssFeedAdapter({
       source: "feed-diariolibre",
       kind: "NEWS",
-      keywordFilter: k,
       feeds: [
         "https://www.diariolibre.com/rss/portada.xml",
         "https://www.diariolibre.com/rss/actualidad.xml",
@@ -247,31 +329,26 @@ export function pressFeedAdapters(): FeedAdapter[] {
     new RssFeedAdapter({
       source: "feed-listin",
       kind: "NEWS",
-      keywordFilter: k,
       feeds: ["https://listindiario.com/rss/lo-ultimo/", "https://listindiario.com/feed/"],
     }),
     new RssFeedAdapter({
       source: "feed-acento",
       kind: "NEWS",
-      keywordFilter: k,
       feeds: ["https://acento.com.do/politica/feed/", "https://acento.com.do/feed/"],
     }),
     new RssFeedAdapter({
       source: "feed-elnacional",
       kind: "NEWS",
-      keywordFilter: k,
       feeds: ["https://elnacional.com.do/feed/"],
     }),
     new RssFeedAdapter({
       source: "feed-hoy",
       kind: "NEWS",
-      keywordFilter: k,
       feeds: ["https://hoy.com.do/feed/"],
     }),
     new RssFeedAdapter({
       source: "feed-elcaribe",
       kind: "NEWS",
-      keywordFilter: k,
       feeds: ["https://www.elcaribe.com.do/feed/"],
     }),
   ];
@@ -333,6 +410,8 @@ export class XSocialAdapter {
             }
             for (const t of (tw?.data ?? []) as any[]) {
               const text = String(t.text ?? "");
+              // Only relevant tweets: about Congress / legislation / a cabinet change.
+              if (!isCongressRelevant(text)) continue;
               const key = t.attachments?.media_keys?.[0];
               items.push({
                 source: this.source,
