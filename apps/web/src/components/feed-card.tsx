@@ -75,7 +75,8 @@ const TAG_ICON: Record<string, string> = { INITIATIVE: "🏛", LEGISLATOR: "👤
 export function FeedCard({ item, lang }: { item: FeedListItem; lang: Lang }) {
   const es = lang === "es";
   const k = KIND_STYLE[item.kind] ?? KIND_STYLE.NEWS!;
-  const sourceName = item.handle ?? SOURCE_LABEL[item.source] ?? item.source;
+  // Prefer a friendly outlet label; for Google-News press the outlet is in `author`.
+  const sourceName = SOURCE_LABEL[item.source] ?? item.handle ?? item.author ?? item.source;
   const when = fmtDate(item.publishedAt, lang);
   const catLabel = item.category
     ? (CATEGORY_LABELS[item.category as Category] ?? item.category)
