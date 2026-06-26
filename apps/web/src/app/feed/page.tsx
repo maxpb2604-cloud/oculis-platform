@@ -4,6 +4,7 @@ import { AppShell } from "@/components/app-shell";
 import { FeedFilters } from "@/components/feed-filters";
 import { FeedTimeline } from "@/components/feed-timeline";
 import { FeedRail } from "@/components/feed-rail";
+import { FeedSocialDirectory } from "@/components/feed-social-directory";
 
 export const dynamic = "force-dynamic";
 
@@ -40,12 +41,16 @@ export default async function FeedPage({ searchParams }: { searchParams: Promise
     >
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-[230px_minmax(0,1fr)_290px]">
         <FeedFilters lang={lang} facets={facets} active={filters} />
-        <FeedTimeline
-          lang={lang}
-          initial={page.items}
-          nextCursor={page.nextCursor}
-          filters={filters}
-        />
+        {filters.kind === "SOCIAL" && page.items.length === 0 ? (
+          <FeedSocialDirectory lang={lang} accounts={accounts} />
+        ) : (
+          <FeedTimeline
+            lang={lang}
+            initial={page.items}
+            nextCursor={page.nextCursor}
+            filters={filters}
+          />
+        )}
         <FeedRail
           lang={lang}
           topics={trending.topics}
