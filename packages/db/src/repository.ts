@@ -1265,6 +1265,7 @@ export interface FeedTag {
   label: string;
   initiativeId: number | null;
   initiativeCode: string | null;
+  initiativeTitle: string | null; // bill title (shown instead of the code on the card)
   legislatorSourceId: string | null;
   commissionName: string | null;
 }
@@ -1365,10 +1366,12 @@ export async function listFeedItems(
           label: feedItemEntities.label,
           initiativeId: feedItemEntities.initiativeId,
           initiativeCode: feedItemEntities.initiativeCode,
+          initiativeTitle: initiatives.title,
           legislatorSourceId: feedItemEntities.legislatorSourceId,
           commissionName: feedItemEntities.commissionName,
         })
         .from(feedItemEntities)
+        .leftJoin(initiatives, eq(feedItemEntities.initiativeId, initiatives.id))
         .where(inArray(feedItemEntities.feedItemId, ids))
     : [];
   const tagsByItem = new Map<number, FeedTag[]>();
@@ -1379,6 +1382,7 @@ export async function listFeedItems(
       label: t.label,
       initiativeId: t.initiativeId,
       initiativeCode: t.initiativeCode,
+      initiativeTitle: t.initiativeTitle ?? null,
       legislatorSourceId: t.legislatorSourceId,
       commissionName: t.commissionName,
     });
@@ -1413,6 +1417,7 @@ export interface TrendingEntity {
   entityType: string;
   label: string;
   initiativeId: number | null;
+  title: string | null; // bill title (shown instead of the code)
   legislatorSourceId: string | null;
   count: number;
 }
@@ -1429,11 +1434,13 @@ export async function feedTrendingEntities(
       entityType: feedItemEntities.entityType,
       label: feedItemEntities.label,
       initiativeId: sql<number | null>`max(${feedItemEntities.initiativeId})`,
+      title: sql<string | null>`max(${initiatives.title})`,
       legislatorSourceId: sql<string | null>`max(${feedItemEntities.legislatorSourceId})`,
       count: sql<number>`count(*)::int`,
     })
     .from(feedItemEntities)
     .innerJoin(feedItems, eq(feedItemEntities.feedItemId, feedItems.id))
+    .leftJoin(initiatives, eq(feedItemEntities.initiativeId, initiatives.id))
     .where(sql`coalesce(${feedItems.publishedAt}, ${feedItems.firstSeenAt}) >= now() - make_interval(days => ${days})`)
     .groupBy(feedItemEntities.entityType, feedItemEntities.label)
     .orderBy(sql`count(*) desc`)
@@ -1543,6 +1550,19 @@ export async function listFeedForInitiative(
     )
     .orderBy(sql`coalesce(${feedItems.publishedAt}, ${feedItems.firstSeenAt}) desc`)
     .limit(limit);
+}
+
+/** Resolve an official bill code → its title (for the feed's active-filter label). */
+export async function initiativeByCode(
+  db: Database,
+  code: string,
+): Promise<{ id: number; title: string } | null> {
+  const [row] = await db
+    .select({ id: initiatives.id, title: initiatives.title })
+    .from(initiatives)
+    .where(eq(initiatives.code, code))
+    .limit(1);
+  return row ?? null;
 }
 
 export interface CommissionWithMembers {

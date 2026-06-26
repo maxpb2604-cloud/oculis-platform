@@ -24,3 +24,24 @@ export function formatISODayMonth(iso: string | null | undefined, lang: Lang): s
   if (!iso) return "";
   return formatISODate(iso, lang, { day: "2-digit", month: "2-digit" });
 }
+
+/**
+ * Readable short name for a bill, shown instead of its code on the feed. Strips the
+ * legalistic "Proyecto de ley/resolución … que/mediante la cual …" boilerplate to get
+ * to the substance, capitalizes, and trims to a chip-friendly length. Falls back to the
+ * given code when there's no title.
+ */
+export function shortBillName(title: string | null | undefined, code?: string | null): string {
+  const fallback = code ?? "Proyecto";
+  if (!title) return fallback;
+  let t = title.replace(/\s+/g, " ").trim();
+  t = t.replace(
+    /^proyecto\s+de\s+(ley|resoluci[óo]n)(\s+org[áa]nica)?\s+(de\s+la\s+c[áa]mara\s+de\s+diputados\s+|del\s+senado\s+(de\s+la\s+rep[úu]blica\s+)?)?(mediante\s+la\s+cual|por\s+la\s+cual|mediante\s+el\s+cual|que|para|sobre)?\s*/i,
+    "",
+  );
+  t = t.trim();
+  if (t.length < 4) t = title.replace(/\s+/g, " ").trim();
+  if (!t) return fallback;
+  t = t.charAt(0).toUpperCase() + t.slice(1);
+  return t.length > 68 ? `${t.slice(0, 65).trimEnd()}…` : t;
+}

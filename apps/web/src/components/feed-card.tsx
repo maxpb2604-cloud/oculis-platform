@@ -1,7 +1,15 @@
 import Link from "next/link";
 import { CATEGORY_LABELS, type Category } from "@oculis/core";
 import { type Lang } from "@/lib/i18n";
+import { shortBillName } from "@/lib/format";
 import type { FeedListItem, FeedTag } from "@/lib/data";
+
+/** Chip text: bill NAME for initiatives (more identifiable than the code), else the label. */
+function tagDisplay(tag: FeedTag): string {
+  return tag.entityType === "INITIATIVE"
+    ? shortBillName(tag.initiativeTitle, tag.initiativeCode)
+    : tag.label;
+}
 
 /** Per-kind badge styling (theme-aware tokens). */
 const KIND_STYLE: Record<string, { es: string; en: string; fg: string; bg: string }> = {
@@ -145,10 +153,16 @@ export function FeedCard({ item, lang }: { item: FeedListItem; lang: Lang }) {
                   href={entityHref(tag, lang)}
                   className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10.5px] font-medium transition-colors hover:bg-[var(--accent-soft)]"
                   style={{ background: "var(--surface-2)", color: "var(--text)" }}
-                  title={es ? "Ver todo lo relacionado" : "See everything related"}
+                  title={
+                    tag.entityType === "INITIATIVE" && tag.initiativeTitle
+                      ? tag.initiativeTitle
+                      : es
+                        ? "Ver todo lo relacionado"
+                        : "See everything related"
+                  }
                 >
                   <span aria-hidden>{TAG_ICON[tag.entityType] ?? "•"}</span>
-                  <span className="max-w-[200px] truncate">{tag.label}</span>
+                  <span className="max-w-[240px] truncate">{tagDisplay(tag)}</span>
                 </Link>
               ))}
             </div>

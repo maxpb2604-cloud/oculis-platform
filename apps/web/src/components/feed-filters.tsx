@@ -15,10 +15,12 @@ export function FeedFilters({
   lang,
   facets,
   active,
+  activeLabel,
 }: {
   lang: Lang;
   facets: Facets;
   active: Record<string, string | undefined>;
+  activeLabel?: string;
 }) {
   const es = lang === "es";
   const router = useRouter();
@@ -51,7 +53,9 @@ export function FeedFilters({
         <div className="card p-3">
           <div className="eyebrow mb-1.5">{es ? "Filtrando por" : "Filtering by"}</div>
           <div className="flex items-center justify-between gap-2">
-            <span className="truncate text-[13px] font-medium">{entityFilter}</span>
+            <span className="truncate text-[13px] font-medium" title={activeLabel ?? entityFilter}>
+              {activeLabel ?? entityFilter}
+            </span>
             <button
               onClick={() =>
                 navigate({ initiativeCode: null, legislatorSourceId: null, commissionName: null })
