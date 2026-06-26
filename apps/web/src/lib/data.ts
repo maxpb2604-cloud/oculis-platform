@@ -35,6 +35,7 @@ import {
   regulatoryKpis,
   regulationsByInstitution,
   listFeedItems,
+  listFeedForInitiative,
   feedFacets,
   feedTrendingCategories,
   feedTrendingEntities,
@@ -236,7 +237,10 @@ export async function browseInitiatives(f: InitiativeFilters) {
 
 export async function getInitiative(id: number) {
   const d = await db();
-  return getInitiativeById(d, id);
+  const ini = await getInitiativeById(d, id);
+  if (!ini) return null;
+  const relatedNews = await listFeedForInitiative(d, id, 10);
+  return { ...ini, relatedNews };
 }
 
 // --- Phase 1: daily activity monitoring (both chambers) ---

@@ -1512,6 +1512,39 @@ export async function listRecentStatusEvents(
     .limit(limit);
 }
 
+export interface RelatedFeedItem {
+  id: number;
+  kind: string;
+  title: string;
+  url: string | null;
+  source: string;
+  publishedAt: string | null;
+}
+
+/** Feed items linked to one initiative (primary or via a tag) — newest first.
+ *  Powers the "Noticias relacionadas" section in the initiative detail. */
+export async function listFeedForInitiative(
+  db: Database,
+  initiativeId: number,
+  limit = 12,
+): Promise<RelatedFeedItem[]> {
+  return db
+    .select({
+      id: feedItems.id,
+      kind: feedItems.kind,
+      title: feedItems.title,
+      url: feedItems.url,
+      source: feedItems.source,
+      publishedAt: sql<string | null>`coalesce(${feedItems.publishedAt}, ${feedItems.firstSeenAt})::text`,
+    })
+    .from(feedItems)
+    .where(
+      sql`${feedItems.initiativeId} = ${initiativeId} or ${feedItems.id} in (select feed_item_id from feed_item_entities where initiative_id = ${initiativeId})`,
+    )
+    .orderBy(sql`coalesce(${feedItems.publishedAt}, ${feedItems.firstSeenAt}) desc`)
+    .limit(limit);
+}
+
 export interface CommissionWithMembers {
   chamber: string;
   name: string;
