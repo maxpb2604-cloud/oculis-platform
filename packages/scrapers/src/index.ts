@@ -12,3 +12,4 @@ export * from "./roster.js";
 export * from "./roster-diputados.js";
 export * from "./roster-senado.js";
 export * from "./regulatory.js";
+export * from "./feeds.js";

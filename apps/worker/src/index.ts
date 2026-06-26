@@ -18,6 +18,8 @@ import { ingestDeposits, ingestSenateDeposits } from "./ingest-deposits.js";
 import { runDaily } from "./daily.js";
 import { ingestRoster } from "./ingest-roster.js";
 import { rescoreAll } from "./rescore.js";
+import { ingestFeed } from "./ingest-feed.js";
+import { seedFeedAccounts } from "./feed-accounts.seed.js";
 
 loadEnv();
 
@@ -103,6 +105,8 @@ async function main() {
       // both chambers (Diputados via SIL API, Senado via the legacy MasterLex SIL).
       const dep = await ingestDeposits(db, { log: (m) => console.log(m) });
       const senDep = await ingestSenateDeposits(db, { log: (m) => console.log(m) });
+      // Feed refresh (news / official / social / legislative signals) on the same cadence.
+      await ingestFeed(db, { log: (m) => console.log(m) });
       const secs = ((Date.now() - started) / 1000).toFixed(1);
       const okCount = summaries.filter((s) => s.ok).length + (dep.ok ? 1 : 0) + (senDep.ok ? 1 : 0);
       const totalEvents = summaries.reduce((n, s) => n + s.events, 0);
@@ -143,6 +147,25 @@ async function main() {
       console.log(
         `\n✔ rescored ${r.scored} in ${secs}s — risk spread: ${JSON.stringify(r.byRisk)}`,
       );
+      return;
+    }
+
+    if (flag("feed")) {
+      console.log("📰 Ingesting Congress feed (news + official + social + legislative signals)\n");
+      const r = await ingestFeed(db, { log: (m) => console.log(m) });
+      const secs = ((Date.now() - started) / 1000).toFixed(1);
+      const ok = r.filter((s) => s.ok).length;
+      const total = r.reduce((n, s) => n + s.count, 0);
+      const inserted = r.reduce((n, s) => n + s.inserted, 0);
+      console.log(`\n✔ done in ${secs}s — sources ok ${ok}/${r.length}, items ${total} (${inserted} new)`);
+      return;
+    }
+
+    if (flag("seed-accounts")) {
+      console.log("👥 Seeding the influential-accounts directory\n");
+      const r = await seedFeedAccounts(db, { log: (m) => console.log(m) });
+      const secs = ((Date.now() - started) / 1000).toFixed(1);
+      console.log(`\n✔ done in ${secs}s — ${r.total} accounts (${r.linked} linked to legislators)`);
       return;
     }
 

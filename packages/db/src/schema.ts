@@ -341,6 +341,103 @@ export const ingestionRuns = pgTable(
   }),
 );
 
+/**
+ * Feed window: news, official posts, social posts, and our own legislative signals —
+ * one chronological stream. The denormalized "primary" entity columns power the fast
+ * left-panel filters; the full set of tags (a card can mention several bills/people)
+ * lives in `feedItemEntities`. Mirrors the `initiatives` (source,sourceId) upsert idiom.
+ */
+export const feedItems = pgTable(
+  "feed_items",
+  {
+    id: serial("id").primaryKey(),
+    source: text("source").notNull(), // adapter key, e.g. "feed-senado", "feed-diariolibre", "feed-x", "feed-legislative"
+    sourceId: text("source_id").notNull(), // stable id within the source (guid, status id, "deposit:<id>")
+    kind: text("kind").notNull(), // NEWS | OFFICIAL | SOCIAL | LEGISLATIVE
+    title: text("title").notNull(),
+    summary: text("summary"),
+    imageUrl: text("image_url"),
+    url: text("url"), // canonical link back to the source
+    author: text("author"), // byline / account display name
+    handle: text("handle"), // @handle for social
+    platform: text("platform"), // X | INSTAGRAM | RSS | WEB
+    category: text("category"), // our taxonomy (Category), null until tagged
+    publishedAt: timestamp("published_at"), // real datetime — the feed orders by this
+    // --- primary entity link (denormalized for single-column left-panel filters) ---
+    initiativeId: integer("initiative_id").references(() => initiatives.id, { onDelete: "set null" }),
+    initiativeCode: text("initiative_code"),
+    legislatorSourceId: text("legislator_source_id"),
+    commissionName: text("commission_name"),
+    chamber: text("chamber"), // SENADO | DIPUTADOS | null
+    raw: jsonb("raw"),
+    firstSeenAt: timestamp("first_seen_at").notNull().defaultNow(),
+    lastSeenAt: timestamp("last_seen_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    uq: uniqueIndex("feed_items_source_uq").on(t.source, t.sourceId),
+    byPublished: index("feed_items_published_idx").on(t.publishedAt.desc()),
+    byKind: index("feed_items_kind_idx").on(t.kind),
+    byCategory: index("feed_items_category_idx").on(t.category),
+    byInitiative: index("feed_items_initiative_idx").on(t.initiativeId),
+    byLegislator: index("feed_items_legislator_idx").on(t.legislatorSourceId),
+  }),
+);
+
+/** Tags linking one feed item to several entities (mirrors `activityInitiatives`). */
+export const feedItemEntities = pgTable(
+  "feed_item_entities",
+  {
+    id: serial("id").primaryKey(),
+    feedItemId: integer("feed_item_id")
+      .notNull()
+      .references(() => feedItems.id, { onDelete: "cascade" }),
+    entityType: text("entity_type").notNull(), // INITIATIVE | LEGISLATOR | COMMISSION
+    initiativeCode: text("initiative_code"),
+    initiativeId: integer("initiative_id").references(() => initiatives.id, {
+      onDelete: "set null",
+    }),
+    legislatorSourceId: text("legislator_source_id"),
+    commissionName: text("commission_name"),
+    label: text("label").notNull(), // display text for the chip
+  },
+  (t) => ({
+    uq: uniqueIndex("feed_item_entities_uq").on(t.feedItemId, t.entityType, t.label),
+    byInitiative: index("feed_item_entities_initiative_idx").on(t.initiativeId),
+    byLegislator: index("feed_item_entities_legislator_idx").on(t.legislatorSourceId),
+  }),
+);
+
+/**
+ * Curated registry of influential DR politics/legislation accounts — the "follow"
+ * directory in the feed's right rail, and the account list the (credential-gated)
+ * social adapter pulls posts for. Verified, link-first; no fragile scraping required.
+ */
+export const feedAccounts = pgTable(
+  "feed_accounts",
+  {
+    id: serial("id").primaryKey(),
+    name: text("name").notNull(),
+    handle: text("handle").notNull(),
+    platform: text("platform").notNull(), // X | INSTAGRAM | YOUTUBE | WEB
+    url: text("url").notNull(),
+    kind: text("kind").notNull(), // SENADO_OFFICIAL | SENATOR | DEPUTY | JOURNALIST | NEWSPAPER | INSTITUTION
+    chamber: text("chamber"), // SENADO | DIPUTADOS | null
+    legislatorSourceId: text("legislator_source_id"), // links to legislators.sourceId when known
+    influenceRank: integer("influence_rank"), // lower = more influential
+    active: boolean("active").notNull().default(true),
+    raw: jsonb("raw"),
+    firstSeenAt: timestamp("first_seen_at").notNull().defaultNow(),
+    lastSeenAt: timestamp("last_seen_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    uq: uniqueIndex("feed_accounts_uq").on(t.platform, t.handle),
+    byKind: index("feed_accounts_kind_idx").on(t.kind),
+    byActive: index("feed_accounts_active_idx").on(t.active),
+    byLegislator: index("feed_accounts_legislator_idx").on(t.legislatorSourceId),
+  }),
+);
+
 export type Initiative = typeof initiatives.$inferSelect;
 export type NewInitiative = typeof initiatives.$inferInsert;
 export type StatusEvent = typeof statusEvents.$inferSelect;
@@ -359,3 +456,9 @@ export type NewDocument = typeof documents.$inferInsert;
 export type IngestionRun = typeof ingestionRuns.$inferSelect;
 export type Regulation = typeof regulations.$inferSelect;
 export type NewRegulation = typeof regulations.$inferInsert;
+export type FeedItem = typeof feedItems.$inferSelect;
+export type NewFeedItem = typeof feedItems.$inferInsert;
+export type FeedItemEntity = typeof feedItemEntities.$inferSelect;
+export type NewFeedItemEntity = typeof feedItemEntities.$inferInsert;
+export type FeedAccount = typeof feedAccounts.$inferSelect;
+export type NewFeedAccount = typeof feedAccounts.$inferInsert;
