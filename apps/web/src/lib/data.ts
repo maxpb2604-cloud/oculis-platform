@@ -34,8 +34,26 @@ import {
   type DepositItem,
   regulatoryKpis,
   regulationsByInstitution,
+  listFeedItems,
+  feedFacets,
+  feedTrendingCategories,
+  feedTrendingEntities,
+  listFeedAccounts,
+  type FeedFilters,
+  type FeedCursor,
+  type FeedAccount,
   type DbHandle,
   type InitiativeFilters,
+} from "@oculis/db";
+
+export type {
+  FeedFilters,
+  FeedCursor,
+  FeedListItem,
+  FeedTag,
+  FeedAccount,
+  TrendingEntity,
+  Bucket,
 } from "@oculis/db";
 
 let handle: DbHandle | null = null;
@@ -348,3 +366,44 @@ export async function getRegulations(opts: { institution?: string; intervention?
   const d = await db();
   return listRegulations(d, { ...opts, limit: 200 });
 }
+
+// --- Feed (news / official / social / legislative signals) ---
+
+/** A page of feed items (keyset paginated). Not cached — filters + cursor vary per request. */
+export async function getFeed(
+  filters: FeedFilters,
+  opts: { limit?: number; cursor?: FeedCursor | null } = {},
+) {
+  const d = await db();
+  return listFeedItems(d, filters, opts);
+}
+
+/** Distinct categories + kinds present in the feed (left-panel dropdowns). */
+export async function getFeedFacets() {
+  const d = await db();
+  return feedFacets(d);
+}
+
+/** Hot topics + trending entities for the right rail. Cached 5 min. */
+export const getFeedTrending = unstable_cache(
+  async (windowDays: number) => {
+    const d = await db();
+    const [topics, entities] = await Promise.all([
+      feedTrendingCategories(d, { sinceDays: windowDays }),
+      feedTrendingEntities(d, { sinceDays: windowDays, limit: 8 }),
+    ]);
+    return { topics, entities };
+  },
+  ["feed-trending"],
+  { revalidate: 300 },
+);
+
+/** Curated influential-accounts directory ("Cuentas a seguir"). Cached 10 min. */
+export const getSuggestedAccounts = unstable_cache(
+  async (): Promise<FeedAccount[]> => {
+    const d = await db();
+    return listFeedAccounts(d, { activeOnly: true, limit: 80 });
+  },
+  ["feed-accounts"],
+  { revalidate: 600 },
+);

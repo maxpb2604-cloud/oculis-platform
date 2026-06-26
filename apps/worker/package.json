@@ -12,6 +12,8 @@
     "daily": "tsx src/index.ts --daily",
     "roster": "tsx src/index.ts --roster",
     "activity": "tsx src/index.ts --activity",
+    "feed": "tsx src/index.ts --feed",
+    "seed-accounts": "tsx src/index.ts --seed-accounts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

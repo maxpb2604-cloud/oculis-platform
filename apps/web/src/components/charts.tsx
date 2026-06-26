@@ -22,13 +22,13 @@ interface Bucket {
 }
 
 /** Cross-filter: clicking a chart segment navigates to the pre-filtered browse view. */
-function useFilterNav(param: string, lang: string) {
+function useFilterNav(param: string, lang: string, basePath = "/initiatives") {
   const router = useRouter();
   return (key: string) => {
     if (!key || key === "N/D") return;
     const qs = new URLSearchParams({ [param]: key });
     if (lang === "en") qs.set("lang", "en");
-    router.push(`/initiatives?${qs.toString()}`);
+    router.push(`${basePath}?${qs.toString()}`);
   };
 }
 
@@ -140,6 +140,14 @@ export const CategoryBar = ({ data, lang }: { data: Bucket[]; lang: string }) =>
     data={data}
     labelMap={(k) => CATEGORY_LABELS[k as Category] ?? k}
     onSelect={useFilterNav("category", lang)}
+  />
+);
+/** Trending-topics bar for the feed rail — clicking a topic filters the feed. */
+export const FeedTopicsBar = ({ data, lang }: { data: Bucket[]; lang: string }) => (
+  <BarPanel
+    data={data}
+    labelMap={(k) => CATEGORY_LABELS[k as Category] ?? k}
+    onSelect={useFilterNav("category", lang, "/feed")}
   />
 );
 

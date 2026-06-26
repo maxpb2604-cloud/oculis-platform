@@ -13,6 +13,7 @@ export function Sidebar({ lang }: { lang: Lang }) {
     {
       title: lang === "es" ? "Monitoreo Legislativo" : "Legislative Monitoring",
       items: [
+        { href: "/feed", label: "Feed", icon: IconRss, match: (p: string) => p.startsWith("/feed") },
         { href: "/hoy", label: lang === "es" ? "Hoy" : "Today", icon: IconCalendar, match: (p: string) => p.startsWith("/hoy") },
         { href: "/diputados", label: lang === "es" ? "Diputados" : "Deputies", icon: IconGavel, match: (p: string) => p.startsWith("/diputados") },
         { href: "/senado", label: lang === "es" ? "Senado" : "Senate", icon: IconShield, match: (p: string) => p.startsWith("/senado") },
@@ -123,6 +124,9 @@ function IconShield({ active }: { active?: boolean }) {
 }
 function IconList({ active }: { active?: boolean }) {
   return (<svg {...ico(active)} viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" /></svg>);
+}
+function IconRss({ active }: { active?: boolean }) {
+  return (<svg {...ico(active)} viewBox="0 0 24 24"><path d="M4 11a9 9 0 0 1 9 9M4 4a16 16 0 0 1 16 16" /><circle cx="5" cy="19" r="1" /></svg>);
 }
 function IconCalendar({ active }: { active?: boolean }) {
   return (<svg {...ico(active)} viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="17" rx="2" /><path d="M3 9h18M8 2v4M16 2v4" /></svg>);

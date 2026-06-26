@@ -10,6 +10,9 @@ import {
   commissions,
   commissionMembers,
   documents,
+  feedAccounts,
+  feedItemEntities,
+  feedItems,
   ingestionRuns,
   initiatives,
   legislators,
@@ -18,9 +21,12 @@ import {
   statusEvents,
 } from "./schema.js";
 import type {
+  FeedAccount,
   NewCommission,
   NewCommissionMember,
   NewDocument,
+  NewFeedAccount,
+  NewFeedItem,
   NewInitiative,
   NewLegislator,
   NewRegulation,
@@ -1132,6 +1138,378 @@ export async function legislatorCommittees(db: Database): Promise<LegislatorComm
     })
     .from(commissionMembers)
     .orderBy(commissionMembers.commissionName);
+}
+
+// ---------------------------------------------------------------------------
+// Feed window (news / official / social / legislative-signal items)
+// ---------------------------------------------------------------------------
+
+/** One entity tag attached to a feed item (deep-links the card to a bill/person/committee). */
+export interface FeedEntityTag {
+  entityType: "INITIATIVE" | "LEGISLATOR" | "COMMISSION";
+  initiativeCode?: string | null;
+  legislatorSourceId?: string | null;
+  commissionName?: string | null;
+  label: string;
+}
+
+export interface FeedUpsertResult {
+  id: number;
+  inserted: boolean;
+}
+
+/**
+ * Idempotent upsert of a feed item keyed by (source, source_id), then sync its entity
+ * tags into feed_item_entities (resolving initiative codes → ids in one query). Mirrors
+ * the upsertActivityEvent + activityInitiatives backfill idiom.
+ */
+export async function upsertFeedItem(
+  db: Database,
+  item: NewFeedItem,
+  tags: FeedEntityTag[] = [],
+): Promise<FeedUpsertResult> {
+  const existing = await db
+    .select({ id: feedItems.id })
+    .from(feedItems)
+    .where(and(eq(feedItems.source, item.source), eq(feedItems.sourceId, item.sourceId)))
+    .limit(1);
+
+  let id: number;
+  let inserted: boolean;
+  if (existing.length === 0) {
+    const [row] = await db.insert(feedItems).values(item).returning({ id: feedItems.id });
+    id = row!.id;
+    inserted = true;
+  } else {
+    id = existing[0]!.id;
+    inserted = false;
+    await db
+      .update(feedItems)
+      .set({
+        title: item.title,
+        summary: item.summary,
+        imageUrl: item.imageUrl,
+        url: item.url,
+        author: item.author,
+        handle: item.handle,
+        platform: item.platform,
+        category: item.category,
+        publishedAt: item.publishedAt,
+        initiativeId: item.initiativeId,
+        initiativeCode: item.initiativeCode,
+        legislatorSourceId: item.legislatorSourceId,
+        commissionName: item.commissionName,
+        chamber: item.chamber,
+        lastSeenAt: sql`now()`,
+      })
+      .where(eq(feedItems.id, id));
+  }
+
+  if (tags.length) {
+    const codes = tags
+      .filter((t) => t.entityType === "INITIATIVE" && t.initiativeCode)
+      .map((t) => t.initiativeCode!) as string[];
+    const codeToId = new Map<string, number>();
+    if (codes.length) {
+      const rows = await db
+        .select({ id: initiatives.id, code: initiatives.code })
+        .from(initiatives)
+        .where(inArray(initiatives.code, codes));
+      for (const r of rows) if (r.code) codeToId.set(r.code, r.id);
+    }
+    for (const t of tags) {
+      const initiativeId = t.initiativeCode ? codeToId.get(t.initiativeCode) ?? null : null;
+      await db
+        .insert(feedItemEntities)
+        .values({
+          feedItemId: id,
+          entityType: t.entityType,
+          initiativeCode: t.initiativeCode ?? null,
+          initiativeId,
+          legislatorSourceId: t.legislatorSourceId ?? null,
+          commissionName: t.commissionName ?? null,
+          label: t.label,
+        })
+        .onConflictDoUpdate({
+          target: [feedItemEntities.feedItemId, feedItemEntities.entityType, feedItemEntities.label],
+          set: { initiativeId },
+        });
+    }
+  }
+  return { id, inserted };
+}
+
+/** Idempotent upsert of a registry account keyed by (platform, handle). */
+export async function upsertFeedAccount(db: Database, a: NewFeedAccount): Promise<void> {
+  await db
+    .insert(feedAccounts)
+    .values(a)
+    .onConflictDoUpdate({
+      target: [feedAccounts.platform, feedAccounts.handle],
+      set: {
+        name: a.name,
+        url: a.url,
+        kind: a.kind,
+        chamber: a.chamber,
+        legislatorSourceId: a.legislatorSourceId,
+        influenceRank: a.influenceRank,
+        active: a.active ?? true,
+        lastSeenAt: sql`now()`,
+        updatedAt: sql`now()`,
+      },
+    });
+}
+
+export interface FeedTag {
+  entityType: string;
+  label: string;
+  initiativeId: number | null;
+  initiativeCode: string | null;
+  legislatorSourceId: string | null;
+  commissionName: string | null;
+}
+
+export interface FeedListItem {
+  id: number;
+  source: string;
+  kind: string;
+  title: string;
+  summary: string | null;
+  imageUrl: string | null;
+  url: string | null;
+  author: string | null;
+  handle: string | null;
+  platform: string | null;
+  category: string | null;
+  publishedAt: string | null;
+  chamber: string | null;
+  tags: FeedTag[];
+}
+
+export interface FeedFilters {
+  kind?: string;
+  category?: string;
+  initiativeCode?: string;
+  legislatorSourceId?: string;
+  commissionName?: string;
+  chamber?: string;
+  search?: string;
+}
+
+export interface FeedCursor {
+  publishedAt: string | null;
+  id: number;
+}
+
+/**
+ * Chronological feed with keyset pagination on (coalesce(published_at, first_seen_at) desc,
+ * id desc) — feeds grow at the head, so keyset avoids the dupes/skips of offset paging.
+ * Each item carries its full entity-tag set (fetched in a second query, merged in memory).
+ */
+export async function listFeedItems(
+  db: Database,
+  f: FeedFilters = {},
+  opts: { limit?: number; cursor?: FeedCursor | null } = {},
+): Promise<{ items: FeedListItem[]; nextCursor: FeedCursor | null }> {
+  const limit = Math.min(Math.max(1, opts.limit ?? 30), 100);
+  const sortTs = sql`coalesce(${feedItems.publishedAt}, ${feedItems.firstSeenAt})`;
+  const conds = [];
+  if (f.kind) conds.push(eq(feedItems.kind, f.kind));
+  if (f.category) conds.push(eq(feedItems.category, f.category));
+  if (f.chamber) conds.push(eq(feedItems.chamber, f.chamber));
+  if (f.initiativeCode) conds.push(eq(feedItems.initiativeCode, f.initiativeCode));
+  if (f.legislatorSourceId) conds.push(eq(feedItems.legislatorSourceId, f.legislatorSourceId));
+  if (f.commissionName) conds.push(eq(feedItems.commissionName, f.commissionName));
+  if (f.search) {
+    const q = `%${f.search}%`;
+    conds.push(sql`(${feedItems.title} ilike ${q} or ${feedItems.summary} ilike ${q})`);
+  }
+  if (opts.cursor?.publishedAt) {
+    const cts = opts.cursor.publishedAt;
+    const cid = opts.cursor.id;
+    conds.push(
+      sql`(${sortTs} < ${cts}::timestamp or (${sortTs} = ${cts}::timestamp and ${feedItems.id} < ${cid}))`,
+    );
+  }
+  const where = conds.length ? and(...conds) : undefined;
+
+  const rows = await db
+    .select({
+      id: feedItems.id,
+      source: feedItems.source,
+      kind: feedItems.kind,
+      title: feedItems.title,
+      summary: feedItems.summary,
+      imageUrl: feedItems.imageUrl,
+      url: feedItems.url,
+      author: feedItems.author,
+      handle: feedItems.handle,
+      platform: feedItems.platform,
+      category: feedItems.category,
+      publishedAt: sql<string | null>`${sortTs}::text`,
+      chamber: feedItems.chamber,
+    })
+    .from(feedItems)
+    .where(where)
+    .orderBy(sql`${sortTs} desc`, sql`${feedItems.id} desc`)
+    .limit(limit + 1);
+
+  const hasMore = rows.length > limit;
+  const page = rows.slice(0, limit);
+  const ids = page.map((r) => r.id);
+  const tagRows = ids.length
+    ? await db
+        .select({
+          feedItemId: feedItemEntities.feedItemId,
+          entityType: feedItemEntities.entityType,
+          label: feedItemEntities.label,
+          initiativeId: feedItemEntities.initiativeId,
+          initiativeCode: feedItemEntities.initiativeCode,
+          legislatorSourceId: feedItemEntities.legislatorSourceId,
+          commissionName: feedItemEntities.commissionName,
+        })
+        .from(feedItemEntities)
+        .where(inArray(feedItemEntities.feedItemId, ids))
+    : [];
+  const tagsByItem = new Map<number, FeedTag[]>();
+  for (const t of tagRows) {
+    const arr = tagsByItem.get(t.feedItemId) ?? [];
+    arr.push({
+      entityType: t.entityType,
+      label: t.label,
+      initiativeId: t.initiativeId,
+      initiativeCode: t.initiativeCode,
+      legislatorSourceId: t.legislatorSourceId,
+      commissionName: t.commissionName,
+    });
+    tagsByItem.set(t.feedItemId, arr);
+  }
+
+  const items: FeedListItem[] = page.map((r) => ({ ...r, tags: tagsByItem.get(r.id) ?? [] }));
+  const last = page[page.length - 1];
+  const nextCursor = hasMore && last ? { publishedAt: last.publishedAt, id: last.id } : null;
+  return { items, nextCursor };
+}
+
+/** Hot topics: feed items grouped by category over a recent window. */
+export async function feedTrendingCategories(
+  db: Database,
+  opts: { sinceDays?: number } = {},
+): Promise<Bucket[]> {
+  const days = opts.sinceDays ?? 14;
+  const rows = await db
+    .select({
+      key: sql<string>`coalesce(${feedItems.category}::text, 'N/D')`,
+      count: sql<number>`count(*)::int`,
+    })
+    .from(feedItems)
+    .where(sql`coalesce(${feedItems.publishedAt}, ${feedItems.firstSeenAt}) >= now() - make_interval(days => ${days})`)
+    .groupBy(sql`1`)
+    .orderBy(sql`2 desc`);
+  return rows.filter((r) => r.key !== "N/D").map((r) => ({ key: r.key, count: r.count }));
+}
+
+export interface TrendingEntity {
+  entityType: string;
+  label: string;
+  initiativeId: number | null;
+  legislatorSourceId: string | null;
+  count: number;
+}
+
+/** Most-mentioned bills / legislators across feed items in a recent window. */
+export async function feedTrendingEntities(
+  db: Database,
+  opts: { sinceDays?: number; limit?: number } = {},
+): Promise<TrendingEntity[]> {
+  const days = opts.sinceDays ?? 14;
+  const limit = opts.limit ?? 10;
+  return db
+    .select({
+      entityType: feedItemEntities.entityType,
+      label: feedItemEntities.label,
+      initiativeId: sql<number | null>`max(${feedItemEntities.initiativeId})`,
+      legislatorSourceId: sql<string | null>`max(${feedItemEntities.legislatorSourceId})`,
+      count: sql<number>`count(*)::int`,
+    })
+    .from(feedItemEntities)
+    .innerJoin(feedItems, eq(feedItemEntities.feedItemId, feedItems.id))
+    .where(sql`coalesce(${feedItems.publishedAt}, ${feedItems.firstSeenAt}) >= now() - make_interval(days => ${days})`)
+    .groupBy(feedItemEntities.entityType, feedItemEntities.label)
+    .orderBy(sql`count(*) desc`)
+    .limit(limit);
+}
+
+/** The curated account registry, most-influential first. */
+export async function listFeedAccounts(
+  db: Database,
+  opts: { platform?: string; kind?: string; activeOnly?: boolean; limit?: number } = {},
+): Promise<FeedAccount[]> {
+  const conds = [];
+  if (opts.platform) conds.push(eq(feedAccounts.platform, opts.platform));
+  if (opts.kind) conds.push(eq(feedAccounts.kind, opts.kind));
+  if (opts.activeOnly) conds.push(eq(feedAccounts.active, true));
+  const where = conds.length ? and(...conds) : undefined;
+  return db
+    .select()
+    .from(feedAccounts)
+    .where(where)
+    .orderBy(sql`${feedAccounts.influenceRank} asc nulls last`, feedAccounts.name)
+    .limit(opts.limit ?? 1000);
+}
+
+/** Distinct filter values present in the feed (for the left-panel dropdowns). */
+export async function feedFacets(
+  db: Database,
+): Promise<{ categories: string[]; kinds: string[] }> {
+  const cats = await db
+    .select({ v: feedItems.category })
+    .from(feedItems)
+    .where(sql`${feedItems.category} is not null`)
+    .groupBy(feedItems.category);
+  const kinds = await db.select({ v: feedItems.kind }).from(feedItems).groupBy(feedItems.kind);
+  return {
+    categories: cats.map((c) => c.v!).filter(Boolean).sort(),
+    kinds: kinds.map((k) => k.v).filter(Boolean).sort(),
+  };
+}
+
+export interface RecentStatusEvent {
+  id: number;
+  initiativeId: number;
+  status: string;
+  eventDate: string | null;
+  code: string | null;
+  title: string;
+  chamber: string | null;
+  category: string | null;
+  createdAt: string | null;
+}
+
+/** Recent status changes joined to their initiative — source for legislative-signal cards. */
+export async function listRecentStatusEvents(
+  db: Database,
+  opts: { sinceDays?: number; limit?: number } = {},
+): Promise<RecentStatusEvent[]> {
+  const days = opts.sinceDays ?? 14;
+  const limit = opts.limit ?? 100;
+  return db
+    .select({
+      id: statusEvents.id,
+      initiativeId: statusEvents.initiativeId,
+      status: statusEvents.status,
+      eventDate: statusEvents.eventDate,
+      code: initiatives.code,
+      title: initiatives.title,
+      chamber: initiatives.chamber,
+      category: initiatives.category,
+      createdAt: sql<string | null>`${statusEvents.createdAt}::text`,
+    })
+    .from(statusEvents)
+    .innerJoin(initiatives, eq(statusEvents.initiativeId, initiatives.id))
+    .where(sql`${statusEvents.createdAt} >= now() - make_interval(days => ${days})`)
+    .orderBy(sql`${statusEvents.createdAt} desc`)
+    .limit(limit);
 }
 
 export interface CommissionWithMembers {
