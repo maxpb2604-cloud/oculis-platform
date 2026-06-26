@@ -1,7 +1,13 @@
 import Link from "next/link";
 import { FeedTopicsBar } from "@/components/charts";
 import { langQuery, type Lang } from "@/lib/i18n";
+import { shortBillName } from "@/lib/format";
 import type { Bucket, TrendingEntity, FeedAccount } from "@/lib/data";
+
+/** Trending row label: bill NAME for initiatives, else the label. */
+function entityDisplay(e: TrendingEntity): string {
+  return e.entityType === "INITIATIVE" ? shortBillName(e.title, e.label) : e.label;
+}
 
 const ACCOUNT_KIND: Record<string, { es: string; en: string }> = {
   SENADO_OFFICIAL: { es: "Senado", en: "Senate" },
@@ -79,6 +85,7 @@ export function FeedRail({
               <li key={`${e.entityType}-${e.label}-${i}`}>
                 <Link
                   href={entityHref(e, lang)}
+                  title={e.entityType === "INITIATIVE" && e.title ? e.title : undefined}
                   className="flex items-center justify-between gap-2 rounded-md px-1.5 py-1 text-[12.5px] transition-colors hover:bg-[var(--surface-2)]"
                 >
                   <span className="min-w-0 truncate">
@@ -89,7 +96,7 @@ export function FeedRail({
                           ? "👤 "
                           : "🗂 "}
                     </span>
-                    {e.label}
+                    {entityDisplay(e)}
                   </span>
                   <span
                     className="tnum shrink-0 text-[11px]"

@@ -1,5 +1,12 @@
-import { getFeed, getFeedFacets, getFeedTrending, getSuggestedAccounts } from "@/lib/data";
+import {
+  getFeed,
+  getFeedFacets,
+  getFeedTrending,
+  getSuggestedAccounts,
+  getInitiativeByCode,
+} from "@/lib/data";
 import { type Lang } from "@/lib/i18n";
+import { shortBillName } from "@/lib/format";
 import { AppShell } from "@/components/app-shell";
 import { FeedFilters } from "@/components/feed-filters";
 import { FeedTimeline } from "@/components/feed-timeline";
@@ -33,6 +40,13 @@ export default async function FeedPage({ searchParams }: { searchParams: Promise
     getSuggestedAccounts(),
   ]);
 
+  // Resolve the active bill filter to a readable name (instead of the code).
+  let activeLabel: string | undefined;
+  if (filters.initiativeCode) {
+    const bill = await getInitiativeByCode(filters.initiativeCode);
+    activeLabel = shortBillName(bill?.title, filters.initiativeCode);
+  }
+
   return (
     <AppShell
       lang={lang}
@@ -40,7 +54,7 @@ export default async function FeedPage({ searchParams }: { searchParams: Promise
       subtitle={es ? "Noticias y señales del Congreso" : "Congress news & signals"}
     >
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-[230px_minmax(0,1fr)_290px]">
-        <FeedFilters lang={lang} facets={facets} active={filters} />
+        <FeedFilters lang={lang} facets={facets} active={filters} activeLabel={activeLabel} />
         {filters.kind === "SOCIAL" && page.items.length === 0 ? (
           <FeedSocialDirectory lang={lang} accounts={accounts} />
         ) : (

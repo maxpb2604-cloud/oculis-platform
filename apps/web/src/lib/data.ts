@@ -36,6 +36,7 @@ import {
   regulationsByInstitution,
   listFeedItems,
   listFeedForInitiative,
+  initiativeByCode,
   feedFacets,
   feedTrendingCategories,
   feedTrendingEntities,
@@ -386,6 +387,12 @@ export async function getFeed(
 export async function getFeedFacets() {
   const d = await db();
   return feedFacets(d);
+}
+
+/** Resolve a bill code → title for the feed's active-filter chip. */
+export async function getInitiativeByCode(code: string) {
+  const d = await db();
+  return initiativeByCode(d, code);
 }
 
 /** Hot topics + trending entities for the right rail. Cached 5 min. */
