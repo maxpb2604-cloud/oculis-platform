@@ -58,6 +58,21 @@ function DayDivider({ label }: { label: string }) {
   );
 }
 
+/** Placeholder card shown while a page of items is being fetched. */
+function SkeletonCard() {
+  return (
+    <div className="card flex gap-3 p-3.5" aria-hidden>
+      <div className="hidden h-[84px] w-[112px] shrink-0 rounded-lg sm:block skeleton" />
+      <div className="min-w-0 flex-1">
+        <div className="mb-2 h-3 w-28 rounded skeleton" />
+        <div className="mb-1.5 h-4 w-3/4 rounded skeleton" />
+        <div className="h-3 w-full rounded skeleton" />
+        <div className="mt-1 h-3 w-2/3 rounded skeleton" />
+      </div>
+    </div>
+  );
+}
+
 /** Center column: the chronological feed with keyset pagination + infinite scroll. */
 export function FeedTimeline({
   lang,
@@ -73,6 +88,7 @@ export function FeedTimeline({
   today: string; // DR today (YYYY-MM-DD) from the server — deterministic, hydration-safe
 }) {
   const es = lang === "es";
+  const hasFilters = Object.values(filters).some(Boolean);
   const [items, setItems] = useState(initial);
   const [cursor, setCursor] = useState(nextCursor);
   const [loading, setLoading] = useState(false);
@@ -126,11 +142,23 @@ export function FeedTimeline({
     <div className="flex flex-col gap-3">
       {items.length === 0 ? (
         <div
-          className="card p-10 text-center text-sm"
+          className="card flex flex-col items-center gap-3 p-10 text-center text-sm"
           role="status"
           style={{ color: "var(--text-muted)" }}
         >
-          {es ? "Sin publicaciones para estos filtros." : "No posts for these filters."}
+          <span className="text-2xl" aria-hidden>
+            🗞️
+          </span>
+          <span>{es ? "Sin publicaciones para estos filtros." : "No posts for these filters."}</span>
+          {hasFilters && (
+            <a
+              href={es ? "/feed" : "/feed?lang=en"}
+              className="rounded-lg border px-3 py-1.5 text-[13px] font-medium transition-colors hover:bg-[var(--surface-2)]"
+              style={{ color: "var(--text)" }}
+            >
+              {es ? "Quitar filtros" : "Clear filters"}
+            </a>
+          )}
         </div>
       ) : (
         (() => {
@@ -152,15 +180,20 @@ export function FeedTimeline({
           return out;
         })()
       )}
-      {cursor && (
+      {loading && (
+        <>
+          <SkeletonCard />
+          <SkeletonCard />
+        </>
+      )}
+      {cursor && !loading && (
         <div ref={sentinel} className="py-4 text-center">
           <button
             onClick={loadMore}
-            disabled={loading}
             className="rounded-lg border px-4 py-2 text-sm transition-colors hover:bg-[var(--surface-2)]"
             style={{ cursor: "pointer", color: "var(--text-muted)" }}
           >
-            {loading ? (es ? "Cargando…" : "Loading…") : es ? "Cargar más" : "Load more"}
+            {es ? "Cargar más" : "Load more"}
           </button>
         </div>
       )}

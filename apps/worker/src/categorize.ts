@@ -125,14 +125,41 @@ export class ClaudeCategorizer implements Categorizer {
 }
 
 /**
- * Pick the categorizer. Claude is STRICTLY OPT-IN to avoid surprise billing:
- * it runs only when OCULIS_USE_CLAUDE=1 AND an ANTHROPIC_API_KEY is present.
- * Otherwise the free heuristic is used — even if a key happens to be in the env.
+ * Wraps a primary categorizer (Claude) with the offline heuristic as a fallback.
+ * On the FIRST primary failure (e.g. "credit balance too low", auth, or rate
+ * limit) it logs once and switches to the heuristic for the rest of the run, so
+ * a billing/API outage degrades gracefully instead of failing the whole scrape.
+ */
+export class FallbackCategorizer implements Categorizer {
+  readonly kind = "claude" as const;
+  private readonly fallback = new HeuristicCategorizer();
+  private degraded = false;
+  constructor(private readonly primary: Categorizer) {}
+
+  async categorize(input: CategorizeInput): Promise<CategoryResult> {
+    if (this.degraded) return this.fallback.categorize(input);
+    try {
+      return await this.primary.categorize(input);
+    } catch (err) {
+      this.degraded = true;
+      console.warn(
+        `⚠️  Categorizador Claude no disponible (${(err as Error).message}). ` +
+          `Usando heurística offline para el resto de esta corrida.`,
+      );
+      return this.fallback.categorize(input);
+    }
+  }
+}
+
+/**
+ * Pick the categorizer. The offline heuristic is the default and ALWAYS works
+ * with no API key. Claude is STRICTLY OPT-IN (OCULIS_USE_CLAUDE=1 + ANTHROPIC_API_KEY)
+ * and, when enabled, is wrapped so any API failure falls back to the heuristic.
  */
 export function createCategorizer(): Categorizer {
   const optedIn = process.env.OCULIS_USE_CLAUDE === "1";
   if (optedIn && process.env.ANTHROPIC_API_KEY) {
-    return new ClaudeCategorizer(new Anthropic());
+    return new FallbackCategorizer(new ClaudeCategorizer(new Anthropic()));
   }
   return new HeuristicCategorizer();
 }

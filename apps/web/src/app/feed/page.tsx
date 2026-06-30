@@ -4,6 +4,7 @@ import {
   getFeedTrending,
   getSuggestedAccounts,
   getInitiativeByCode,
+  getFeedFreshness,
   todayISO,
 } from "@/lib/data";
 import { type Lang } from "@/lib/i18n";
@@ -13,6 +14,7 @@ import { FeedFilters } from "@/components/feed-filters";
 import { FeedTimeline } from "@/components/feed-timeline";
 import { FeedRail } from "@/components/feed-rail";
 import { FeedSocialDirectory } from "@/components/feed-social-directory";
+import { FeedFreshness } from "@/components/feed-freshness";
 
 export const dynamic = "force-dynamic";
 
@@ -34,11 +36,12 @@ export default async function FeedPage({ searchParams }: { searchParams: Promise
     search: sp.search,
   };
 
-  const [page, facets, trending, accounts] = await Promise.all([
+  const [page, facets, trending, accounts, freshness] = await Promise.all([
     getFeed(filters, { limit: 25 }),
     getFeedFacets(),
     getFeedTrending(windowDays),
     getSuggestedAccounts(),
+    getFeedFreshness(),
   ]);
 
   // Resolve the active bill filter to a readable name (instead of the code).
@@ -54,9 +57,16 @@ export default async function FeedPage({ searchParams }: { searchParams: Promise
       title="Feed"
       subtitle={es ? "Noticias y señales del Congreso" : "Congress news & signals"}
     >
+      <div className="mb-4">
+        <FeedFreshness
+          lang={lang}
+          updatedAt={freshness.updatedAt}
+          sources={freshness.sources}
+        />
+      </div>
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-[230px_minmax(0,1fr)_290px]">
         <FeedFilters lang={lang} facets={facets} active={filters} activeLabel={activeLabel} />
-        {filters.kind === "SOCIAL" && page.items.length === 0 ? (
+        {sp.view === "directory" || (filters.kind === "SOCIAL" && page.items.length === 0) ? (
           <FeedSocialDirectory lang={lang} accounts={accounts} />
         ) : (
           <FeedTimeline

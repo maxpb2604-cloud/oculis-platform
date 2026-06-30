@@ -37,6 +37,7 @@ import {
   listFeedItems,
   listFeedForInitiative,
   initiativeByCode,
+  searchInitiatives,
   feedFacets,
   feedTrendingCategories,
   feedTrendingEntities,
@@ -333,6 +334,42 @@ export async function getMonitoringHealth() {
   return latestRunsBySource(d);
 }
 
+/**
+ * Freshness of the feed sources for the "última actualización" indicator: the
+ * most-recent successful run time overall, plus a per-source breakdown (name,
+ * ok, when, item count). Reads `ingestion_runs` (the same data the monitoring
+ * page uses), filtered to `feed-*` sources.
+ */
+export async function getFeedFreshness() {
+  const d = await db();
+  const all = await latestRunsBySource(d);
+  const LABELS: Record<string, string> = {
+    "feed-senado": "Senado (oficial)",
+    "feed-diputados": "Diputados (oficial)",
+    "feed-diariolibre": "Diario Libre",
+    "feed-prensa": "Prensa (Google News)",
+    "feed-x": "Redes (X)",
+    "feed-legislative": "Señales legislativas",
+  };
+  const sources = all
+    .filter((r) => r.source.startsWith("feed-"))
+    .map((r) => ({
+      source: r.source,
+      label: LABELS[r.source] ?? r.source,
+      ok: r.ok,
+      seen: r.seen,
+      finishedAt: r.finishedAt ? new Date(r.finishedAt).toISOString() : null,
+      lastSuccessAt: r.lastSuccessAt ? new Date(r.lastSuccessAt).toISOString() : null,
+    }));
+  // Newest successful finish across feed sources = "last updated".
+  const times = sources
+    .map((s) => s.lastSuccessAt)
+    .filter((t): t is string => !!t)
+    .sort();
+  const updatedAt = times.length ? times[times.length - 1]! : null;
+  return { updatedAt, sources };
+}
+
 export async function getCommissions(chamber?: string) {
   const d = await db();
   return listCommissions(d, { chamber });
@@ -395,6 +432,12 @@ export async function getInitiativeByCode(code: string) {
   return initiativeByCode(d, code);
 }
 
+/** Typeahead: bills (PDLs) whose title or code matches a keyword. */
+export async function searchBills(query: string) {
+  const d = await db();
+  return searchInitiatives(d, query, { limit: 8 });
+}
+
 /** Hot topics + trending entities for the right rail. Cached 5 min. */
 export const getFeedTrending = unstable_cache(
   async (windowDays: number) => {
@@ -413,8 +456,8 @@ export const getFeedTrending = unstable_cache(
 export const getSuggestedAccounts = unstable_cache(
   async (): Promise<FeedAccount[]> => {
     const d = await db();
-    return listFeedAccounts(d, { activeOnly: true, limit: 80 });
+    return listFeedAccounts(d, { activeOnly: true, limit: 300 });
   },
-  ["feed-accounts"],
+  ["feed-accounts-v2"],
   { revalidate: 600 },
 );

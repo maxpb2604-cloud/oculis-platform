@@ -1,9 +1,9 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { useState } from "react";
 import { CATEGORY_LABELS, type Category } from "@oculis/core";
 import { type Lang } from "@/lib/i18n";
+import { FeedBillSearch } from "@/components/feed-bill-search";
 
 interface Facets {
   categories: string[];
@@ -25,10 +25,13 @@ export function FeedFilters({
   const es = lang === "es";
   const router = useRouter();
   const sp = useSearchParams();
-  const [search, setSearch] = useState(sp.get("search") ?? "");
 
   const navigate = (patch: Record<string, string | null>) => {
     const p = new URLSearchParams(sp.toString());
+    // Any filter interaction exits the standalone "directory" view (it's only
+    // entered via the rail link). Otherwise view=directory would stick to the URL
+    // and the directory would keep showing even after picking Redes / a filter.
+    p.delete("view");
     for (const [k, v] of Object.entries(patch)) {
       if (v === null || v === "") p.delete(k);
       else p.set(k, v);
@@ -70,27 +73,17 @@ export function FeedFilters({
         </div>
       )}
 
-      <div className="card p-3">
-        <div className="eyebrow mb-2">{es ? "Buscar" : "Search"}</div>
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            navigate({ search: search || null });
-          }}
-        >
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder={es ? "Palabra clave…" : "Keyword…"}
-            className="w-full rounded-lg px-2.5 py-1.5 text-[13px] outline-none"
-            style={{
-              background: "var(--surface-2)",
-              border: "1px solid var(--border)",
-              color: "var(--text)",
-            }}
-          />
-        </form>
-      </div>
+      <FeedBillSearch
+        lang={lang}
+        onSelect={(code) =>
+          navigate({
+            initiativeCode: code,
+            legislatorSourceId: null,
+            commissionName: null,
+            search: null,
+          })
+        }
+      />
 
       <div className="card p-3">
         <div className="eyebrow mb-2">{es ? "Tipo" : "Type"}</div>
