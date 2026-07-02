@@ -225,6 +225,24 @@ export function isCongressRelevant(text: string): boolean {
   return CONGRESS_RE.test(text) || CABINET_RE.test(text);
 }
 
+/**
+ * Stable dedup key from an article URL: lowercases the host and drops the query
+ * string, fragment, and any trailing slash. Used instead of the RSS `<guid>`
+ * because some sources rotate their guid across publish cycles (e.g. Diario
+ * Libre emits a fresh UUID guid for the same article over time), which defeated
+ * the `(source, sourceId)` uniqueness and re-inserted every article each run.
+ * The URL's permanent article id is the durable identity.
+ */
+export function canonicalLink(link: string | null): string | null {
+  if (!link) return null;
+  try {
+    const u = new URL(link);
+    return `${u.protocol}//${u.host.toLowerCase()}${u.pathname.replace(/\/+$/, "")}`;
+  } catch {
+    return link.split(/[?#]/)[0] || link;
+  }
+}
+
 export interface RssAdapterOpts {
   source: string;
   kind: FeedKind;
@@ -255,7 +273,8 @@ export class RssFeedAdapter implements FeedAdapter {
           if (!r.title) continue;
           const text = `${r.title} ${r.summary ?? ""}`;
           if (this.opts.keywordFilter && !this.opts.keywordFilter.test(text)) continue;
-          const sourceId = r.guid ?? r.link ?? r.title;
+          // Key on the canonical URL (stable) before the guid (some sources rotate it).
+          const sourceId = canonicalLink(r.link) ?? r.guid ?? r.title;
           if (seen.has(sourceId)) continue;
           seen.add(sourceId);
           kept++;
@@ -303,6 +322,11 @@ function cleanOutlet(s: string | null): string | null {
     "diariolibre.com": "Diario Libre",
     "n.com.do": "N Digital",
     "eldia.com.do": "El Día",
+    "elnuevodiario.com.do": "El Nuevo Diario",
+    "almomento.net": "Al Momento",
+    "cdn.com.do": "CDN",
+    "z101digital.com": "Z101 Digital",
+    "proceso.com.do": "Proceso",
   };
   return map[o.toLowerCase()] ?? o;
 }
@@ -335,7 +359,7 @@ export class GoogleNewsAdapter implements FeedAdapter {
         const idx = r.title.lastIndexOf(" - ");
         const outlet = cleanOutlet(idx > 0 ? r.title.slice(idx + 3) : null);
         const title = idx > 0 ? r.title.slice(0, idx).trim() : r.title;
-        const sourceId = r.guid ?? r.link ?? title;
+        const sourceId = canonicalLink(r.link) ?? r.guid ?? title;
         if (seen.has(sourceId)) continue;
         seen.add(sourceId);
         items.push({
@@ -380,7 +404,7 @@ export function officialFeedAdapters(): FeedAdapter[] {
       source: "feed-diputados",
       kind: "OFFICIAL",
       chamber: "DIPUTADOS",
-      feeds: ["https://camaradediputados.gob.do/feed/", "https://www.diputadosrd.gob.do/feed/"],
+      feeds: ["https://camaradediputados.gob.do/feed/"],
     }),
   ];
 }
@@ -400,6 +424,14 @@ export function pressFeedAdapters(): FeedAdapter[] {
     "elcaribe.com.do",
     "n.com.do",
     "eldia.com.do",
+    // Additional reputable DR outlets for broader Congress coverage.
+    // (Diario Libre is intentionally excluded — it has its own RSS adapter above;
+    //  Google News would store a news.google.com redirect URL that can't dedup against it.)
+    "elnuevodiario.com.do",
+    "almomento.net",
+    "cdn.com.do",
+    "z101digital.com",
+    "proceso.com.do",
   ]
     .map((s) => `site:${s}`)
     .join(" OR ");
@@ -412,9 +444,12 @@ export function pressFeedAdapters(): FeedAdapter[] {
       feeds: [
         "https://www.diariolibre.com/rss/portada.xml",
         "https://www.diariolibre.com/rss/actualidad.xml",
+        "https://www.diariolibre.com/rss/politica.xml",
+        "https://www.diariolibre.com/rss/economia.xml",
       ],
     }),
-    new GoogleNewsAdapter({ source: "feed-prensa", query: `(${sites}) ${terms} when:14d` }),
+    // 30-day window (matches the adapter's 35-day staleness cutoff) for more depth.
+    new GoogleNewsAdapter({ source: "feed-prensa", query: `(${sites}) ${terms} when:30d` }),
   ];
 }
 
@@ -507,11 +542,29 @@ export class XSocialAdapter {
   }
 
   private async api(path: string): Promise<any> {
-    const res = await fetch(`https://api.twitter.com${path}`, {
-      headers: { Authorization: `Bearer ${this.token}` },
-    });
-    if (!res.ok) throw new Error(`X API ${res.status} ${res.statusText}`);
-    return res.json();
+    // X API v2 (Basic tier) rate-limits the user-timeline endpoint hard. Retry
+    // 429s honoring the reset header (up to ~2 short waits) before giving up, and
+    // give clear messages for auth/tier problems so the gap is actionable.
+    for (let attempt = 0; ; attempt++) {
+      const res = await fetch(`https://api.twitter.com${path}`, {
+        headers: { Authorization: `Bearer ${this.token}` },
+      });
+      if (res.ok) return res.json();
+      if (res.status === 429 && attempt < 2) {
+        const reset = Number(res.headers.get("x-rate-limit-reset")) * 1000;
+        const waitMs = Math.min(Math.max(reset - Date.now(), 1000), 60_000) || 5000;
+        await new Promise((r) => setTimeout(r, waitMs));
+        continue;
+      }
+      if (res.status === 401)
+        throw new Error("401 token inválido o vencido (revisa X_BEARER_TOKEN)");
+      if (res.status === 402)
+        throw new Error("402 se requieren créditos de X API (cuenta pay-per-use sin saldo)");
+      if (res.status === 403)
+        throw new Error("403 acceso denegado — el plan de la app de X no cubre este endpoint");
+      if (res.status === 429) throw new Error("429 límite de tasa de X agotado (reintentar luego)");
+      throw new Error(`X API ${res.status} ${res.statusText}`);
+    }
   }
 }
 

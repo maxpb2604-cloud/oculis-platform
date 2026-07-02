@@ -98,11 +98,19 @@ export function FeedRail({
                     </span>
                     {entityDisplay(e)}
                   </span>
-                  <span
-                    className="tnum shrink-0 text-[11px]"
-                    style={{ color: "var(--text-muted)" }}
-                  >
-                    {e.count}
+                  <span className="flex shrink-0 items-center gap-1 text-[11px]">
+                    {e.rising && (
+                      <span
+                        title={es ? "En aceleración" : "Accelerating"}
+                        style={{ color: "var(--risk-bajo, #3fb950)" }}
+                        aria-label={es ? "En aceleración" : "Accelerating"}
+                      >
+                        ▲
+                      </span>
+                    )}
+                    <span className="tnum" style={{ color: "var(--text-muted)" }}>
+                      {e.count}
+                    </span>
                   </span>
                 </Link>
               </li>
@@ -146,7 +154,7 @@ export function FeedRail({
           })}
         </ul>
         <Link
-          href={`/feed${q}`}
+          href={`/feed?view=directory${q ? `&${q.slice(1)}` : ""}`}
           className="mt-2 block text-center text-[11.5px]"
           style={{ color: "var(--accent)" }}
         >

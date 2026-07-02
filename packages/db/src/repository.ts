@@ -2,7 +2,7 @@
  * Persistence operations for ingestion: idempotent upsert of initiatives and
  * append-only status-event recording with change detection.
  */
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, ilike, inArray, isNotNull, or, sql } from "drizzle-orm";
 import type { Database } from "./client.js";
 import {
   activityEvents,
@@ -1401,16 +1401,29 @@ export async function feedTrendingCategories(
   opts: { sinceDays?: number } = {},
 ): Promise<Bucket[]> {
   const days = opts.sinceDays ?? 14;
-  const rows = await db
-    .select({
-      key: sql<string>`coalesce(${feedItems.category}::text, 'N/D')`,
-      count: sql<number>`count(*)::int`,
-    })
-    .from(feedItems)
-    .where(sql`coalesce(${feedItems.publishedAt}, ${feedItems.firstSeenAt}) >= now() - make_interval(days => ${days})`)
-    .groupBy(sql`1`)
-    .orderBy(sql`2 desc`);
-  return rows.filter((r) => r.key !== "N/D").map((r) => ({ key: r.key, count: r.count }));
+  const recentDays = Math.max(2, Math.ceil(days / 3));
+  const priorDays = Math.max(1, days - recentDays);
+  // Same acceleration model as the entities: rank categories by how much their
+  // recent volume exceeds the prior baseline; `count` is the recent-window count.
+  const rows = (await db.execute(sql`
+    with c as (
+      select coalesce(category::text, 'N/D') as key,
+             coalesce(published_at, first_seen_at) as d
+      from feed_items
+      where coalesce(published_at, first_seen_at) >= now() - make_interval(days => ${days})
+    ),
+    agg as (
+      select key,
+             count(*) filter (where d >= now() - make_interval(days => ${recentDays}))::int as recent,
+             count(*) filter (where d <  now() - make_interval(days => ${recentDays}))::int as prior
+      from c group by key
+    )
+    select key, recent as count
+    from agg
+    where key <> 'N/D' and recent >= 1
+    order by (recent::numeric - (prior::numeric / ${priorDays} * ${recentDays})) desc, recent desc
+  `)) as unknown as { rows: Bucket[] };
+  return rows.rows;
 }
 
 export interface TrendingEntity {
@@ -1419,32 +1432,59 @@ export interface TrendingEntity {
   initiativeId: number | null;
   title: string | null; // bill title (shown instead of the code)
   legislatorSourceId: string | null;
-  count: number;
+  count: number; // recent-window mentions (the badge shown in the rail)
+  rising: boolean; // clearly accelerating vs the prior baseline (shows a ▲)
 }
 
-/** Most-mentioned bills / legislators across feed items in a recent window. */
+/**
+ * "En tendencia" by ACCELERATION, not raw volume: surfaces bills / legislators /
+ * commissions whose mentions are RISING now, so a topic that just spiked beats a
+ * perennially-mentioned one that's flat.
+ *
+ * The window (`sinceDays`, 7/14/30) is split into a recent slice (~the last
+ * third) and the prior baseline. Score = recent mentions minus what the prior
+ * period's rate predicts for that slice; positive = accelerating. We only show
+ * entities with ≥1 recent mention and rank by score (tie-break: recent count).
+ * `count` returns the recent mentions.
+ */
 export async function feedTrendingEntities(
   db: Database,
   opts: { sinceDays?: number; limit?: number } = {},
 ): Promise<TrendingEntity[]> {
   const days = opts.sinceDays ?? 14;
   const limit = opts.limit ?? 10;
-  return db
-    .select({
-      entityType: feedItemEntities.entityType,
-      label: feedItemEntities.label,
-      initiativeId: sql<number | null>`max(${feedItemEntities.initiativeId})`,
-      title: sql<string | null>`max(${initiatives.title})`,
-      legislatorSourceId: sql<string | null>`max(${feedItemEntities.legislatorSourceId})`,
-      count: sql<number>`count(*)::int`,
-    })
-    .from(feedItemEntities)
-    .innerJoin(feedItems, eq(feedItemEntities.feedItemId, feedItems.id))
-    .leftJoin(initiatives, eq(feedItemEntities.initiativeId, initiatives.id))
-    .where(sql`coalesce(${feedItems.publishedAt}, ${feedItems.firstSeenAt}) >= now() - make_interval(days => ${days})`)
-    .groupBy(feedItemEntities.entityType, feedItemEntities.label)
-    .orderBy(sql`count(*) desc`)
-    .limit(limit);
+  const recentDays = Math.max(2, Math.ceil(days / 3));
+  const priorDays = Math.max(1, days - recentDays); // baseline span (avoid /0)
+  const rows = await db.execute(sql`
+    with tagged as (
+      select fe.entity_type, fe.label, fe.initiative_id, fe.legislator_source_id,
+             i.title as initiative_title,
+             coalesce(f.published_at, f.first_seen_at) as d
+      from feed_item_entities fe
+      join feed_items f on f.id = fe.feed_item_id
+      left join initiatives i on i.id = fe.initiative_id
+      where coalesce(f.published_at, f.first_seen_at) >= now() - make_interval(days => ${days})
+    ),
+    agg as (
+      select entity_type as "entityType", label,
+             max(initiative_id) as "initiativeId",
+             max(initiative_title) as title,
+             max(legislator_source_id) as "legislatorSourceId",
+             count(*) filter (where d >= now() - make_interval(days => ${recentDays}))::int as recent,
+             count(*) filter (where d <  now() - make_interval(days => ${recentDays}))::int as prior
+      from tagged
+      group by entity_type, label
+    )
+    select "entityType", label, "initiativeId", title, "legislatorSourceId",
+           recent as count,
+           (recent::numeric - (prior::numeric / ${priorDays} * ${recentDays})) as score,
+           (recent::numeric - (prior::numeric / ${priorDays} * ${recentDays})) >= 1 as rising
+    from agg
+    where recent >= 1
+    order by score desc, recent desc, label asc
+    limit ${limit}
+  `);
+  return (rows as unknown as { rows: TrendingEntity[] }).rows;
 }
 
 /** The curated account registry, most-influential first. */
@@ -1563,6 +1603,50 @@ export async function initiativeByCode(
     .where(eq(initiatives.code, code))
     .limit(1);
   return row ?? null;
+}
+
+/**
+ * Typeahead search over legislative bills (PDLs) by keyword — matches the bill
+ * title or official code. Returns the lightest payload needed to render an
+ * autocomplete option and then filter the feed by `code`.
+ */
+export async function searchInitiatives(
+  db: Database,
+  query: string,
+  opts: { limit?: number } = {},
+): Promise<
+  Array<{ id: number; code: string; title: string; status: string | null; chamber: string | null }>
+> {
+  const q = query.trim();
+  if (q.length < 2) return [];
+  const like = `%${q}%`;
+  const rows = await db
+    .select({
+      id: initiatives.id,
+      code: initiatives.code,
+      title: initiatives.title,
+      status: initiatives.status,
+      chamber: initiatives.chamber,
+    })
+    .from(initiatives)
+    .where(
+      and(
+        eq(initiatives.kind, "LEGISLATIVE"),
+        isNotNull(initiatives.code),
+        or(ilike(initiatives.title, like), ilike(initiatives.code, like)),
+      ),
+    )
+    // Surface filed bills first, newest by filing date.
+    .orderBy(sql`${initiatives.filedAt} desc nulls last`)
+    .limit(opts.limit ?? 8);
+  // `code` is non-null here thanks to the WHERE clause.
+  return rows as Array<{
+    id: number;
+    code: string;
+    title: string;
+    status: string | null;
+    chamber: string | null;
+  }>;
 }
 
 export interface CommissionWithMembers {
