@@ -2,7 +2,7 @@
  * Persistence operations for ingestion: idempotent upsert of initiatives and
  * append-only status-event recording with change detection.
  */
-import { and, eq, ilike, inArray, isNotNull, or, sql } from "drizzle-orm";
+import { and, eq, ilike, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
 import type { Database } from "./client.js";
 import {
   activityEvents,
@@ -145,9 +145,16 @@ export interface ScorableRow {
   category: string | null;
 }
 
-/** All initiatives with the fields needed to (re)score them. */
-export async function listForScoring(db: Database): Promise<ScorableRow[]> {
-  return db
+/**
+ * Initiatives with the fields needed to (re)score them. `onlyMissing` restricts
+ * to rows that never got a score (risk_level IS NULL) so a cheap heuristic pass
+ * can fill gaps without overwriting existing (possibly Claude-quality) scores.
+ */
+export async function listForScoring(
+  db: Database,
+  opts: { onlyMissing?: boolean } = {},
+): Promise<ScorableRow[]> {
+  const base = db
     .select({
       id: initiatives.id,
       title: initiatives.title,
@@ -157,6 +164,47 @@ export async function listForScoring(db: Database): Promise<ScorableRow[]> {
       category: initiatives.category,
     })
     .from(initiatives);
+  return opts.onlyMissing ? base.where(isNull(initiatives.riskLevel)) : base;
+}
+
+export interface CategorizableRow {
+  id: number;
+  title: string;
+  sourceCategory: string | null;
+  purpose: string | null;
+}
+
+/**
+ * Initiatives with the fields needed to (re)categorize them. `onlyMissing`
+ * restricts to rows with no category yet, so a Claude pass can clear the
+ * backlog without touching rows already classified.
+ */
+export async function listForCategorizing(
+  db: Database,
+  opts: { onlyMissing?: boolean } = {},
+): Promise<CategorizableRow[]> {
+  const base = db
+    .select({
+      id: initiatives.id,
+      title: initiatives.title,
+      sourceCategory: initiatives.sourceCategory,
+      purpose: initiatives.purpose,
+    })
+    .from(initiatives);
+  return opts.onlyMissing ? base.where(isNull(initiatives.category)) : base;
+}
+
+/** Persist a (re)computed category for one initiative. */
+export async function saveCategory(
+  db: Database,
+  initiativeId: number,
+  category: string,
+  confidence: number,
+): Promise<void> {
+  await db
+    .update(initiatives)
+    .set({ category, categoryConfidence: confidence, updatedAt: sql`now()` })
+    .where(eq(initiatives.id, initiativeId));
 }
 
 /** Persist a computed score + its inputs/provenance for one initiative. */

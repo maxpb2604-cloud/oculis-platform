@@ -17,6 +17,7 @@ import { ingestRegulatory } from "./ingest-regulatory.js";
 import { ingestDeposits, ingestSenateDeposits } from "./ingest-deposits.js";
 import { runDaily } from "./daily.js";
 import { ingestRoster } from "./ingest-roster.js";
+import { recategorizeAll } from "./recategorize.js";
 import { rescoreAll } from "./rescore.js";
 import { ingestFeed } from "./ingest-feed.js";
 import { seedFeedAccounts } from "./feed-accounts.seed.js";
@@ -140,12 +141,35 @@ async function main() {
       return;
     }
 
-    if (flag("rescore")) {
-      console.log("↻ Re-scoring existing initiatives (no scraping)\n");
-      const r = await rescoreAll(db, { log: (m) => console.log(m) });
+    if (flag("recategorize")) {
+      const onlyMissing = flag("only-missing");
+      console.log(
+        onlyMissing
+          ? "🏷  Categorizing initiatives that have no category yet (no scraping)\n"
+          : "🏷  Re-categorizing existing initiatives (no scraping)\n",
+      );
+      const r = await recategorizeAll(db, { onlyMissing, log: (m) => console.log(m) });
       const secs = ((Date.now() - started) / 1000).toFixed(1);
       console.log(
-        `\n✔ rescored ${r.scored} in ${secs}s — risk spread: ${JSON.stringify(r.byRisk)}`,
+        `\n✔ categorized ${r.categorized}/${r.processed} in ${secs}s` +
+          (r.unresolved ? ` · ${r.unresolved} unresolved` : "") +
+          ` — ${JSON.stringify(r.byCategory)}`,
+      );
+      return;
+    }
+
+    if (flag("rescore")) {
+      const onlyMissing = flag("only-missing");
+      console.log(
+        onlyMissing
+          ? "↻ Scoring initiatives that have no score yet (no scraping)\n"
+          : "↻ Re-scoring existing initiatives (no scraping)\n",
+      );
+      const r = await rescoreAll(db, { onlyMissing, log: (m) => console.log(m) });
+      const secs = ((Date.now() - started) / 1000).toFixed(1);
+      console.log(
+        `\n✔ rescored ${r.scored} in ${secs}s — risk spread: ${JSON.stringify(r.byRisk)}` +
+          (r.failed ? ` · ${r.failed} failed` : ""),
       );
       return;
     }
