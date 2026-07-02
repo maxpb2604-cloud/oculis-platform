@@ -13,10 +13,11 @@ interface SourceStatus {
   lastSuccessAt: string | null;
 }
 
-/** Human "hace X" / "X ago" from an ISO timestamp. */
-function ago(iso: string | null, es: boolean): string {
+/** Human "hace X" / "X ago" from an ISO timestamp. `now` is null before mount. */
+function ago(iso: string | null, es: boolean, now: number | null): string {
+  if (now === null) return "…"; // stable SSR/hydration placeholder
   if (!iso) return es ? "nunca" : "never";
-  const secs = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
+  const secs = Math.max(0, (now - new Date(iso).getTime()) / 1000);
   const mins = Math.floor(secs / 60);
   const hrs = Math.floor(mins / 60);
   const days = Math.floor(hrs / 24);
@@ -44,12 +45,15 @@ export function FeedFreshness({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [open, setOpen] = useState(false);
-  // Re-render every 60s so the relative time stays current without a reload.
-  const [, setTick] = useState(0);
+  // "now" is only known on the client: null during SSR/hydration (stable
+  // placeholder), then set on mount and refreshed every 60s so the relative
+  // time stays current without a reload — and without hydration mismatches.
+  const [now, setNow] = useState<number | null>(null);
   const boxRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const t = setInterval(() => setTick((n) => n + 1), 60_000);
+    setNow(Date.now());
+    const t = setInterval(() => setNow(Date.now()), 60_000);
     return () => clearInterval(t);
   }, []);
   useEffect(() => {
@@ -61,8 +65,10 @@ export function FeedFreshness({
   }, []);
 
   const anyDown = sources.some((s) => s.ok === false);
-  const stale = updatedAt ? Date.now() - new Date(updatedAt).getTime() > 12 * 3600_000 : true;
-  const dot = anyDown ? "#e0654d" : stale ? "#d9a441" : "#3fb950";
+  const stale = updatedAt ? now !== null && now - new Date(updatedAt).getTime() > 12 * 3600_000 : true;
+  // Neutral dot until mounted — the status depends on the client clock.
+  const dot =
+    now === null ? "var(--border)" : anyDown ? "#e0654d" : stale ? "#d9a441" : "#3fb950";
 
   return (
     <div
@@ -77,7 +83,9 @@ export function FeedFreshness({
         />
         <span style={{ color: "var(--text-muted)" }}>
           {es ? "Actualizado" : "Updated"}{" "}
-          <strong style={{ color: "var(--text)", fontWeight: 600 }}>{ago(updatedAt, es)}</strong>
+          <strong style={{ color: "var(--text)", fontWeight: 600 }}>
+            {ago(updatedAt, es, now)}
+          </strong>
         </span>
         <button
           onClick={() => setOpen((o) => !o)}
@@ -127,7 +135,7 @@ export function FeedFreshness({
                     <span className="truncate">{s.label}</span>
                   </span>
                   <span className="shrink-0 tabular-nums" style={{ color: "var(--text-muted)" }}>
-                    {s.seen}· {ago(s.lastSuccessAt, es)}
+                    {s.seen} · {ago(s.lastSuccessAt, es, now)}
                   </span>
                 </li>
               );

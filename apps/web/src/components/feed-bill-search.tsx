@@ -46,12 +46,14 @@ export function FeedBillSearch({
           signal: ctrl.signal,
         });
         const data = await res.json();
+        if (ctrl.signal.aborted) return; // superseded by a newer keystroke
         setOptions(data.items ?? []);
         setOpen(true);
-      } catch {
-        /* aborted or network error — leave prior options */
-      } finally {
         setLoading(false);
+      } catch {
+        // Only a REAL failure of the current request may clear `loading`; an
+        // aborted (superseded) request must not clobber the newer search's state.
+        if (!ctrl.signal.aborted) setLoading(false);
       }
     }, 220);
     return () => {

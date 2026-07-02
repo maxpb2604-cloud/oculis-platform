@@ -3,8 +3,9 @@ import { notFound } from "next/navigation";
 import { CATEGORY_LABELS, type Category } from "@oculis/core";
 import { getInitiative } from "@/lib/data";
 import { dict, langQuery, type Lang } from "@/lib/i18n";
+import { formatISODate } from "@/lib/format";
 import { AppShell } from "@/components/app-shell";
-import { Panel, SectionHeading } from "@/components/dashboard";
+import { Panel, SectionHeading } from "@/components/ui/panel";
 import { RiskPill } from "@/components/initiatives-table";
 
 export const dynamic = "force-dynamic";
@@ -21,7 +22,11 @@ export default async function Page({
   const t = dict[lang];
   const q = langQuery(lang);
 
-  const ini = await getInitiative(Number(id));
+  // Non-numeric or non-positive ids (e.g. /initiatives/foo) are a 404, not a crash.
+  const numId = /^\d+$/.test(id) ? Number(id) : NaN;
+  if (!Number.isInteger(numId) || numId <= 0) notFound();
+
+  const ini = await getInitiative(numId);
   if (!ini) notFound();
 
   const prov = (ini.scoreInputs?.provenance ?? {}) as {
@@ -38,7 +43,7 @@ export default async function Page({
     [lang === "es" ? "Comisión" : "Committee", ini.committee],
     [lang === "es" ? "Tipo" : "Type", ini.type],
     [lang === "es" ? "Cámara" : "Chamber", ini.chamber],
-    [lang === "es" ? "Depositada" : "Filed", ini.filedAt],
+    [lang === "es" ? "Depositada" : "Filed", ini.filedAt ? formatISODate(ini.filedAt, lang) : null],
     [t.category, ini.category ? CATEGORY_LABELS[ini.category as Category] ?? ini.category : null],
   ];
 
@@ -51,7 +56,7 @@ export default async function Page({
       <div className="card mt-3 p-6">
         <div className="flex flex-wrap items-center gap-3">
           <span className="tnum font-mono text-xs" style={{ color: "var(--text-muted)" }}>{ini.code ?? "—"}</span>
-          <RiskPill level={ini.riskLevel} />
+          <RiskPill level={ini.riskLevel} lang={lang} />
           {ini.approvalProbability && (
             <span className="text-xs" style={{ color: "var(--text-muted)" }}>
               {lang === "es" ? "Aprobación" : "Approval"}: <strong>{ini.approvalProbability}</strong>
@@ -108,7 +113,7 @@ export default async function Page({
         </Panel>
       </div>
 
-      <SectionHeading n="" title={lang === "es" ? "Historial de Estados" : "Status Timeline"} />
+      <SectionHeading title={lang === "es" ? "Historial de Estados" : "Status Timeline"} />
       <Panel title={lang === "es" ? "Cronología" : "Timeline"}>
         {ini.events.length === 0 ? (
           <p className="text-sm" style={{ color: "var(--text-muted)" }}>{lang === "es" ? "Sin eventos registrados." : "No events recorded."}</p>
@@ -117,7 +122,7 @@ export default async function Page({
             {ini.events.map((e) => (
               <li key={e.id} className="mb-4 last:mb-0">
                 <span className="absolute -left-[5px] mt-1.5 h-2.5 w-2.5 rounded-full" style={{ background: "var(--accent)" }} />
-                <div className="tnum text-xs" style={{ color: "var(--text-muted)" }}>{e.eventDate ?? "—"}</div>
+                <div className="tnum text-xs" style={{ color: "var(--text-muted)" }}>{formatISODate(e.eventDate, lang)}</div>
                 <div className="text-sm font-medium">{e.status}</div>
                 {e.note && <div className="text-xs" style={{ color: "var(--text-muted)" }}>{e.note}</div>}
               </li>
@@ -125,6 +130,35 @@ export default async function Page({
           </ol>
         )}
       </Panel>
+
+      {ini.relatedNews.length > 0 && (
+        <>
+          <SectionHeading title={lang === "es" ? "Noticias Relacionadas" : "Related News"} />
+          <Panel title={lang === "es" ? "Cobertura y señales del feed" : "Feed coverage & signals"} flush>
+            <ul className="divide-y" style={{ borderColor: "var(--border)" }}>
+              {ini.relatedNews.map((n) => (
+                <li key={n.id} className="px-5 py-3">
+                  <div className="flex items-baseline justify-between gap-3">
+                    {n.url ? (
+                      <a href={n.url} target="_blank" rel="noopener noreferrer" className="text-sm font-medium hover:underline" style={{ cursor: "pointer" }}>
+                        {n.title} ↗
+                      </a>
+                    ) : (
+                      <span className="text-sm font-medium">{n.title}</span>
+                    )}
+                    {n.publishedAt && (
+                      <span className="tnum shrink-0 text-xs" style={{ color: "var(--text-muted)" }}>
+                        {formatISODate(String(n.publishedAt).slice(0, 10), lang)}
+                      </span>
+                    )}
+                  </div>
+                  <p className="mt-0.5 text-[11px]" style={{ color: "var(--text-muted)" }}>{n.source}</p>
+                </li>
+              ))}
+            </ul>
+          </Panel>
+        </>
+      )}
     </AppShell>
   );
 }

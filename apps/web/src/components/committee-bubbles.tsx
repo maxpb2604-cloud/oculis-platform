@@ -259,8 +259,8 @@ function CommitteeMembers({ committee, es }: { committee: CommissionWithMembers 
       ) : (
         <div className="rounded-xl border border-dashed px-4 py-3 text-[12px]" style={{ borderColor: "var(--border-strong)", color: "var(--text-muted)" }}>
           {es
-            ? "Composición no disponible para esta comisión. Ejecuta la ingesta del roster (npm run roster) para integrarla."
-            : "Membership not available for this committee. Run the roster ingestion (npm run roster) to integrate it."}
+            ? "La composición de esta comisión aún no está disponible. Se mostrará automáticamente cuando el registro oficial esté integrado."
+            : "This committee's membership is not yet available. It will appear automatically once the official roster is integrated."}
         </div>
       )}
     </>

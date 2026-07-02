@@ -1,15 +1,15 @@
 "use client";
 
 import { useState } from "react";
-import { Panel } from "@/components/dashboard";
+import { Panel } from "@/components/ui/panel";
 import { ActivityList, DepositList, StatTile, type ActivityItem } from "@/components/monitoring";
 import { ChamberToggle, type Chamber } from "@/components/ui/chamber-toggle";
 import type { DepositItem } from "@/lib/data";
 
 /**
  * Daily activity, split by chamber. A segmented toggle switches the whole feed
- * between Diputados and Senadores. Deposits exist only for Diputados (the SIL
- * corpus is the Chamber of Deputies), so that panel shows a note for the Senate.
+ * between Diputados and Senadores. Both chambers show deposits and activity for
+ * the exact selected day (or explicit range) — the `when` label describes it.
  */
 export function HoyChambers({
   es,
@@ -17,7 +17,6 @@ export function HoyChambers({
   prevDayLink,
   deposits,
   senDeposits,
-  senDepositsWindow,
   dipCommittee,
   senCommittee,
   dipPlenary,
@@ -28,8 +27,6 @@ export function HoyChambers({
   prevDayLink: React.ReactNode;
   deposits: DepositItem[];
   senDeposits: DepositItem[];
-  /** True when the Senate deposits cover a 7-day lookback (single-day view) vs an explicit range. */
-  senDepositsWindow: boolean;
   dipCommittee: ActivityItem[];
   senCommittee: ActivityItem[];
   dipPlenary: ActivityItem[];
@@ -45,13 +42,6 @@ export function HoyChambers({
   const docsUp = shownDeposits.filter((d) => d.docUploaded).length;
 
   const chamberLabel = isDip ? (es ? "Cámara de Diputados" : "Chamber of Deputies") : (es ? "Senado" : "Senate");
-  // Senate deposits AND activity use a 7-day lookback in the single-day view (its SIL
-  // publishes with lag). Diputados is exact-date. Disclose the window so a count of Senate
-  // committee/plenary activity isn't mistaken for "today only".
-  const senWindow = !isDip && senDepositsWindow;
-  const depWhen = senWindow ? (es ? "últimos 7 días" : "last 7 days") : when;
-  const actWhen = senWindow ? (es ? "últimos 7 días" : "last 7 days") : when;
-  const windowTag = senWindow ? (es ? " · últimos 7 días" : " · last 7 days") : "";
 
   return (
     <>
@@ -70,7 +60,7 @@ export function HoyChambers({
           value={shownDeposits.length}
           label={es ? "Iniciativas depositadas" : "Initiatives deposited"}
         />
-        <StatTile value={committee.length} label={`${es ? "Movimientos en comisión" : "Committee movements"}${windowTag}`} accent="var(--accent)" />
+        <StatTile value={committee.length} label={es ? "Movimientos en comisión" : "Committee movements"} accent="var(--accent)" />
         <StatTile value={`${docsUp}/${shownDeposits.length || 0}`} label={es ? "Con documento cargado" : "With document uploaded"} accent="var(--risk-bajo)" />
       </div>
 
@@ -79,17 +69,12 @@ export function HoyChambers({
         <Panel
           title={`${es ? "Iniciativas depositadas" : "Initiatives deposited"} · ${shownDeposits.length}`}
           flush
-          action={
-            <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>
-              {chamberLabel}
-              {!isDip && senDepositsWindow ? ` · ${es ? "últimos 7 días" : "last 7 days"}` : ""}
-            </span>
-          }
+          action={<span className="text-[11px]" style={{ color: "var(--text-muted)" }}>{chamberLabel}</span>}
         >
           <DepositList
             items={shownDeposits}
             lang={lang}
-            empty={<>{es ? "No se depositaron iniciativas" : "No initiatives deposited"} {depWhen}. {isDip ? prevDayLink : null}</>}
+            empty={<>{es ? "No se depositaron iniciativas" : "No initiatives deposited"} {when}. {isDip ? prevDayLink : null}</>}
           />
         </Panel>
       </div>
@@ -99,17 +84,17 @@ export function HoyChambers({
         <Panel
           title={`${es ? "Movimientos en comisiones" : "Committee movements"} · ${committee.length}`}
           flush
-          action={<span className="text-[11px]" style={{ color: "var(--text-muted)" }}>{chamberLabel}{windowTag}</span>}
+          action={<span className="text-[11px]" style={{ color: "var(--text-muted)" }}>{chamberLabel}</span>}
         >
           <ActivityList
             items={committee}
             lang={lang}
-            empty={<>{es ? "Sin movimientos de comisión" : "No committee movements"} {actWhen}. {prevDayLink}</>}
+            empty={<>{es ? "Sin movimientos de comisión" : "No committee movements"} {when}. {prevDayLink}</>}
           />
         </Panel>
         <Panel title={`${es ? "Pleno y Asamblea" : "Floor & Assembly"} · ${plenary.length}`} flush
-          action={<span className="text-[11px]" style={{ color: "var(--text-muted)" }}>{chamberLabel}{windowTag}</span>}>
-          <ActivityList items={plenary} lang={lang} empty={`${es ? "Sin sesiones de pleno/asamblea" : "No floor/assembly sessions"} ${actWhen}.`} />
+          action={<span className="text-[11px]" style={{ color: "var(--text-muted)" }}>{chamberLabel}</span>}>
+          <ActivityList items={plenary} lang={lang} empty={`${es ? "Sin sesiones de pleno/asamblea" : "No floor/assembly sessions"} ${when}.`} />
         </Panel>
       </div>
     </>

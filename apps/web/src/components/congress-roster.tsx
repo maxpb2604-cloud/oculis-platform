@@ -7,7 +7,7 @@
  * "Comisiones" (each committee's composition). Clicking any legislator opens a profile
  * modal with their photo, bio, contact, committee seats and official profile link.
  */
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ChamberToggle, type Chamber } from "@/components/ui/chamber-toggle";
 import { Modal } from "@/components/ui/modal";
 import type { LegislatorProfile, CommissionWithMembers } from "@/lib/data";
@@ -49,6 +49,15 @@ export function CongressRoster({
   const [party, setParty] = useState<string>("ALL");
   const [q, setQ] = useState("");
   const [profile, setProfile] = useState<LegislatorProfile | null>(null);
+
+  // Lock body scroll while the profile modal is open (Escape / focus-trap come from <Modal>).
+  useEffect(() => {
+    if (!profile) return;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [profile]);
 
   const inChamber = useMemo(() => legislators.filter((l) => l.chamber === chamber), [legislators, chamber]);
   const chamberProvinces = useMemo(
@@ -188,7 +197,7 @@ function LegCard({ l, es, onClick }: { l: LegislatorProfile; es: boolean; onClic
   return (
     <button
       onClick={onClick}
-      className="w-full rounded-xl p-3 text-left transition hover:brightness-125"
+      className="w-full rounded-xl p-3 text-left transition hover:-translate-y-0.5 hover:shadow-lg"
       style={{ background: "var(--surface-2)", border: "1px solid var(--border)" }}
     >
       <div className="flex items-start justify-between gap-2">
@@ -329,7 +338,7 @@ function CommissionCard({ c, es }: { c: CommissionWithMembers; es: boolean }) {
   const [open, setOpen] = useState(false);
   const president = c.members.find((m) => m.cargo === "Presidente");
   return (
-    <div className="rounded-xl" style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}>
+    <div className="rounded-xl" style={{ background: "var(--surface-2)", border: "1px solid var(--border)" }}>
       <button onClick={() => setOpen((o) => !o)} className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left">
         <div className="min-w-0">
           <div className="truncate text-[14px] font-medium">{c.name}</div>
@@ -368,7 +377,7 @@ function Select({ value, onChange, all, options }: { value: string; onChange: (v
       value={value}
       onChange={(e) => onChange(e.target.value)}
       className="rounded-lg px-2.5 py-1.5 text-[12px] outline-none"
-      style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", color: "var(--text)" }}
+      style={{ background: "var(--surface-2)", border: "1px solid var(--border)", color: "var(--text)" }}
     >
       <option value="ALL">{all}</option>
       {options.map((o) => (

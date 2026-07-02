@@ -2,7 +2,8 @@ import Link from "next/link";
 import { getDashboardData, getInitiativesByProvince, getLegislatorsByProvince } from "@/lib/data";
 import { dict, langQuery, type Lang } from "@/lib/i18n";
 import { AppShell } from "@/components/app-shell";
-import { ChartGrid, GeoOverview, KpiBand, Panel, SectionHeading } from "@/components/dashboard";
+import { ChartGrid, GeoOverview, KpiBand } from "@/components/dashboard";
+import { Panel, SectionHeading } from "@/components/ui/panel";
 import { InitiativesTable } from "@/components/initiatives-table";
 
 export const dynamic = "force-dynamic";

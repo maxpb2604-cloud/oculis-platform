@@ -312,12 +312,6 @@ export async function getDepositsRange(from: string, to: string, chamber = "DIPU
  * SIL publishes with lag, so a single day is often empty — the short window mirrors the
  * manual playbook ("revisar ese día y los anteriores") and keeps the feed non-empty.
  */
-export async function getSenateDeposits(date: string, windowDays = 7): Promise<DepositItem[]> {
-  const d = await db();
-  const from = shiftISO(date, -(windowDays - 1));
-  return listDeposits(d, { dateFrom: from, dateTo: date, limit: 500, chamber: "SENADO" });
-}
-
 /** Committee/plenary activity (both chambers) within an inclusive [from, to] range. */
 export async function getRangeActivity(from: string, to: string) {
   const d = await db();

@@ -36,13 +36,30 @@ export default async function FeedPage({ searchParams }: { searchParams: Promise
     search: sp.search,
   };
 
+  // The explicit directory view never renders the timeline — skip the feed query.
+  const directoryView = sp.view === "directory";
+  const emptyPage: Awaited<ReturnType<typeof getFeed>> = { items: [], nextCursor: null };
   const [page, facets, trending, accounts, freshness] = await Promise.all([
-    getFeed(filters, { limit: 25 }),
+    directoryView ? Promise.resolve(emptyPage) : getFeed(filters, { limit: 25 }),
     getFeedFacets(),
     getFeedTrending(windowDays),
     getSuggestedAccounts(),
     getFeedFreshness(),
   ]);
+
+  // Fall back to the accounts directory ONLY when "Redes" (SOCIAL) is the sole
+  // active filter and there are genuinely no social posts yet. If OTHER filters
+  // (search/category/chamber/entity) caused the emptiness, the normal empty
+  // state must show instead — the directory would misattribute the cause.
+  const socialOnly =
+    filters.kind === "SOCIAL" &&
+    !filters.category &&
+    !filters.chamber &&
+    !filters.initiativeCode &&
+    !filters.legislatorSourceId &&
+    !filters.commissionName &&
+    !filters.search;
+  const showDirectory = directoryView || (socialOnly && page.items.length === 0);
 
   // Resolve the active bill filter to a readable name (instead of the code).
   let activeLabel: string | undefined;
@@ -65,8 +82,13 @@ export default async function FeedPage({ searchParams }: { searchParams: Promise
         />
       </div>
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-[230px_minmax(0,1fr)_290px]">
-        <FeedFilters lang={lang} facets={facets} active={filters} activeLabel={activeLabel} />
-        {sp.view === "directory" || (filters.kind === "SOCIAL" && page.items.length === 0) ? (
+        <FeedFilters
+          lang={lang}
+          facets={{ categories: facets.categories }}
+          active={filters}
+          activeLabel={activeLabel}
+        />
+        {showDirectory ? (
           <FeedSocialDirectory lang={lang} accounts={accounts} />
         ) : (
           <FeedTimeline
@@ -83,6 +105,7 @@ export default async function FeedPage({ searchParams }: { searchParams: Promise
           entities={trending.entities}
           accounts={accounts}
           windowDays={windowDays}
+          searchParams={sp}
         />
       </div>
     </AppShell>

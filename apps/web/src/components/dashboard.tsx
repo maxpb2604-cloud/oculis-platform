@@ -1,50 +1,13 @@
 import { CATEGORY_LABELS, type Category } from "@oculis/core";
 import { dict, type Lang } from "@/lib/i18n";
-import { ApprovalBar, CategoryBar, StatusDonut } from "@/components/charts";
-import { ProvinceBubbleMap } from "@/components/province-bubble-map";
+import { ApprovalBar, CategoryBar, DONUT_COLORS, StatusDonut } from "@/components/charts";
+import { ProvinceBubbleMapLazy } from "@/components/province-map-lazy";
+import { Kpi, Panel, SectionHeading } from "@/components/ui/panel";
 import type { DashboardData, ProvinceFC, LegislatorsByProvince } from "@/lib/data";
 
-export function Kpi({ label, value, accent }: { label: string; value: number; accent: string }) {
-  return (
-    <div className="card elev p-5">
-      <div className="eyebrow">{label}</div>
-      <div className="tnum mt-2 text-[34px] font-semibold leading-none">{value.toLocaleString()}</div>
-      <div className="mt-3 h-[3px] w-9 rounded-full" style={{ background: accent }} />
-    </div>
-  );
-}
-
-export function SectionHeading({ n, title }: { n: string; title: string }) {
-  return (
-    <div className="mb-3 mt-8 flex items-baseline gap-3">
-      <span className="tnum text-xs font-semibold" style={{ color: "var(--accent)" }}>{n}</span>
-      <h2 className="serif text-lg font-semibold">{title}</h2>
-      <span className="hairline flex-1 self-center" />
-    </div>
-  );
-}
-
-export function Panel({
-  title,
-  children,
-  flush,
-  action,
-}: {
-  title: string;
-  children: React.ReactNode;
-  flush?: boolean;
-  action?: React.ReactNode;
-}) {
-  return (
-    <div className="card overflow-hidden">
-      <div className="flex items-center justify-between border-b px-5 py-3">
-        <h3 className="text-sm font-semibold">{title}</h3>
-        {action}
-      </div>
-      <div className={flush ? "" : "p-5"}>{children}</div>
-    </div>
-  );
-}
+// NOTE: Kpi/Panel/SectionHeading moved to components/ui/panel.tsx — import them
+// from there. This module stays chart-heavy (recharts) by design; the map loads
+// lazily so mapbox-gl never lands in First Load JS.
 
 export function Insight({ lang, data }: { lang: Lang; data: DashboardData }) {
   const topCat = data.byCategory.find((c) => c.key !== "N/D");
@@ -112,7 +75,7 @@ export function GeoOverview({
             </span>
           }
         >
-          <ProvinceBubbleMap data={provinceFC} legislators={legislators} height={420} lang={lang} />
+          <ProvinceBubbleMapLazy data={provinceFC} legislators={legislators} height={420} lang={lang} />
         </Panel>
         <Panel title={t.byStatus}>
           <StatusDonut data={data.byStatus} lang={lang} />
@@ -140,13 +103,16 @@ export function ChartGrid({ lang, data }: { lang: Lang; data: DashboardData }) {
   );
 }
 
+/**
+ * Donut legend. Uses the palette exported by charts.tsx and the same data order as the
+ * donut itself, so each swatch matches its slice — and shows every normalized bucket.
+ */
 function Legend({ data }: { data: { key: string; count: number }[] }) {
-  const palette = ["#0b6e4f", "#2f8f74", "#5aa897", "#8a9a93", "#b07d2a", "#b23b34", "#6b7a72", "#a9b4ad"];
   return (
     <ul className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1.5 px-5 pb-1 text-xs" style={{ color: "var(--text-muted)" }}>
-      {data.slice(0, 8).map((d, i) => (
+      {data.map((d, i) => (
         <li key={d.key} className="flex items-center gap-2">
-          <span className="h-2 w-2 shrink-0 rounded-sm" style={{ background: palette[i % palette.length] }} />
+          <span className="h-2 w-2 shrink-0 rounded-sm" style={{ background: DONUT_COLORS[i % DONUT_COLORS.length] }} />
           <span className="truncate">{d.key}</span>
           <span className="tnum ml-auto">{d.count}</span>
         </li>

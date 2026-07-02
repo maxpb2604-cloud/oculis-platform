@@ -49,6 +49,7 @@ export function ProvinceBubbleMap({
     if (!ref.current) return;
     mapboxgl.accessToken = TOKEN;
     let map: mapboxgl.Map | null = null;
+    let loaded = false;
     try {
       map = new mapboxgl.Map({
         container: ref.current,
@@ -60,6 +61,7 @@ export function ProvinceBubbleMap({
       });
       map.addControl(new mapboxgl.NavigationControl({ showCompass: false }), "top-right");
       map.on("load", () => {
+        loaded = true;
         try {
           map!.addSource("prov", { type: "geojson", data });
           map!.addLayer({
@@ -104,7 +106,18 @@ export function ProvinceBubbleMap({
           setErr((e as Error).message);
         }
       });
-      map.on("error", (e) => setErr(e.error?.message ?? t(lang, "mapError")));
+      // Only treat init failures (e.g. the style not loading) as fatal. Tile/source
+      // fetch errors (404s on individual tiles, transient network blips) are recoverable —
+      // the map keeps working — so log them instead of covering the map with an overlay.
+      map.on("error", (e) => {
+        const evt = e as typeof e & { sourceId?: string; tile?: unknown };
+        const recoverable = loaded || evt.sourceId != null || evt.tile != null;
+        if (recoverable) {
+          console.warn("ProvinceBubbleMap: recoverable Mapbox error", e.error ?? e);
+          return;
+        }
+        setErr(e.error?.message ?? t(lang, "mapError"));
+      });
     } catch (e) {
       setErr((e as Error).message);
     }
@@ -120,8 +133,11 @@ export function ProvinceBubbleMap({
         style={{ height, width: "100%", background: "#0a0f14" }}
       />
       {err && (
-        <div role="status" className="absolute inset-0 flex items-center justify-center p-4 text-center text-[12px]"
-          style={{ background: "rgba(8,11,10,0.85)", color: "var(--text-muted)" }}>
+        <div role="alert" className="absolute inset-0 flex items-center justify-center p-4 text-center text-[12px]"
+          style={{ background: "var(--surface)", color: "var(--text)", border: "1px solid var(--border)" }}>
+          <button onClick={() => setErr(null)} aria-label={t(lang, "close")}
+            className="absolute right-2 top-2 rounded-md px-1.5 py-0.5 text-[13px]"
+            style={{ background: "var(--surface-2)", color: "var(--text-muted)" }}>✕</button>
           {err}
         </div>
       )}

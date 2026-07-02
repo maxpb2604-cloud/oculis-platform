@@ -24,6 +24,10 @@ export default async function DiputadosPage({ searchParams }: { searchParams: Pr
         <StatTile value={pleno.length} label={es ? "Órdenes del día (Pleno)" : "Floor agendas"} accent="#3b82f6" />
         <StatTile value={comisiones.length} label={es ? "Reuniones de comisión" : "Committee meetings"} accent="#8b5cf6" />
       </div>
+      {/* The feed is capped at 200 rows, so these counts describe that window — say so. */}
+      <p className="mt-2 text-[11px]" style={{ color: "var(--text-muted)" }}>
+        {es ? "Conteos sobre los últimos 200 registros." : "Counts over the latest 200 records."}
+      </p>
 
       <div className="mt-7">
         <h2 className="serif mb-3 text-lg font-semibold">{es ? "Comisiones" : "Committees"}</h2>

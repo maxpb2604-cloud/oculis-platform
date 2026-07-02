@@ -16,6 +16,7 @@ export const dynamic = "force-dynamic";
 
 const ISO_RE = /^\d{4}-\d{2}-\d{2}$/;
 
+// Local twin of lib/data.ts's private shiftISO() (not exported there); keep in sync.
 function shift(iso: string, days: number): string {
   const [y, m, d] = iso.split("-").map(Number);
   const dt = new Date(Date.UTC(y!, m! - 1, d!));
@@ -203,7 +204,6 @@ export default async function HoyPage({
         prevDayLink={prevLink(es ? "ver día anterior" : "see previous day")}
         deposits={deposits}
         senDeposits={senDeposits}
-        senDepositsWindow={false}
         dipCommittee={dipCommittee}
         senCommittee={senCommittee}
         dipPlenary={dipPlenary}

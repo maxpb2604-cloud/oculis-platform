@@ -112,24 +112,6 @@ export function ActivityList({ items, empty, lang = "es" }: { items: ActivityIte
   return <div>{items.map((i) => <ActivityRow key={i.id} item={i} lang={lang} />)}</div>;
 }
 
-/** Legend explaining the lifecycle stages (makes the dashboard self-explanatory). */
-export function StatusLegend() {
-  const stages = Object.entries(STAGE_META).sort((a, b) => a[1].order - b[1].order);
-  return (
-    <div className="flex flex-wrap gap-x-4 gap-y-2">
-      {stages.map(([key, m]) => {
-        const color = STAGE_COLOR[m.color] ?? "#64748b";
-        return (
-          <span key={key} className="inline-flex items-center gap-1.5 text-[12px]" style={{ color: "var(--text-muted)" }}>
-            <span aria-hidden className="h-2 w-2 rounded-full" style={{ background: color }} />
-            {m.label}
-          </span>
-        );
-      })}
-    </div>
-  );
-}
-
 // --- Daily deposits building blocks (the "depositadas hoy" feed) ---
 
 export interface DepositItem {
@@ -256,6 +238,25 @@ export interface RegulationItem {
   url: string | null;
 }
 
+/** Today's date (YYYY-MM-DD) in the platform's timezone (America/Santo_Domingo). */
+function todayInSantoDomingo(): string {
+  // en-CA locale renders dates as YYYY-MM-DD, matching the stored ISO-day format.
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Santo_Domingo" }).format(new Date());
+}
+
+/**
+ * Whether a public consultation is still open for comments: its deadline is today or
+ * later in America/Santo_Domingo. Consultations without a parseable deadline are treated
+ * as open (expiry can't be confirmed) — the UI simply shows no deadline for them.
+ * Single source of truth for every "open consultations" KPI/list.
+ */
+export function isConsultaOpen(item: Pick<RegulationItem, "deadline">): boolean {
+  if (!item.deadline) return true;
+  const day = item.deadline.slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return true;
+  return day >= todayInSantoDomingo();
+}
+
 const INTERV_COLOR: Record<string, string> = {
   HIGH: "#0b6e4f",
   INTERMEDIATE: "#d97706",
@@ -267,12 +268,24 @@ const INTERV_KEYS: Record<string, { label: string; short: string }> = {
   LOW: { label: "intervLow", short: "intervLowShort" },
 };
 
-/** Possibility-of-intervention chip — the key regulatory signal (HIGH = act now). */
+/** Possibility-of-intervention chip — the key regulatory signal (HIGH = act now).
+ *  Unknown/null levels render a neutral "N/D" chip instead of claiming LOW. */
 export function InterventionChip({ level, lang = "es" }: { level: string | null; lang?: Lang }) {
-  const key = level && INTERV_KEYS[level] ? level : "LOW";
-  const color = INTERV_COLOR[key];
-  const label = t(lang, INTERV_KEYS[key].label);
-  const short = t(lang, INTERV_KEYS[key].short);
+  const meta = level ? INTERV_KEYS[level] : undefined;
+  if (!meta) {
+    const label = lang === "es" ? "Sin evaluación" : "Not assessed";
+    return (
+      <span title={label} aria-label={label}
+        className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-semibold"
+        style={{ background: "var(--surface-2)", color: "var(--text-muted)" }}>
+        <span aria-hidden className="h-1.5 w-1.5 rounded-full" style={{ background: "var(--text-muted)" }} />
+        N/D
+      </span>
+    );
+  }
+  const color = (level && INTERV_COLOR[level]) || "#64748b";
+  const label = t(lang, meta.label);
+  const short = t(lang, meta.short);
   return (
     <span title={label} aria-label={label}
       className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-semibold"
@@ -299,7 +312,7 @@ export function RegulationRow({ item, lang = "es" }: { item: RegulationItem; lan
         <div className="mt-1 text-sm font-medium leading-snug">{item.title}</div>
         <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[11px]" style={{ color: "var(--text-muted)" }}>
           {item.status && <span>{item.status}</span>}
-          {item.deadline && <span className="font-medium" style={{ color: "var(--warn)" }}>{t(lang, "deadline")}: {item.deadline}</span>}
+          {item.deadline && <span className="font-medium" style={{ color: "var(--warn)" }}>{t(lang, "deadline")}: {formatISODate(item.deadline, lang)}</span>}
           {item.url && (
             <a href={item.url} target="_blank" rel="noreferrer"
               className="font-medium underline-offset-2 hover:underline" style={{ color: "var(--accent)" }}>
@@ -310,7 +323,7 @@ export function RegulationRow({ item, lang = "es" }: { item: RegulationItem; lan
       </div>
       <div className="shrink-0 text-right">
         <InterventionChip level={item.interventionLevel} lang={lang} />
-        {item.publishedAt && <div className="tnum mt-1 text-[11px]" style={{ color: "var(--text-muted)" }}>{item.publishedAt}</div>}
+        {item.publishedAt && <div className="tnum mt-1 text-[11px]" style={{ color: "var(--text-muted)" }}>{formatISODate(item.publishedAt, lang)}</div>}
       </div>
     </div>
   );
@@ -319,22 +332,4 @@ export function RegulationRow({ item, lang = "es" }: { item: RegulationItem; lan
 export function RegulationList({ items, empty, lang = "es" }: { items: RegulationItem[]; empty: React.ReactNode; lang?: Lang }) {
   if (!items.length) return <div role="status" className="px-5 py-8 text-center text-sm" style={{ color: "var(--text-muted)" }}>{empty}</div>;
   return <div>{items.map((i) => <RegulationRow key={i.id} item={i} lang={lang} />)}</div>;
-}
-
-// --- Health (Estado de monitoreo) building blocks ---
-
-/** OK / WARN / ERROR pill using design tokens (dark-mode safe). */
-export function HealthPill({ state, children }: { state: "ok" | "warn" | "error"; children: React.ReactNode }) {
-  const map = {
-    ok: { bg: "var(--accent-soft)", fg: "var(--accent)" },
-    warn: { bg: "var(--warn-soft)", fg: "var(--warn)" },
-    error: { bg: "var(--danger-soft)", fg: "var(--danger)" },
-  }[state];
-  return (
-    <span className="inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[11px] font-semibold"
-      style={{ background: map.bg, color: map.fg }}>
-      <span aria-hidden className="h-1.5 w-1.5 rounded-full" style={{ background: map.fg }} />
-      {children}
-    </span>
-  );
 }

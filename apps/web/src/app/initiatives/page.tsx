@@ -7,34 +7,45 @@ import { InitiativesTable } from "@/components/initiatives-table";
 
 export const dynamic = "force-dynamic";
 
-type SP = Record<string, string | undefined>;
+type SP = Record<string, string | string[] | undefined>;
+
+/** Next.js delivers repeated query keys (?search=a&search=b) as arrays — take the first. */
+const first = (v: string | string[] | undefined): string | undefined => (Array.isArray(v) ? v[0] : v);
 
 export default async function Page({ searchParams }: { searchParams: Promise<SP> }) {
   const sp = await searchParams;
-  const lang: Lang = sp.lang === "en" ? "en" : "es";
+  const lang: Lang = first(sp.lang) === "en" ? "en" : "es";
   const t = dict[lang];
-  const page = Math.max(1, Number(sp.page ?? 1) || 1);
+  let page = Math.max(1, Number(first(sp.page) ?? 1) || 1);
   const pageSize = 50;
 
-  const result = await browseInitiatives({
-    search: sp.search,
-    category: sp.category,
-    risk: sp.risk,
-    approval: sp.approval,
-    party: sp.party,
-    status: sp.status,
-    page,
-    pageSize,
-  });
+  const filters = {
+    search: first(sp.search),
+    category: first(sp.category),
+    risk: first(sp.risk),
+    approval: first(sp.approval),
+    party: first(sp.party),
+    status: first(sp.status),
+    chamber: first(sp.chamber),
+  };
+
+  let result = await browseInitiatives({ ...filters, page, pageSize });
 
   const pages = Math.max(1, Math.ceil(result.total / pageSize));
+  // Out-of-range ?page: clamp and refetch so the label, rows, and pager all agree.
+  if (page > pages) {
+    page = pages;
+    result = await browseInitiatives({ ...filters, page, pageSize });
+  }
+
   const from = result.total === 0 ? 0 : (page - 1) * pageSize + 1;
   const to = Math.min(page * pageSize, result.total);
 
   const hrefForPage = (p: number) => {
     const params = new URLSearchParams();
-    for (const k of ["lang", "search", "category", "risk", "approval", "party", "status"] as const) {
-      if (sp[k]) params.set(k, sp[k]!);
+    for (const k of ["lang", "search", "category", "risk", "approval", "party", "status", "chamber"] as const) {
+      const v = first(sp[k]);
+      if (v) params.set(k, v);
     }
     if (p > 1) params.set("page", String(p));
     const qs = params.toString();

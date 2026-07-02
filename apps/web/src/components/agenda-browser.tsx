@@ -63,10 +63,19 @@ export function AgendaBrowser({ sections, lang }: { sections: AgendaSection[]; l
 
   // De-duplicate (same body + date + kind appears once) then filter by the query.
   const prepared = useMemo(() => {
+    // Dates are searchable both as raw ISO ("2026-06-24") and as the localized string the
+    // user actually sees in the row ("24/06/2026" / "06/24/2026").
     const matches = (it: ActivityItem) =>
       !ql ||
-      [it.body, it.description, it.kind, it.eventDate, rowTitle(it, es), ...(it.statuses ?? [])]
-        .some((v) => String(v ?? "").toLowerCase().includes(ql));
+      [
+        it.body,
+        it.description,
+        it.kind,
+        it.eventDate,
+        it.eventDate ? formatISODate(it.eventDate, es ? "es" : "en") : null,
+        rowTitle(it, es),
+        ...(it.statuses ?? []),
+      ].some((v) => String(v ?? "").toLowerCase().includes(ql));
     return sections.map((s) => {
       const seen = new Set<string>();
       const items: ActivityItem[] = [];

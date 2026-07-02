@@ -1,8 +1,10 @@
+"use client";
+
 import Link from "next/link";
 import { CATEGORY_LABELS, type Category } from "@oculis/core";
 import { type Lang } from "@/lib/i18n";
 import { shortBillName } from "@/lib/format";
-import type { FeedListItem, FeedTag } from "@/lib/data";
+import type { FeedListItem, FeedTag, FeedFilters } from "@/lib/data";
 
 /** Chip text: bill NAME for initiatives (more identifiable than the code), else the label. */
 function tagDisplay(tag: FeedTag): string {
@@ -24,16 +26,11 @@ const KIND_STYLE: Record<string, { es: string; en: string; fg: string; bg: strin
   },
 };
 
-/** Friendly outlet/source label. */
+/** Friendly outlet/source label (only ids the scraper adapters actually produce). */
 const SOURCE_LABEL: Record<string, string> = {
   "feed-senado": "Senado",
   "feed-diputados": "Cámara de Diputados",
   "feed-diariolibre": "Diario Libre",
-  "feed-listin": "Listín Diario",
-  "feed-acento": "Acento",
-  "feed-elnacional": "El Nacional",
-  "feed-hoy": "Hoy",
-  "feed-elcaribe": "El Caribe",
   "feed-x": "X",
   "feed-legislative": "Señal legislativa",
 };
@@ -57,22 +54,51 @@ function fmtDate(iso: string | null, lang: Lang): string {
   }
 }
 
+type EntityFilterKey = "initiativeCode" | "legislatorSourceId" | "commissionName";
+
+/**
+ * The filter (param, value) this TAG's own identity maps to — the only entity
+ * params the /api/feed → getFeed → listFeedItems chain supports. Built from the
+ * tag itself (each tag carries its own ids), never from the item's primary
+ * entity columns, so secondary-tag chips filter by the right entity.
+ */
+function tagParam(tag: FeedTag): { key: EntityFilterKey; value: string } | null {
+  if (tag.entityType === "INITIATIVE") {
+    const code = tag.initiativeCode ?? tag.label;
+    return code ? { key: "initiativeCode", value: code } : null;
+  }
+  if (tag.entityType === "LEGISLATOR") {
+    return tag.legislatorSourceId
+      ? { key: "legislatorSourceId", value: tag.legislatorSourceId }
+      : null;
+  }
+  if (tag.entityType === "COMMISSION") {
+    const name = tag.commissionName ?? tag.label;
+    return name ? { key: "commissionName", value: name } : null;
+  }
+  return null;
+}
+
 /** Build a /feed URL filtered to one entity, preserving language. */
-function entityHref(tag: FeedTag, lang: Lang): string {
+function entityHref(param: { key: EntityFilterKey; value: string }, lang: Lang): string {
   const p = new URLSearchParams();
-  if (tag.entityType === "INITIATIVE" && tag.initiativeCode)
-    p.set("initiativeCode", tag.initiativeCode);
-  else if (tag.entityType === "LEGISLATOR" && tag.legislatorSourceId)
-    p.set("legislatorSourceId", tag.legislatorSourceId);
-  else if (tag.entityType === "COMMISSION" && tag.commissionName)
-    p.set("commissionName", tag.commissionName);
+  p.set(param.key, param.value);
   if (lang === "en") p.set("lang", "en");
   return `/feed?${p.toString()}`;
 }
 
 const TAG_ICON: Record<string, string> = { INITIATIVE: "🏛", LEGISLATOR: "👤", COMMISSION: "🗂" };
 
-export function FeedCard({ item, lang }: { item: FeedListItem; lang: Lang }) {
+export function FeedCard({
+  item,
+  lang,
+  activeFilters,
+}: {
+  item: FeedListItem;
+  lang: Lang;
+  /** Currently-active feed filters — used to highlight the chip whose entity filter is on. */
+  activeFilters?: Pick<FeedFilters, EntityFilterKey>;
+}) {
   const es = lang === "es";
   const k = KIND_STYLE[item.kind] ?? KIND_STYLE.NEWS!;
   // Prefer a friendly outlet label; for Google-News press the outlet is in `author`.
@@ -86,16 +112,18 @@ export function FeedCard({ item, lang }: { item: FeedListItem; lang: Lang }) {
     <article className="card overflow-hidden transition-shadow hover:shadow-lg">
       <div className="flex gap-3 p-3.5">
         {item.imageUrl && (
-          <div
-            className="hidden h-[84px] w-[112px] shrink-0 rounded-lg sm:block"
-            style={{
-              backgroundImage: `url("${item.imageUrl}")`,
-              backgroundSize: "cover",
-              backgroundPosition: "center",
-              background: `var(--surface-2) url("${item.imageUrl}") center/cover no-repeat`,
+          // eslint-disable-next-line @next/next/no-img-element -- arbitrary remote hosts; plain lazy <img>
+          <img
+            src={item.imageUrl}
+            alt=""
+            loading="lazy"
+            width={112}
+            height={84}
+            className="hidden h-[84px] w-[112px] shrink-0 rounded-lg object-cover sm:block"
+            style={{ background: "var(--surface-2)" }}
+            onError={(e) => {
+              e.currentTarget.style.display = "none";
             }}
-            role="img"
-            aria-label={item.title}
           />
         )}
         <div className="min-w-0 flex-1">
@@ -148,24 +176,51 @@ export function FeedCard({ item, lang }: { item: FeedListItem; lang: Lang }) {
 
           {item.tags.length > 0 && (
             <div className="mt-2 flex flex-wrap gap-1.5">
-              {item.tags.slice(0, 6).map((tag, i) => (
-                <Link
-                  key={`${tag.entityType}-${tag.label}-${i}`}
-                  href={entityHref(tag, lang)}
-                  className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10.5px] font-medium transition-colors hover:bg-[var(--accent-soft)]"
-                  style={{ background: "var(--surface-2)", color: "var(--text)" }}
-                  title={
-                    tag.entityType === "INITIATIVE" && tag.initiativeTitle
-                      ? tag.initiativeTitle
-                      : es
-                        ? "Ver todo lo relacionado"
-                        : "See everything related"
-                  }
-                >
-                  <span aria-hidden>{TAG_ICON[tag.entityType] ?? "•"}</span>
-                  <span className="max-w-[240px] truncate">{tagDisplay(tag)}</span>
-                </Link>
-              ))}
+              {item.tags.slice(0, 6).map((tag, i) => {
+                const key = `${tag.entityType}-${tag.label}-${i}`;
+                const chipBody = (
+                  <>
+                    <span aria-hidden>{TAG_ICON[tag.entityType] ?? "•"}</span>
+                    <span className="max-w-[240px] truncate">{tagDisplay(tag)}</span>
+                  </>
+                );
+                const param = tagParam(tag);
+                // No filterable identity on this tag → plain chip, not a link to
+                // an unfiltered (or wrongly-filtered) feed.
+                if (!param) {
+                  return (
+                    <span
+                      key={key}
+                      className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10.5px] font-medium"
+                      style={{ background: "var(--surface-2)", color: "var(--text)" }}
+                    >
+                      {chipBody}
+                    </span>
+                  );
+                }
+                const active = activeFilters?.[param.key] === param.value;
+                return (
+                  <Link
+                    key={key}
+                    href={entityHref(param, lang)}
+                    aria-current={active ? "true" : undefined}
+                    className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10.5px] font-medium transition-colors hover:bg-[var(--accent-soft)]"
+                    style={{
+                      background: active ? "var(--accent-soft)" : "var(--surface-2)",
+                      color: active ? "var(--accent)" : "var(--text)",
+                    }}
+                    title={
+                      tag.entityType === "INITIATIVE" && tag.initiativeTitle
+                        ? tag.initiativeTitle
+                        : es
+                          ? "Ver todo lo relacionado"
+                          : "See everything related"
+                    }
+                  >
+                    {chipBody}
+                  </Link>
+                );
+              })}
             </div>
           )}
         </div>
