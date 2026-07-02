@@ -112,7 +112,8 @@ export function FeedCard({
     <article className="card overflow-hidden transition-shadow hover:shadow-lg">
       <div className="flex gap-3 p-3.5">
         {item.imageUrl && (
-          // eslint-disable-next-line @next/next/no-img-element -- arbitrary remote hosts; plain lazy <img>
+          // Plain lazy <img> on purpose: thumbnails come from arbitrary press hosts,
+          // which next/image would need per-domain allowlisting for.
           <img
             src={item.imageUrl}
             alt=""

@@ -12,15 +12,15 @@ const ROOT = resolve(__dir, '..')
 const OUT = resolve(ROOT, 'apps/web/public/brand/logos.html')
 
 const resPath = process.argv[2]
-let designs = [], ranking = [], panel = []
+let designs = [], ranking = [], _panel = []
 if (resPath) {
   const d = JSON.parse(readFileSync(resPath, 'utf8'))
   const r = d.result ?? d
   designs = r.designs ?? []
   ranking = r.ranking ?? []
-  panel = r.panel ?? []
+  _panel = r.panel ?? []
 }
-const scoreOf = (id) => (ranking.find(([rid]) => rid === id) ?? [, null])[1]
+const scoreOf = (id) => (ranking.find(([rid]) => rid === id) ?? [undefined, null])[1]
 const bestId = ranking[0]?.[0]
 
 // ---- Hand-crafted "house" concept: refined dome + integrated pulse ----
