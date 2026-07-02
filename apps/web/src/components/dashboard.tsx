@@ -69,11 +69,15 @@ export function Insight({ lang, data }: { lang: Lang; data: DashboardData }) {
 
 export function KpiBand({ lang, data }: { lang: Lang; data: DashboardData }) {
   const t = dict[lang];
+  // "Needs review" (always 100% until an analyst-confirm flow exists) and
+  // "Published" (nothing publishes yet) carried no signal as KPIs — surface the
+  // two numbers an analyst actually acts on: likely-to-pass and high-risk.
+  const altaProb = data.byApproval.find((r) => r.key === "ALTA")?.count ?? 0;
   return (
     <section className="grid grid-cols-1 gap-4 sm:grid-cols-3">
       <Kpi label={t.totalBills} value={data.kpis.total} accent="var(--accent)" />
-      <Kpi label={t.needsReview} value={data.kpis.needsReview} accent="var(--risk-medio)" />
-      <Kpi label={t.published} value={data.kpis.published} accent="var(--risk-bajo)" />
+      <Kpi label={t.highApproval} value={altaProb} accent="var(--risk-medio)" />
+      <Kpi label={t.highRisk} value={data.kpis.highRisk} accent="var(--risk-alto)" />
     </section>
   );
 }

@@ -33,7 +33,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ l
           <GeoOverview lang={lang} data={data} provinceFC={provinceFC} legislators={legislators} />
           <ChartGrid lang={lang} data={data} />
 
-          <SectionHeading n="04" title={lang === "es" ? "Iniciativas Recientes" : "Recent Initiatives"} />
+          <SectionHeading n="03" title={lang === "es" ? "Iniciativas Recientes" : "Recent Initiatives"} />
           <Panel
             title={t.recent}
             flush

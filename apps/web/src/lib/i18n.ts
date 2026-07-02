@@ -9,6 +9,7 @@ export const dict: Record<Lang, Record<string, string>> = {
     regulatory: "Monitoreo Regulatorio",
     totalBills: "Iniciativas Totales",
     highRisk: "Riesgo Alto",
+    highApproval: "Prob. de Aprobación ALTA",
     needsReview: "Por Revisar",
     published: "Publicadas",
     byRisk: "Iniciativas por Nivel de Riesgo",
@@ -26,7 +27,7 @@ export const dict: Record<Lang, Record<string, string>> = {
     sponsor: "Proponente",
     province: "Provincia",
     noData: "Aún no hay datos. Ejecute la ingesta para poblar la plataforma.",
-    source: "Cámara de Diputados (SIL)",
+    source: "Congreso Nacional (SIL)",
 
     // Scope labels (Pleno / Asamblea / Comisión)
     scopePLENARY: "Pleno",
@@ -80,6 +81,7 @@ export const dict: Record<Lang, Record<string, string>> = {
     regulatory: "Regulatory Monitoring",
     totalBills: "Total Initiatives",
     highRisk: "High Risk",
+    highApproval: "HIGH Approval Probability",
     needsReview: "Needs Review",
     published: "Published",
     byRisk: "Initiatives by Business Risk",
@@ -97,7 +99,7 @@ export const dict: Record<Lang, Record<string, string>> = {
     sponsor: "Sponsor",
     province: "Province",
     noData: "No data yet. Run the ingestion to populate the platform.",
-    source: "Chamber of Deputies (SIL)",
+    source: "National Congress (SIL)",
 
     // Scope labels (Floor / Assembly / Committee)
     scopePLENARY: "Floor",

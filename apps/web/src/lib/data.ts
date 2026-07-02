@@ -5,6 +5,7 @@
  */
 import "server-only";
 import { unstable_cache } from "next/cache";
+import { normalizeStatus } from "@oculis/core";
 import { normProvince, resolveProvince } from "./provinces";
 export { normProvince, resolveProvince } from "./provinces";
 import {
@@ -70,7 +71,7 @@ async function db() {
 
 export async function getDashboardData() {
   const d = await db();
-  const [kpis, byRisk, byApproval, byCategory, byStatus, recent] = await Promise.all([
+  const [kpis, byRisk, byApproval, byCategory, byStatusRaw, recent] = await Promise.all([
     dashboardKpis(d),
     countByRisk(d),
     countByApprovalProbability(d),
@@ -78,6 +79,17 @@ export async function getDashboardData() {
     countByStatus(d),
     listRecentInitiatives(d, { limit: 40 }),
   ]);
+  // The chambers word statuses differently ("Enviado/Enviada a Comisión",
+  // "Depositado/Depositada"...). Fold raw values through the canonical taxonomy
+  // so the donut/legend show one bucket per real stage instead of split pairs.
+  const folded = new Map<string, number>();
+  for (const b of byStatusRaw) {
+    const label = normalizeStatus(b.key).label;
+    folded.set(label, (folded.get(label) ?? 0) + b.count);
+  }
+  const byStatus = [...folded]
+    .map(([key, count]) => ({ key, count }))
+    .sort((a, b) => b.count - a.count);
   return { kpis, byRisk, byApproval, byCategory, byStatus, recent };
 }
 
