@@ -16,11 +16,14 @@ export function AppShell({
   subtitle: string;
   children: React.ReactNode;
 }) {
+  // Pin to DR local time — the server may run in UTC, which would otherwise
+  // show tomorrow's date to Santo Domingo users after 8pm.
   const dateLabel = new Intl.DateTimeFormat(lang === "es" ? "es-DO" : "en-US", {
     weekday: "long",
     day: "numeric",
     month: "long",
     year: "numeric",
+    timeZone: "America/Santo_Domingo",
   })
     .format(new Date())
     .toUpperCase();

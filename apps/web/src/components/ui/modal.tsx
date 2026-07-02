@@ -28,6 +28,18 @@ export function Modal({
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
 
+  // Latest-onClose ref: consumers pass inline arrows, so keeping `onClose` out of
+  // the focus effect's deps stops parent re-renders from re-running it (which
+  // would steal focus back to the first focusable) while the dialog is open.
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  });
+
+  // Only dismiss on backdrop click when the press also STARTED on the backdrop —
+  // a text-selection drag out of the panel must not close the dialog.
+  const pressStartedOnBackdrop = useRef(false);
+
   useEffect(() => {
     if (!open) return;
     const opener = document.activeElement as HTMLElement | null;
@@ -46,7 +58,7 @@ export function Modal({
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.preventDefault();
-        onClose();
+        onCloseRef.current();
         return;
       }
       if (e.key !== "Tab") return;
@@ -73,7 +85,7 @@ export function Modal({
       document.removeEventListener("keydown", onKey);
       opener?.focus?.();
     };
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) return null;
 
@@ -81,7 +93,12 @@ export function Modal({
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
       style={{ background: "var(--modal-overlay)", backdropFilter: "blur(2px)" }}
-      onClick={onClose}
+      onMouseDown={(e) => {
+        pressStartedOnBackdrop.current = e.target === e.currentTarget;
+      }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget && pressStartedOnBackdrop.current) onCloseRef.current();
+      }}
     >
       <div
         ref={panelRef}

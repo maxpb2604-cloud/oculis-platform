@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 
 /** Top bar — page title (serif), generated date, language + theme controls. */
 export function TopBar({
@@ -16,6 +16,7 @@ export function TopBar({
   dateLabel: string;
 }) {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [dark, setDark] = useState(false);
   useEffect(() => {
     setDark(document.documentElement.classList.contains("dark"));
@@ -30,9 +31,17 @@ export function TopBar({
   }
 
   const other = lang === "es" ? "en" : "es";
+  // Language switch keeps every other query param (filters, pagination) intact;
+  // Spanish is the default so its link carries no `lang` param at all.
+  const switchParams = new URLSearchParams(searchParams.toString());
+  if (other === "en") switchParams.set("lang", "en");
+  else switchParams.delete("lang");
+  const switchQuery = switchParams.toString();
+  const switchHref = switchQuery ? `${pathname}?${switchQuery}` : pathname;
+
   return (
     <div
-      className="sticky top-0 z-20 flex items-end justify-between gap-4 border-b px-6 py-4 backdrop-blur"
+      className="sticky top-0 z-20 flex items-end justify-between gap-4 border-b py-4 pl-16 pr-6 backdrop-blur lg:pl-6"
       style={{ background: "color-mix(in srgb, var(--bg) 82%, transparent)" }}
     >
       <div>
@@ -46,7 +55,7 @@ export function TopBar({
         <div
           className="flex overflow-hidden rounded-lg border text-xs font-medium"
           role="group"
-          aria-label="Language"
+          aria-label={lang === "es" ? "Idioma" : "Language"}
         >
           <span
             className="px-2.5 py-1.5"
@@ -58,7 +67,7 @@ export function TopBar({
             {lang.toUpperCase()}
           </span>
           <a
-            href={other === "en" ? `${pathname}?lang=en` : pathname}
+            href={switchHref}
             className="px-2.5 py-1.5 transition-colors hover:bg-[var(--surface-2)]"
             style={{ cursor: "pointer", color: "var(--text-muted)" }}
           >
@@ -67,7 +76,7 @@ export function TopBar({
         </div>
         <button
           onClick={toggleTheme}
-          aria-label="Toggle theme"
+          aria-label={lang === "es" ? "Cambiar tema" : "Toggle theme"}
           className="flex h-[30px] w-[34px] items-center justify-center rounded-lg border text-sm transition-colors hover:bg-[var(--surface-2)]"
           style={{ cursor: "pointer" }}
         >

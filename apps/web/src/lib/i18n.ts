@@ -73,6 +73,14 @@ export const dict: Record<Lang, Record<string, string>> = {
 
     // Approval tag
     approvalTag: "Prob. aprobación",
+
+    // Risk / approval pill values (raw DB enums → display)
+    riskALTO: "ALTO",
+    riskMEDIO: "MEDIO",
+    riskBAJO: "BAJO",
+    approvalALTA: "ALTA",
+    approvalMEDIA: "MEDIA",
+    approvalBAJA: "BAJA",
   },
   en: {
     appName: "Oculis Auribus",
@@ -145,6 +153,14 @@ export const dict: Record<Lang, Record<string, string>> = {
 
     // Approval tag
     approvalTag: "Approval prob.",
+
+    // Risk / approval pill values (raw DB enums → display)
+    riskALTO: "HIGH",
+    riskMEDIO: "MEDIUM",
+    riskBAJO: "LOW",
+    approvalALTA: "HIGH",
+    approvalMEDIA: "MEDIUM",
+    approvalBAJA: "LOW",
   },
 };
 
