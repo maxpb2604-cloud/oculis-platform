@@ -62,11 +62,6 @@ export default async function Page({
               {lang === "es" ? "Aprobación" : "Approval"}: <strong>{ini.approvalProbability}</strong>
             </span>
           )}
-          {ini.needsReview && (
-            <span className="rounded-full px-2.5 py-0.5 text-[11px] font-semibold" style={{ color: "var(--risk-medio)", background: "var(--risk-medio-soft)" }}>
-              {lang === "es" ? "IA · pendiente de revisión" : "AI · pending review"}
-            </span>
-          )}
         </div>
         <h1 className="serif mt-3 text-2xl font-semibold leading-snug">{ini.title}</h1>
         {ini.purpose && <p className="mt-2 text-sm leading-relaxed" style={{ color: "var(--text-muted)" }}>{ini.purpose}</p>}

@@ -1,4 +1,3 @@
-import { CATEGORY_LABELS, type Category } from "@oculis/core";
 import { dict, type Lang } from "@/lib/i18n";
 import { ApprovalBar, CategoryBar, DONUT_COLORS, StatusDonut } from "@/components/charts";
 import { ProvinceBubbleMapLazy } from "@/components/province-map-lazy";
@@ -8,27 +7,6 @@ import type { DashboardData, ProvinceFC, LegislatorsByProvince } from "@/lib/dat
 // NOTE: Kpi/Panel/SectionHeading moved to components/ui/panel.tsx — import them
 // from there. This module stays chart-heavy (recharts) by design; the map loads
 // lazily so mapbox-gl never lands in First Load JS.
-
-export function Insight({ lang, data }: { lang: Lang; data: DashboardData }) {
-  const topCat = data.byCategory.find((c) => c.key !== "N/D");
-  const total = data.kpis.total;
-  const pct = topCat && total ? Math.round((topCat.count / total) * 100) : 0;
-  const catLabel = topCat ? CATEGORY_LABELS[topCat.key as Category] ?? topCat.key : "—";
-  const altaProb = data.byApproval.find((r) => r.key === "ALTA")?.count ?? 0;
-  const text =
-    lang === "es"
-      ? `Se monitorean ${total.toLocaleString()} iniciativas. La categoría predominante es ${catLabel} (${pct}%); ${altaProb.toLocaleString()} tienen probabilidad ALTA de aprobación y ${data.kpis.needsReview.toLocaleString()} están pendientes de validación del analista.`
-      : `Tracking ${total.toLocaleString()} initiatives. The leading category is ${catLabel} (${pct}%); ${altaProb.toLocaleString()} have HIGH approval probability and ${data.kpis.needsReview.toLocaleString()} await analyst validation.`;
-  return (
-    <div
-      className="mb-5 rounded-xl border-l-2 p-5"
-      style={{ background: "var(--surface)", borderColor: "var(--border)", borderLeftColor: "var(--accent)" }}
-    >
-      <div className="eyebrow">{lang === "es" ? "Lectura clave" : "Key takeaway"}</div>
-      <p className="serif mt-1.5 text-[17px] leading-relaxed">{text}</p>
-    </div>
-  );
-}
 
 export function KpiBand({ lang, data }: { lang: Lang; data: DashboardData }) {
   const t = dict[lang];

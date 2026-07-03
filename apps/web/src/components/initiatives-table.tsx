@@ -92,19 +92,6 @@ export function InitiativesTable({ rows, lang }: { rows: Row[]; lang: Lang }) {
               <td className="max-w-[460px] px-3 py-2.5">
                 <div className="flex items-center gap-2">
                   <span className="min-w-0 truncate">{r.title}</span>
-                  {r.needsReview && (
-                    <span
-                      className="shrink-0 rounded px-1.5 py-0.5 text-[9.5px] font-semibold uppercase tracking-wide"
-                      style={{ color: "var(--warn)", background: "var(--warn-soft)" }}
-                      title={
-                        lang === "es"
-                          ? "Clasificación automática (IA), pendiente de validación"
-                          : "Auto-classified (AI), pending validation"
-                      }
-                    >
-                      {lang === "es" ? "IA · pendiente" : "AI · pending"}
-                    </span>
-                  )}
                 </div>
               </td>
               <td className="px-3 py-2.5" style={{ color: "var(--text-muted)" }}>
