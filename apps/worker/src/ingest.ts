@@ -2,13 +2,14 @@
  * Ingestion pipeline: pull initiatives from a source adapter, enrich, categorize,
  * compute a real risk/approval score, and persist (upsert + status-event diff).
  */
-import { score } from "@oculis/core";
+import { keywordBlob, score } from "@oculis/core";
 import {
   countApprovedBySponsor,
   countInitiatives,
   recordIngestionRun,
   recordStatusEvents,
   saveScore,
+  saveSearchText,
   upsertInitiative,
   type Database,
   type NewInitiative,
@@ -81,6 +82,21 @@ export async function ingestSilDiputados(
       if (cat?.category) categorized++;
 
       const res = await upsertInitiative(db, toRow(raw, cat));
+      // Keep the keyword-search blob fresh on every upsert (offline synonym thesaurus,
+      // no API) so newly ingested bills are immediately findable by keyword/synonym.
+      await saveSearchText(
+        db,
+        res.id,
+        keywordBlob({
+          title: raw.title,
+          purpose: raw.purpose,
+          category: cat?.category ?? raw.sourceCategory,
+          sponsor: raw.sponsor,
+          party: raw.party,
+          province: raw.province,
+          committee: raw.committee,
+        }),
+      );
       await scoreInitiative(db, estimator, {
         id: res.id,
         title: raw.title,

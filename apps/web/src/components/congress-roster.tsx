@@ -101,6 +101,15 @@ export function CongressRoster({
     });
   }, [commissions, chamber, q]);
 
+  // Index the already-loaded roster by chamber + normalized name. Committee members carry
+  // no source id, so this lets a committee row reuse the loaded ProfileModal (no fetch).
+  const legByChamberName = useMemo(() => {
+    const m = new Map<string, LegislatorProfile>();
+    for (const l of legislators) m.set(`${l.chamber}::${norm(l.fullName)}`, l);
+    return m;
+  }, [legislators]);
+  const resolveMember = (ch: string, name: string) => legByChamberName.get(`${ch}::${norm(name)}`);
+
   return (
     <div>
       {/* Chamber switch — one window per chamber, like the Hoy page */}
@@ -176,7 +185,7 @@ export function CongressRoster({
             {filteredCommissions.length} {es ? "comisiones" : "committees"}
           </div>
           {filteredCommissions.map((c) => (
-            <CommissionCard key={`${c.chamber}-${c.name}`} c={c} es={es} />
+            <CommissionCard key={`${c.chamber}-${c.name}`} c={c} es={es} resolveMember={resolveMember} onSelect={setProfile} />
           ))}
           {filteredCommissions.length === 0 && (
             <p className="text-[13px]" style={{ color: "var(--text-muted)" }}>
@@ -334,7 +343,17 @@ function Field({ label, value }: { label: string; value: string | null | undefin
   );
 }
 
-function CommissionCard({ c, es }: { c: CommissionWithMembers; es: boolean }) {
+function CommissionCard({
+  c,
+  es,
+  resolveMember,
+  onSelect,
+}: {
+  c: CommissionWithMembers;
+  es: boolean;
+  resolveMember: (chamber: string, name: string) => LegislatorProfile | undefined;
+  onSelect: (l: LegislatorProfile) => void;
+}) {
   const [open, setOpen] = useState(false);
   const president = c.members.find((m) => m.cargo === "Presidente");
   return (
@@ -351,10 +370,11 @@ function CommissionCard({ c, es }: { c: CommissionWithMembers; es: boolean }) {
       {open && (
         <div className="border-t px-4 py-3" style={{ borderColor: "var(--border)" }}>
           <ul className="space-y-1.5">
-            {c.members.map((m, i) => (
-              <li key={`${m.name}-${m.cargo ?? ""}-${i}`} className="flex items-center justify-between gap-2 text-[12.5px]">
-                <span>{m.name}</span>
-                <span className="flex items-center gap-1.5">
+            {c.members.map((m, i) => {
+              // Reuse the already-loaded profile when we can match this member by name (no fetch).
+              const prof = resolveMember(c.chamber, m.name);
+              const pills = (
+                <span className="flex shrink-0 items-center gap-1.5">
                   {m.party && <span className="text-[10.5px]" style={{ color: "var(--text-muted)" }}>{m.party}</span>}
                   {m.cargo && m.cargo !== "Miembro" && (
                     <span className="rounded px-1.5 py-0.5 text-[10px] font-semibold" style={{ background: CARGO_SOFT[m.cargo] ?? "var(--surface-2)", color: CARGO_COLOR[m.cargo] ?? "var(--text-muted)" }}>
@@ -362,8 +382,28 @@ function CommissionCard({ c, es }: { c: CommissionWithMembers; es: boolean }) {
                     </span>
                   )}
                 </span>
-              </li>
-            ))}
+              );
+              return (
+                <li key={`${m.name}-${m.cargo ?? ""}-${i}`}>
+                  {prof ? (
+                    <button
+                      type="button"
+                      onClick={() => onSelect(prof)}
+                      aria-label={es ? `Ver perfil de ${m.name}` : `View profile of ${m.name}`}
+                      className="-mx-2 flex w-full cursor-pointer items-center justify-between gap-2 rounded-md px-2 py-1 text-left text-[12.5px] outline-none transition-colors hover:bg-[var(--accent-soft)] focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+                    >
+                      <span className="min-w-0 truncate">{m.name}</span>
+                      {pills}
+                    </button>
+                  ) : (
+                    <div className="flex items-center justify-between gap-2 px-2 py-1 text-[12.5px]">
+                      <span className="min-w-0 truncate">{m.name}</span>
+                      {pills}
+                    </div>
+                  )}
+                </li>
+              );
+            })}
           </ul>
         </div>
       )}

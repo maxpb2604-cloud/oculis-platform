@@ -2,7 +2,8 @@
  * Persistence operations for ingestion: idempotent upsert of initiatives and
  * append-only status-event recording with change detection.
  */
-import { and, eq, ilike, inArray, isNotNull, isNull, ne, notInArray, or, sql } from "drizzle-orm";
+import { and, eq, ilike, inArray, isNotNull, isNull, ne, notInArray, or, sql, type AnyColumn } from "drizzle-orm";
+import { expandQueryTerms, normalizeText } from "@oculis/core";
 import type { Database } from "./client.js";
 import {
   activityEvents,
@@ -1215,6 +1216,122 @@ export async function legislatorCommittees(db: Database): Promise<LegislatorComm
     .orderBy(commissionMembers.commissionName);
 }
 
+export interface ActivityInitiativeRef {
+  activityId: number;
+  code: string;
+  initiativeId: number | null;
+  title: string | null; // resolved bill title when the code links to an ingested initiative
+}
+
+/**
+ * The initiatives referenced by a set of activity/agenda events (batch, keyed by
+ * activityId) — so the Hoy and committee views can render each agenda item's bills
+ * as clickable chips with their full names instead of a bare "N iniciativas" count.
+ * Title is resolved via the linked initiative when available; otherwise null (the UI
+ * shows the code).
+ */
+export async function activityInitiativesByActivity(
+  db: Database,
+  activityIds: number[],
+): Promise<Map<number, ActivityInitiativeRef[]>> {
+  const out = new Map<number, ActivityInitiativeRef[]>();
+  if (activityIds.length === 0) return out;
+  const rows = await db
+    .select({
+      activityId: activityInitiatives.activityId,
+      code: activityInitiatives.initiativeCode,
+      initiativeId: activityInitiatives.initiativeId,
+      title: initiatives.title,
+    })
+    .from(activityInitiatives)
+    .leftJoin(initiatives, eq(activityInitiatives.initiativeId, initiatives.id))
+    .where(inArray(activityInitiatives.activityId, activityIds))
+    .orderBy(activityInitiatives.initiativeCode);
+  for (const r of rows) {
+    const list = out.get(r.activityId) ?? [];
+    list.push({ activityId: r.activityId, code: r.code, initiativeId: r.initiativeId, title: r.title });
+    out.set(r.activityId, list);
+  }
+  return out;
+}
+
+/**
+ * Resolve one legislator to a full profile row for the click-to-open bubble.
+ * Matches by exact `sourceId` first (reliable, from committee-member links), else by
+ * name using accent-insensitive equality, then trigram similarity as a misspelling-
+ * tolerant fallback (committee agendas and sponsor fields carry names, not ids).
+ * Returns the single best match or null.
+ */
+export async function findLegislator(
+  db: Database,
+  opts: { sourceId?: string | null; name?: string | null; chamber?: string | null },
+): Promise<RosterMember | null> {
+  const cols = {
+    id: legislators.id,
+    sourceId: legislators.sourceId,
+    chamber: legislators.chamber,
+    fullName: legislators.fullName,
+    province: legislators.province,
+    circumscription: legislators.circumscription,
+    party: legislators.party,
+    partyShort: legislators.partyShort,
+    role: legislators.role,
+    representationLevel: legislators.representationLevel,
+    period: legislators.period,
+    photoUrl: legislators.photoUrl,
+    email: legislators.email,
+    phone: legislators.phone,
+    profession: legislators.profession,
+    sourceUrl: legislators.sourceUrl,
+  };
+
+  if (opts.sourceId) {
+    const [row] = await db.select(cols).from(legislators).where(eq(legislators.sourceId, opts.sourceId)).limit(1);
+    if (row) return row;
+  }
+
+  const name = opts.name?.trim();
+  if (!name) return null;
+
+  // unaccent(lower()) equality — exact name match ignoring accents/case, both sides.
+  const norm = (c: AnyColumn) =>
+    sql`lower(translate(${c}, 'ÁÉÍÓÚÀÈÌÒÙÜÑáéíóúàèìòùüñ', 'AEIOUAEIOUUNaeiouaeiouun'))`;
+  const normName = name
+    .toLowerCase()
+    .replace(/[áàä]/g, "a").replace(/[éèë]/g, "e").replace(/[íìï]/g, "i")
+    .replace(/[óòö]/g, "o").replace(/[úùü]/g, "u").replace(/ñ/g, "n");
+  const chamberCond = opts.chamber ? eq(legislators.chamber, opts.chamber) : undefined;
+
+  const [exact] = await db
+    .select(cols)
+    .from(legislators)
+    .where(chamberCond ? and(eq(norm(legislators.fullName), normName), chamberCond) : eq(norm(legislators.fullName), normName))
+    .limit(1);
+  if (exact) return exact;
+
+  // Trigram similarity fallback (tolerates typos / partial names). Guarded: if pg_trgm
+  // isn't present (e.g. PGlite) this throws — callers treat that as "no match".
+  try {
+    const rows = await db
+      .select({ ...cols, score: sql<number>`similarity(${norm(legislators.fullName)}, ${normName})` })
+      .from(legislators)
+      .where(
+        chamberCond
+          ? and(sql`similarity(${norm(legislators.fullName)}, ${normName}) > 0.35`, chamberCond)
+          : sql`similarity(${norm(legislators.fullName)}, ${normName}) > 0.35`,
+      )
+      .orderBy(sql`similarity(${norm(legislators.fullName)}, ${normName}) desc`)
+      .limit(1);
+    if (rows[0]) {
+      const { score: _score, ...rest } = rows[0];
+      return rest;
+    }
+  } catch {
+    // extension unavailable — no fuzzy match
+  }
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // Feed window (news / official / social / legislative-signal items)
 // ---------------------------------------------------------------------------
@@ -1704,21 +1821,140 @@ export async function initiativeByCode(
   return row ?? null;
 }
 
+export type SearchInitiativeResult = {
+  id: number;
+  code: string;
+  title: string;
+  status: string | null;
+  chamber: string | null;
+};
+
+export interface SearchIndexRow {
+  id: number;
+  title: string;
+  purpose: string | null;
+  category: string | null;
+  sponsor: string | null;
+  party: string | null;
+  province: string | null;
+  committee: string | null;
+}
+
+/** Every initiative with the fields needed to (re)build its keyword blob (search_text).
+ *  Consumed by the worker's `--reindex-search` backfill. */
+export async function listForSearchIndex(db: Database): Promise<SearchIndexRow[]> {
+  return db
+    .select({
+      id: initiatives.id,
+      title: initiatives.title,
+      purpose: initiatives.purpose,
+      category: initiatives.category,
+      sponsor: initiatives.sponsor,
+      party: initiatives.party,
+      province: initiatives.province,
+      committee: initiatives.committee,
+    })
+    .from(initiatives)
+    .orderBy(sql`${initiatives.id} asc`);
+}
+
+/** Persist the precomputed keyword blob (search_text) for one initiative. The generated
+ *  `search_tsv` tsvector column updates itself from it — no extra write needed. */
+export async function saveSearchText(
+  db: Database,
+  initiativeId: number,
+  searchText: string,
+): Promise<void> {
+  await db
+    .update(initiatives)
+    .set({ searchText })
+    .where(eq(initiatives.id, initiativeId));
+}
+
+// Ranking weights for the primary FTS path. ts_rank is small (≈0–0.1) so it's scaled up;
+// word_similarity + similarity are already 0–1. Exact-code match dominates (a user who
+// typed a code wants that bill first); a plain title substring gets a modest nudge.
+const W_TS_RANK = 3.0; // Spanish full-text relevance (synonym-expanded tsquery)
+const W_WORD_SIM = 2.0; // best fuzzy word match anywhere in the blob (typo tolerance)
+const W_CODE_SIM = 2.0; // trigram closeness of the official code
+const BOOST_TITLE_SUBSTR = 0.75; // literal title substring
+const BOOST_CODE_EXACT = 5.0; // exact official-code hit
+// word_similarity floor for the trigram-recall clause: high enough to reject noise, low
+// enough to still catch a one-word typo like "socal" → "social" (measured ≈0.8).
+const WORD_SIM_THRESHOLD = 0.5;
+
 /**
- * Typeahead search over legislative bills (PDLs) by keyword — matches the bill
- * title or official code. Returns the lightest payload needed to render an
- * autocomplete option and then filter the feed by `code`.
+ * INTENSIVE keyword search over legislative bills (PDLs) — misspelling- and
+ * synonym-tolerant, so a bill is findable even when the keyword is NOT literally in its
+ * title. Layered, with graceful degradation:
+ *
+ *   1. Postgres Spanish full-text search over the generated `search_tsv` (built from the
+ *      curated keyword blob), with the query EXPANDED via @oculis/core `expandQueryTerms`
+ *      so "impuesto" also matches ITBIS/tributario/DGII bills. tsquery is an OR of the
+ *      raw (accent-folded) query plus every synonym.
+ *   2. Trigram recall (pg_trgm `word_similarity` over the blob) catches typos/accents the
+ *      FTS misses ("seguridad socal" → "seguridad social"), plus code trigram closeness.
+ *   3. Ranked by ts_rank + word_similarity + code similarity + exact-code/title boosts.
+ *
+ * FALLBACK: if the FTS column/config is unavailable (PGlite in tests, or the query throws)
+ * we degrade to a synonym-EXPANDED ILIKE over title/purpose/search_text so the feature
+ * still returns and tests still pass. Return shape is stable ({id, code, title, status,
+ * chamber}); the feed UI depends on those five fields.
  */
 export async function searchInitiatives(
   db: Database,
   query: string,
   opts: { limit?: number } = {},
-): Promise<
-  Array<{ id: number; code: string; title: string; status: string | null; chamber: string | null }>
-> {
+): Promise<SearchInitiativeResult[]> {
   const q = query.trim();
   if (q.length < 2) return [];
+  const limit = opts.limit ?? 40;
+  const qnorm = normalizeText(q);
+  const expanded = expandQueryTerms(q);
+  // Unique, non-empty terms: the accent-folded query + every domain synonym.
+  const terms = [...new Set([qnorm, ...expanded].filter((t) => t.length > 0))];
   const like = `%${q}%`;
+
+  // No usable text terms (e.g. query was all punctuation) → straight to ILIKE fallback.
+  if (terms.length > 0) {
+    // tsquery = plainto_tsquery(term1) || plainto_tsquery(term2) || … (OR of synonyms;
+    // plainto ANDs words WITHIN a multiword synonym, which is what we want per phrase).
+    const tsq = sql`(${sql.join(
+      terms.map((t) => sql`plainto_tsquery('spanish', ${t})`),
+      sql` || `,
+    )})`;
+    try {
+      const res = await db.execute(sql`
+        select id, code, title, status, chamber
+        from initiatives
+        where kind = 'LEGISLATIVE' and code is not null and (
+          search_tsv @@ ${tsq}
+          or word_similarity(${qnorm}, coalesce(search_text, '')) >= ${WORD_SIM_THRESHOLD}
+          or title ilike ${like}
+          or code ilike ${like}
+        )
+        order by (
+          ts_rank(search_tsv, ${tsq}) * ${W_TS_RANK}
+          + word_similarity(${qnorm}, coalesce(search_text, '')) * ${W_WORD_SIM}
+          + similarity(coalesce(code, ''), ${qnorm}) * ${W_CODE_SIM}
+          + (case when title ilike ${like} then ${BOOST_TITLE_SUBSTR} else 0.0 end)
+          + (case when lower(coalesce(code, '')) = lower(${q}) then ${BOOST_CODE_EXACT} else 0.0 end)
+        ) desc, filed_at desc nulls last
+        limit ${limit}
+      `);
+      return (res as unknown as { rows: SearchInitiativeResult[] }).rows;
+    } catch {
+      // search_tsv / pg_trgm unavailable (PGlite) or query error → degrade gracefully.
+    }
+  }
+
+  // FALLBACK: synonym-expanded ILIKE over title + purpose + search_text. Portable to
+  // PGlite (no FTS, no pg_trgm). Each pattern is OR'd; expanded synonyms broaden recall.
+  const patterns = [...new Set([q, ...expanded].filter((p) => p.length > 0))];
+  const patternConds = patterns.map((p) => {
+    const l = `%${p}%`;
+    return sql`(${initiatives.title} ilike ${l} or coalesce(${initiatives.purpose}, '') ilike ${l} or coalesce(${initiatives.searchText}, '') ilike ${l})`;
+  });
   const rows = await db
     .select({
       id: initiatives.id,
@@ -1732,20 +1968,12 @@ export async function searchInitiatives(
       and(
         eq(initiatives.kind, "LEGISLATIVE"),
         isNotNull(initiatives.code),
-        or(ilike(initiatives.title, like), ilike(initiatives.code, like)),
+        patternConds.length ? or(...patternConds) : ilike(initiatives.title, like),
       ),
     )
-    // Surface filed bills first, newest by filing date.
     .orderBy(sql`${initiatives.filedAt} desc nulls last`)
-    .limit(opts.limit ?? 8);
-  // `code` is non-null here thanks to the WHERE clause.
-  return rows as Array<{
-    id: number;
-    code: string;
-    title: string;
-    status: string | null;
-    chamber: string | null;
-  }>;
+    .limit(limit);
+  return rows as SearchInitiativeResult[];
 }
 
 export interface CommissionWithMembers {

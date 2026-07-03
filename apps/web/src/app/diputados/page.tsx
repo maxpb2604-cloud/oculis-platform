@@ -7,8 +7,9 @@ import { CommitteeBubbles } from "@/components/committee-bubbles";
 
 export const dynamic = "force-dynamic";
 
-export default async function DiputadosPage({ searchParams }: { searchParams: Promise<{ lang?: string }> }) {
-  const lang: Lang = (await searchParams).lang === "en" ? "en" : "es";
+export default async function DiputadosPage({ searchParams }: { searchParams: Promise<{ lang?: string; comision?: string }> }) {
+  const sp = await searchParams;
+  const lang: Lang = sp.lang === "en" ? "en" : "es";
   const es = lang === "es";
   const [items, members] = await Promise.all([
     getChamberActivity("DIPUTADOS", 200) as Promise<ActivityItem[]>,
@@ -31,7 +32,7 @@ export default async function DiputadosPage({ searchParams }: { searchParams: Pr
 
       <div className="mt-7">
         <h2 className="serif mb-3 text-lg font-semibold">{es ? "Comisiones" : "Committees"}</h2>
-        <CommitteeBubbles items={comisiones} lang={lang} chamber={es ? "Diputados" : "Deputies"} members={members} />
+        <CommitteeBubbles items={comisiones} lang={lang} chamber={es ? "Diputados" : "Deputies"} members={members} initialFilter={sp.comision} />
       </div>
 
       <div className="mt-8">

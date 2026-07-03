@@ -6,6 +6,13 @@ import { STAGE_META, normalizeStatus } from "@oculis/core";
 import { t, type Lang } from "@/lib/i18n";
 import { formatISODate, formatISODayMonth } from "@/lib/format";
 
+/** One initiative referenced by an agenda item — rendered as a clickable chip. */
+export interface AgendaInitiative {
+  code: string;
+  initiativeId: number | null;
+  title: string | null;
+}
+
 export interface ActivityItem {
   id: number;
   scope: string;
@@ -17,6 +24,49 @@ export interface ActivityItem {
   agendaUrl: string | null;
   statuses: string[] | null;
   initiativeCount: number;
+  /** Bills referenced by this agenda item (from lib/data attachInitiatives). */
+  initiatives?: AgendaInitiative[];
+}
+
+/**
+ * Chips for the initiatives on an agenda item. Each opens the initiative bubble via
+ * the global host (data-initiative-id when the code resolves to an ingested bill,
+ * else data-initiative-code). Shows the full bill title when known, else the code.
+ */
+export function AgendaInitiativeChips({
+  items,
+  lang = "es",
+}: {
+  items: AgendaInitiative[] | undefined;
+  lang?: Lang;
+}) {
+  if (!items || items.length === 0) return null;
+  const es = lang === "es";
+  return (
+    <div className="mt-2 flex flex-wrap gap-1.5">
+      {items.map((ini) => {
+        const attrs =
+          ini.initiativeId != null
+            ? { "data-initiative-id": ini.initiativeId }
+            : { "data-initiative-code": ini.code };
+        return (
+          <button
+            key={ini.code}
+            {...attrs}
+            type="button"
+            title={es ? "Ver iniciativa" : "View initiative"}
+            className="inline-flex max-w-full items-center gap-1 rounded-md px-2 py-1 text-left text-[11.5px] transition-colors hover:bg-[var(--accent-soft)]"
+            style={{ background: "var(--surface-2)", color: "var(--text)", cursor: "pointer" }}
+          >
+            <span className="tnum shrink-0 font-semibold" style={{ color: "var(--accent)" }}>
+              {ini.code}
+            </span>
+            {ini.title && <span className="truncate" style={{ color: "var(--text-muted)" }}>· {ini.title}</span>}
+          </button>
+        );
+      })}
+    </div>
+  );
 }
 
 const STAGE_COLOR: Record<string, string> = {
@@ -67,6 +117,12 @@ export function ActivityRow({ item, lang = "es" }: { item: ActivityItem; lang?: 
   const statuses = item.statuses ?? [];
   // show description only when it adds detail beyond the body title
   const showDesc = item.description && item.description.trim() !== (item.body ?? "").trim();
+  // "Ir a la comisión": deep-link a committee movement to its chamber's agenda page,
+  // pre-filtered by committee name (lang preserved). Only for committee-scope rows.
+  const committeeHref =
+    item.scope === "COMMITTEE" && item.body
+      ? `/${item.chamber === "SENADO" ? "senado" : "diputados"}?comision=${encodeURIComponent(item.body)}${lang === "en" ? "&lang=en" : ""}`
+      : null;
   return (
     <div className="flex items-start gap-3 border-b px-5 py-3 last:border-0">
       <div className="pt-0.5"><ScopeChip scope={item.scope} lang={lang} /></div>
@@ -93,7 +149,14 @@ export function ActivityRow({ item, lang = "es" }: { item: ActivityItem; lang?: 
               {t(lang, "viewDocument")}
             </a>
           )}
+          {committeeHref && (
+            <a href={committeeHref}
+              className="font-medium underline-offset-2 hover:underline" style={{ color: "var(--accent)" }}>
+              {lang === "es" ? "Ir a la comisión" : "Go to committee"} →
+            </a>
+          )}
         </div>
+        <AgendaInitiativeChips items={item.initiatives} lang={lang} />
       </div>
       {item.eventDate && (
         <div className="tnum shrink-0 text-[11px]" style={{ color: "var(--text-muted)" }}>
@@ -182,7 +245,18 @@ export function DepositCard({ item, lang = "es" }: { item: DepositItem; lang?: L
       {item.sponsor && (
         <div className="flex flex-wrap items-center gap-x-1.5 text-[12px]" style={{ color: "var(--text-muted)" }}>
           <span>{t(lang, "filedBy")}</span>
-          <span className="font-semibold" style={{ color: "var(--text)" }}>{item.sponsor}</span>
+          <span
+            data-legislator-name={item.sponsor}
+            data-legislator-chamber={item.chamber ?? undefined}
+            data-no-bubble
+            role="button"
+            tabIndex={0}
+            title={lang === "es" ? "Ver legislador" : "View legislator"}
+            className="cursor-pointer font-semibold underline-offset-2 hover:underline"
+            style={{ color: "var(--accent)" }}
+          >
+            {item.sponsor}
+          </span>
           {item.sponsorRole && <span>· {item.sponsorRole}</span>}
           {sponsorMeta && <span>· {sponsorMeta}</span>}
           {others > 0 && (

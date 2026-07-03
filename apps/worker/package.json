@@ -15,6 +15,7 @@
     "roster": "tsx src/index.ts --roster",
     "activity": "tsx src/index.ts --activity",
     "feed": "tsx src/index.ts --feed",
+    "reindex-search": "tsx src/index.ts --reindex-search",
     "seed-accounts": "tsx src/index.ts --seed-accounts",
     "typecheck": "tsc --noEmit"
   },

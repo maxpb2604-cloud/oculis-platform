@@ -7,7 +7,7 @@
  * filters across committee name, date, kind and reading statuses.
  */
 import { useMemo, useState } from "react";
-import { ScopeChip, StatusChip, type ActivityItem } from "@/components/monitoring";
+import { AgendaInitiativeChips, ScopeChip, StatusChip, type ActivityItem } from "@/components/monitoring";
 import { formatISODate } from "@/lib/format";
 
 export interface AgendaSection {
@@ -44,6 +44,7 @@ function AgendaRow({ item, es }: { item: ActivityItem; es: boolean }) {
             {statuses.map((s, i) => <StatusChip key={i} raw={s} />)}
           </div>
         )}
+        <AgendaInitiativeChips items={item.initiatives} lang={es ? "es" : "en"} />
       </div>
       {item.agendaUrl && (
         <a href={item.agendaUrl} target="_blank" rel="noreferrer"

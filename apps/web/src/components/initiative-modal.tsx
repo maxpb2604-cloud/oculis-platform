@@ -57,29 +57,42 @@ const NEWS_SRC: Record<string, string> = {
   "feed-legislative": "Señal",
 };
 
+/** What was clicked: an initiative id (from tables/deposits) or an official code (from agendas). */
+type Trigger = { kind: "id"; value: number } | { kind: "code"; value: string };
+
 export function InitiativeModalHost({ lang }: { lang: "es" | "en" }) {
   const es = lang === "es";
-  const [id, setId] = useState<number | null>(null);
+  const [trigger, setTrigger] = useState<Trigger | null>(null);
   const [data, setData] = useState<Detail | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
   const [attempt, setAttempt] = useState(0); // bumped by "Retry" to re-run the fetch
 
   useEffect(() => {
-    // Resolve the trigger element (any ancestor carrying data-initiative-id) to an id.
-    const idFrom = (target: EventTarget | null): number | null => {
+    // Resolve the trigger element (ancestor carrying data-initiative-id OR
+    // data-initiative-code) to a Trigger. Elements with a data-no-bubble ancestor
+    // (e.g. an inner legislator chip) are ignored so nested triggers don't fight.
+    const triggerFrom = (target: EventTarget | null): Trigger | null => {
       const t = target as HTMLElement | null;
       if (!t || t.closest("a")) return null; // let real links behave normally
-      const el = t.closest("[data-initiative-id]") as HTMLElement | null;
-      if (!el) return null;
-      const v = Number(el.getAttribute("data-initiative-id"));
-      return Number.isFinite(v) && v > 0 ? v : null;
+      const byId = t.closest("[data-initiative-id]") as HTMLElement | null;
+      const byCode = t.closest("[data-initiative-code]") as HTMLElement | null;
+      // Prefer the nearest of the two.
+      const el =
+        byId && byCode ? (byId.contains(byCode) ? byCode : byId) : byId ?? byCode;
+      if (!el || el.closest("[data-no-bubble]")) return null;
+      if (el === byId || (byId && el.contains(byId))) {
+        const v = Number(byId!.getAttribute("data-initiative-id"));
+        if (Number.isFinite(v) && v > 0) return { kind: "id", value: v };
+      }
+      const code = byCode?.getAttribute("data-initiative-code")?.trim();
+      return code ? { kind: "code", value: code } : null;
     };
     const onClick = (e: MouseEvent) => {
-      const v = idFrom(e.target);
-      if (v == null) return;
+      const v = triggerFrom(e.target);
+      if (!v) return;
       e.preventDefault();
-      setId(v);
+      setTrigger(v);
     };
     // Keyboard path: trigger rows are focusable (tabIndex=0, role="button"), so
     // Enter/Space must open the modal just like a click.
@@ -87,10 +100,10 @@ export function InitiativeModalHost({ lang }: { lang: "es" | "en" }) {
       if (e.key !== "Enter" && e.key !== " ") return;
       const t = e.target as HTMLElement | null;
       if (t && t.closest("button, input, select, textarea")) return; // don't hijack real controls
-      const v = idFrom(e.target);
-      if (v == null) return;
+      const v = triggerFrom(e.target);
+      if (!v) return;
       e.preventDefault();
-      setId(v);
+      setTrigger(v);
     };
     document.addEventListener("click", onClick);
     document.addEventListener("keydown", onKeyDown);
@@ -101,7 +114,7 @@ export function InitiativeModalHost({ lang }: { lang: "es" | "en" }) {
   }, []);
 
   useEffect(() => {
-    if (id == null) return;
+    if (trigger == null) return;
     // Escape / focus-trap handled by the shared <Modal> primitive.
     // Abort superseded requests so a slow earlier response can never
     // overwrite the modal with the wrong initiative's data.
@@ -109,7 +122,11 @@ export function InitiativeModalHost({ lang }: { lang: "es" | "en" }) {
     setLoading(true);
     setError(false);
     setData(null);
-    fetch(`/api/initiatives/${id}`, { signal: ctrl.signal })
+    const url =
+      trigger.kind === "id"
+        ? `/api/initiatives/${trigger.value}`
+        : `/api/initiatives/by-code?code=${encodeURIComponent(trigger.value)}`;
+    fetch(url, { signal: ctrl.signal })
       .then((r) => {
         if (r.status === 404) return null; // renders the "Not found" state
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -125,9 +142,10 @@ export function InitiativeModalHost({ lang }: { lang: "es" | "en" }) {
         setLoading(false);
       });
     return () => ctrl.abort();
-  }, [id, attempt]);
+  }, [trigger, attempt]);
 
-  if (id == null) return null;
+  const close = () => setTrigger(null);
+  if (trigger == null) return null;
 
   const fmt = (iso: string | null) => formatISODate(iso, lang);
   const catLabel = data?.category ? CATEGORY_LABELS[data.category as Category] ?? data.category : null;
@@ -137,8 +155,8 @@ export function InitiativeModalHost({ lang }: { lang: "es" | "en" }) {
 
   return (
     <Modal
-      open={id != null}
-      onClose={() => setId(null)}
+      open
+      onClose={close}
       labelledBy="ini-modal-title"
       className="card relative my-8 w-full max-w-xl"
       panelStyle={{ background: "var(--surface)" }}
@@ -161,7 +179,7 @@ export function InitiativeModalHost({ lang }: { lang: "es" | "en" }) {
             <div className="eyebrow mt-1" id="ini-modal-title">{es ? "Iniciativa" : "Initiative"}</div>
           </div>
           <button
-            onClick={() => setId(null)}
+            onClick={close}
             aria-label={es ? "Cerrar" : "Close"}
             className="shrink-0 rounded-md px-2 py-0.5 text-sm"
             style={{ background: "var(--surface-2)", color: "var(--text-muted)" }}
@@ -310,7 +328,7 @@ export function InitiativeModalHost({ lang }: { lang: "es" | "en" }) {
           <div className="border-t px-5 py-3">
             <Link
               href={`/initiatives/${data.id}${langQuery(lang)}`}
-              onClick={() => setId(null)}
+              onClick={close}
               className="text-[13px] font-semibold underline-offset-2 hover:underline"
               style={{ color: "var(--accent)", cursor: "pointer" }}
             >

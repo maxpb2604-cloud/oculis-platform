@@ -18,6 +18,8 @@ import {
   listLegislators,
   commissionsWithMembers,
   legislatorCommittees,
+  activityInitiativesByActivity,
+  findLegislator,
   type RosterMember,
   type CommissionWithMembers,
   dashboardKpis,
@@ -271,6 +273,40 @@ export async function getInitiative(id: number) {
   return { ...rest, relatedNews };
 }
 
+/**
+ * Same rich detail as getInitiative, but resolved from the official CODE — powers
+ * "click any initiative (by code) → bubble" from agendas, where we hold codes, not ids.
+ */
+export async function getInitiativeDetailByCode(code: string) {
+  const d = await db();
+  const ref = await initiativeByCode(d, code);
+  if (!ref) return null;
+  return getInitiative(ref.id);
+}
+
+/**
+ * Resolve a legislator to the profile shape the click-to-open bubble renders,
+ * with their committee seats attached. By sourceId (reliable) or name (fuzzy).
+ */
+export async function resolveLegislator(opts: {
+  sourceId?: string | null;
+  name?: string | null;
+  chamber?: string | null;
+}): Promise<LegislatorProfile | null> {
+  const d = await db();
+  const member = await findLegislator(d, opts);
+  if (!member) return null;
+  const seats = await legislatorCommittees(d);
+  const committees = seats
+    .filter((s) =>
+      member.sourceId && s.legislatorSourceId
+        ? s.legislatorSourceId === member.sourceId
+        : normProvince(s.legislatorName) === normProvince(member.fullName),
+    )
+    .map((s) => ({ name: s.commissionName, cargo: s.cargo }));
+  return { ...member, committees };
+}
+
 // --- Phase 1: daily activity monitoring (both chambers) ---
 
 /** ISO yyyy-mm-dd for "today" in Dominican Republic time. */
@@ -304,7 +340,24 @@ export async function getDayActivity(opts: { date?: string; senateWindowDays?: n
     listActivity(d, { date, chamber: "DIPUTADOS", limit: 500 }),
     listActivity(d, { dateFrom: since, dateTo: date, chamber: "SENADO", limit: 500 }),
   ]);
+  await attachInitiatives(d, [...dip, ...sen]);
   return { date, senateSince: since, dip, sen };
+}
+
+/**
+ * Attach each activity/agenda event's referenced initiatives (code + resolved id +
+ * full title) in one batch query, so the UI can render them as clickable chips.
+ * Mutates the items in place (adds an `initiatives` array).
+ */
+async function attachInitiatives<T extends { id: number }>(
+  d: DbHandle["db"],
+  items: T[],
+): Promise<Array<T & { initiatives: import("@oculis/db").ActivityInitiativeRef[] }>> {
+  const byActivity = await activityInitiativesByActivity(d, items.map((i) => i.id));
+  for (const it of items) {
+    (it as T & { initiatives: unknown }).initiatives = byActivity.get(it.id) ?? [];
+  }
+  return items as Array<T & { initiatives: import("@oculis/db").ActivityInitiativeRef[] }>;
 }
 
 /** Initiatives deposited on a given date (the "depositadas hoy" feed). Diputados by default. */
@@ -333,13 +386,16 @@ export async function getRangeActivity(from: string, to: string) {
     listActivity(d, { dateFrom: from, dateTo: to, chamber: "DIPUTADOS", limit: 1000 }),
     listActivity(d, { dateFrom: from, dateTo: to, chamber: "SENADO", limit: 1000 }),
   ]);
+  await attachInitiatives(d, [...dip, ...sen]);
   return { dip, sen };
 }
 
 /** Recent activity (no date filter) for a chamber — its standing feed. */
 export async function getChamberActivity(chamber: string, limit = 120) {
   const d = await db();
-  return listActivity(d, { chamber, limit });
+  const items = await listActivity(d, { chamber, limit });
+  await attachInitiatives(d, items);
+  return items;
 }
 
 /**
@@ -442,10 +498,11 @@ export async function getInitiativeByCode(code: string) {
   return initiativeByCode(d, code);
 }
 
-/** Typeahead: bills (PDLs) whose title or code matches a keyword. */
+/** Keyword search: bills (PDLs) matched by the intensive synonym/typo-tolerant engine
+ *  (searchInitiatives). Limit raised so the full-page search overlay shows many hits. */
 export async function searchBills(query: string) {
   const d = await db();
-  return searchInitiatives(d, query, { limit: 8 });
+  return searchInitiatives(d, query, { limit: 40 });
 }
 
 /** Hot topics + trending entities for the right rail. Cached 5 min. */

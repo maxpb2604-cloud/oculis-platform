@@ -118,6 +118,33 @@ const DDL: string[] = [
    END $$`,
   `ALTER TABLE initiatives ADD COLUMN IF NOT EXISTS sponsor_role text`,
   `ALTER TABLE initiatives ADD COLUMN IF NOT EXISTS sponsor_count integer`,
+  // --- Intensive keyword search: normalized blob + generated Spanish tsvector ---
+  // `search_text` (a plain text column, portable to PGlite) holds the accent-folded
+  // keyword blob (title/purpose/category/sponsor/party/province/committee + curated
+  // domain concept tags — see @oculis/core keywordBlob). It's a normal column so the
+  // worker's --reindex-search backfill and the ingest path can write it everywhere.
+  `ALTER TABLE initiatives ADD COLUMN IF NOT EXISTS search_text text`,
+  // The generated tsvector + its GIN index are wrapped in a failure-tolerant DO block:
+  // PGlite may lack the 'spanish' text-search config OR generated-column support, and
+  // startup must NEVER brick there — searchInitiatives simply falls back to expanded
+  // ILIKE when `search_tsv` is absent. On real Postgres this materializes a STORED
+  // tsvector that auto-updates whenever search_text changes (no trigger needed), plus a
+  // GIN index for fast `@@` full-text matching and a pg_trgm GIN for word_similarity
+  // typo tolerance over the blob.
+  `DO $$ BEGIN
+     ALTER TABLE initiatives
+       ADD COLUMN IF NOT EXISTS search_tsv tsvector
+       GENERATED ALWAYS AS (to_tsvector('spanish', coalesce(search_text, ''))) STORED;
+   EXCEPTION WHEN others THEN NULL;
+   END $$`,
+  `DO $$ BEGIN
+     CREATE INDEX IF NOT EXISTS initiatives_search_tsv_idx ON initiatives USING gin (search_tsv);
+   EXCEPTION WHEN others THEN NULL;
+   END $$`,
+  `DO $$ BEGIN
+     CREATE INDEX IF NOT EXISTS initiatives_search_text_trgm_idx ON initiatives USING gin (search_text gin_trgm_ops);
+   EXCEPTION WHEN others THEN NULL;
+   END $$`,
   `
     CREATE TABLE IF NOT EXISTS status_events (
       id serial PRIMARY KEY,

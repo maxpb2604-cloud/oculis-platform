@@ -15,6 +15,7 @@ import { FeedTimeline } from "@/components/feed-timeline";
 import { FeedRail } from "@/components/feed-rail";
 import { FeedSocialDirectory } from "@/components/feed-social-directory";
 import { FeedFreshness } from "@/components/feed-freshness";
+import { FeedSearch } from "@/components/feed-search-overlay";
 
 export const dynamic = "force-dynamic";
 
@@ -73,6 +74,9 @@ export default async function FeedPage({ searchParams }: { searchParams: Promise
       title="Feed"
       subtitle={es ? "Noticias y señales del Congreso" : "Congress news & signals"}
     >
+      <div className="mb-4">
+        <FeedSearch lang={lang} activeLabel={activeLabel} />
+      </div>
       <div className="mb-4">
         <FeedFreshness
           lang={lang}

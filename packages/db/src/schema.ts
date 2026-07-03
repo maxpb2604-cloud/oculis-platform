@@ -57,6 +57,13 @@ export const initiatives = pgTable(
     expiresAt: text("expires_at"),
     sourceUrl: text("source_url"),
 
+    // --- keyword search ---
+    // Normalized (accent-folded) blob of the searchable fields + curated domain concept
+    // tags (see @oculis/core keywordBlob). Written by the worker's --reindex-search
+    // backfill and on ingest. A generated tsvector `search_tsv` + GIN index over this
+    // column live in the client.ts DDL (drizzle can't express a generated tsvector).
+    searchText: text("search_text"),
+
     // --- scoring (null until scored) ---
     riskLevel: text("risk_level"), // ALTO | MEDIO | BAJO
     approvalProbability: text("approval_probability"), // ALTA | MEDIA | BAJA

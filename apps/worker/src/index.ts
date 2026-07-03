@@ -21,6 +21,7 @@ import { recategorizeAll } from "./recategorize.js";
 import { rescoreAll } from "./rescore.js";
 import { ingestFeed } from "./ingest-feed.js";
 import { seedFeedAccounts } from "./feed-accounts.seed.js";
+import { reindexSearch } from "./reindex-search.js";
 
 loadEnv();
 
@@ -193,6 +194,14 @@ async function main() {
       const total = r.reduce((n, s) => n + s.count, 0);
       const inserted = r.reduce((n, s) => n + s.inserted, 0);
       console.log(`\n✔ done in ${secs}s — sources ok ${ok}/${r.length}, items ${total} (${inserted} new)`);
+      return;
+    }
+
+    if (flag("reindex-search")) {
+      console.log("🔎 Rebuilding keyword search index (search_text blob, offline)\n");
+      const r = await reindexSearch(db, { log: (m) => console.log(m) });
+      const secs = ((Date.now() - started) / 1000).toFixed(1);
+      console.log(`\n✔ done in ${secs}s — ${r.updated}/${r.processed} initiatives reindexed`);
       return;
     }
 

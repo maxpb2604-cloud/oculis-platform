@@ -72,12 +72,7 @@ export function FeedFilters({
         </div>
       )}
 
-      <FeedBillSearch
-        lang={lang}
-        onSelect={(code) =>
-          navigate({ initiativeCode: code, legislatorSourceId: null, commissionName: null })
-        }
-      />
+      <FeedBillSearch lang={lang} />
 
       <div className="card p-3">
         <div className="eyebrow mb-2">{es ? "Tipo" : "Type"}</div>
