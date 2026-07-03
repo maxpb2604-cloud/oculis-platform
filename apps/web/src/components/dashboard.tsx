@@ -114,7 +114,8 @@ function Legend({ data }: { data: { key: string; count: number }[] }) {
         <li key={d.key} className="flex items-center gap-2">
           <span className="h-2 w-2 shrink-0 rounded-sm" style={{ background: DONUT_COLORS[i % DONUT_COLORS.length] }} />
           <span className="truncate">{d.key}</span>
-          <span className="tnum ml-auto">{d.count}</span>
+          {/* Count in full text color (not the muted list tone) so it reads clearly in dark mode. */}
+          <span className="tnum ml-auto font-semibold" style={{ color: "var(--text)" }}>{d.count}</span>
         </li>
       ))}
     </ul>

@@ -175,8 +175,14 @@ export function StatusDonut({ data, lang }: { data: Bucket[]; lang: Lang }) {
         </PieChart>
       </ResponsiveContainer>
       <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-        <div className="tnum serif text-2xl font-semibold">{total.toLocaleString()}</div>
-        <div className="eyebrow">{t(lang, "total")}</div>
+        {/* Explicit theme color so the total is unmistakably readable in both themes
+            (white on dark, ink on light) — never relies on inherited color. */}
+        <div className="tnum serif text-2xl font-semibold" style={{ color: "var(--text)" }}>
+          {total.toLocaleString()}
+        </div>
+        <div className="eyebrow" style={{ color: "var(--text)", opacity: 0.75 }}>
+          {t(lang, "total")}
+        </div>
       </div>
     </div>
   );
