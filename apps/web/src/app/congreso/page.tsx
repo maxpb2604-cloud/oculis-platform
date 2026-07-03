@@ -23,8 +23,8 @@ export default async function CongresoPage({ searchParams }: { searchParams: Pro
       {legislators.length === 0 ? (
         <div className="card p-6 text-[13px]" style={{ color: "var(--text-muted)" }}>
           {es
-            ? "Aún no se ha cargado el roster. Ejecuta la ingesta: npm run roster -w @oculis/worker"
-            : "Roster not loaded yet. Run the ingestion: npm run roster -w @oculis/worker"}
+            ? "Aún no hay datos del roster. Los datos se actualizan automáticamente."
+            : "No roster data yet. Data refreshes automatically."}
         </div>
       ) : (
         <CongressRoster

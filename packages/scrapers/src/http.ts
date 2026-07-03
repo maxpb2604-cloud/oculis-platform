@@ -40,12 +40,17 @@ function describeError(err: unknown): string {
   return `network (${(err as Error)?.message ?? "error"})`;
 }
 
-/** Core fetch-with-retry; returns the raw Response (already status-checked). */
-async function fetchResilient(
+/**
+ * Core fetch-with-retry. `read` consumes the response body INSIDE the timeout window
+ * (the AbortController also aborts an in-flight body read), so a server that returns
+ * headers quickly but stalls the body can't hang the worker past `timeoutMs`.
+ */
+async function fetchResilient<T>(
   url: string,
   accept: string,
   opts: FetchOptions,
-): Promise<Response> {
+  read: (res: Response) => Promise<T>,
+): Promise<T> {
   const { timeoutMs = 30_000, retries = 3, headers = {}, method, body } = opts;
   let lastErr: unknown;
   for (let attempt = 0; attempt <= retries; attempt++) {
@@ -59,7 +64,8 @@ async function fetchResilient(
         headers: browserHeaders({ Accept: accept, ...headers }),
       });
       if (!res.ok) throw new HttpError(res.status, url, await safeText(res));
-      return res;
+      // Read the body before the finally clears the timer, keeping it under the timeout.
+      return await read(res);
     } catch (err) {
       lastErr = err;
       if (!retryable(err)) throw err;
@@ -88,13 +94,13 @@ async function fetchResilient(
 }
 
 export async function fetchJson<T>(url: string, opts: FetchOptions = {}): Promise<T> {
-  const res = await fetchResilient(url, "application/json, text/plain, */*", opts);
-  return (await res.json()) as T;
+  return fetchResilient(url, "application/json, text/plain, */*", opts, (res) =>
+    res.json() as Promise<T>,
+  );
 }
 
 export async function fetchText(url: string, opts: FetchOptions = {}): Promise<string> {
-  const res = await fetchResilient(url, "text/html,application/xhtml+xml,*/*", opts);
-  return res.text();
+  return fetchResilient(url, "text/html,application/xhtml+xml,*/*", opts, (res) => res.text());
 }
 
 export interface FetchBytesResult {
@@ -103,11 +109,10 @@ export interface FetchBytesResult {
 }
 
 export async function fetchBytes(url: string, opts: FetchOptions = {}): Promise<FetchBytesResult> {
-  const res = await fetchResilient(url, "application/pdf,*/*", { timeoutMs: 45_000, ...opts });
-  return {
+  return fetchResilient(url, "application/pdf,*/*", { timeoutMs: 45_000, ...opts }, async (res) => ({
     bytes: new Uint8Array(await res.arrayBuffer()),
     contentType: res.headers.get("content-type") ?? "",
-  };
+  }));
 }
 
 /** Larger slice of the failing response retained on the error for debugging. */

@@ -2,14 +2,115 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
 import { langQuery, type Lang } from "@/lib/i18n";
 
-/** Left module rail — brand, real navigation, user footer. */
+/**
+ * Left module rail — brand, real navigation, user footer.
+ * Desktop (lg+): sticky rail, always visible. Below lg: a fixed hamburger
+ * button (the top bar pads left for it) opens the same nav as a slide-over
+ * drawer with a backdrop; it closes on route change, backdrop click or Escape,
+ * and locks body scroll while open.
+ */
 export function Sidebar({ lang }: { lang: Lang }) {
   const pathname = usePathname();
+  const [open, setOpen] = useState(false);
+
+  // Close the drawer whenever the route changes (nav link clicks).
+  useEffect(() => {
+    setOpen(false);
+  }, [pathname]);
+
+  // While open: Escape closes, body scroll is locked.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [open]);
+
+  return (
+    <>
+      {/* Mobile hamburger — fixed so it rides above the sticky top bar. */}
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        aria-label={lang === "es" ? "Abrir menú de navegación" : "Open navigation menu"}
+        aria-expanded={open}
+        aria-controls="mobile-sidebar"
+        className="fixed left-4 top-4 z-30 flex h-9 w-9 items-center justify-center rounded-lg border transition-colors hover:bg-[var(--surface-2)] lg:hidden"
+        style={{ cursor: "pointer", background: "var(--surface)" }}
+      >
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+          <path d="M4 6h16M4 12h16M4 18h16" />
+        </svg>
+      </button>
+
+      {/* Mobile backdrop */}
+      {open && (
+        <div
+          className="fixed inset-0 z-40 lg:hidden"
+          style={{ background: "var(--modal-overlay)" }}
+          onClick={() => setOpen(false)}
+          aria-hidden
+        />
+      )}
+
+      {/* Mobile slide-over drawer — same content as the desktop rail. */}
+      <aside
+        id="mobile-sidebar"
+        inert={!open}
+        aria-hidden={!open}
+        className={`fixed inset-y-0 left-0 z-50 flex w-[264px] flex-col justify-between gap-6 overflow-y-auto border-r px-4 py-5 transition-transform duration-200 lg:hidden ${
+          open ? "translate-x-0" : "-translate-x-full"
+        }`}
+        style={{ background: "var(--surface)" }}
+      >
+        <SidebarContent lang={lang} pathname={pathname} onNavigate={() => setOpen(false)} />
+      </aside>
+
+      {/* Desktop rail — unchanged behavior. */}
+      <aside
+        className="sticky top-0 hidden h-dvh w-[244px] shrink-0 flex-col justify-between border-r px-4 py-5 lg:flex"
+        style={{ background: "var(--surface)" }}
+      >
+        <SidebarContent lang={lang} pathname={pathname} />
+      </aside>
+    </>
+  );
+}
+
+/** Brand block + grouped nav + user footer, shared by the rail and the drawer. */
+function SidebarContent({
+  lang,
+  pathname,
+  onNavigate,
+}: {
+  lang: Lang;
+  pathname: string;
+  onNavigate?: () => void;
+}) {
   const q = langQuery(lang);
 
   const groups = [
+    {
+      title: null,
+      items: [
+        {
+          href: "/",
+          label: lang === "es" ? "Resumen Ejecutivo" : "Executive Summary",
+          icon: IconHome,
+          match: (p: string) => p === "/",
+        },
+      ],
+    },
     {
       title: lang === "es" ? "Monitoreo Legislativo" : "Legislative Monitoring",
       items: [
@@ -31,14 +132,11 @@ export function Sidebar({ lang }: { lang: Lang }) {
   ];
 
   return (
-    <aside
-      className="sticky top-0 hidden h-dvh w-[244px] shrink-0 flex-col justify-between border-r px-4 py-5 lg:flex"
-      style={{ background: "var(--surface)" }}
-    >
+    <>
       <div>
         <div className="px-1">
           {/* Official Ferdinand Herrera Consultants logo → home. White plate so it reads in light + dark. */}
-          <Link href={`/${q}`} className="block" style={{ cursor: "pointer" }}>
+          <Link href={`/${q}`} onClick={onNavigate} className="block" style={{ cursor: "pointer" }}>
             <div className="rounded-lg bg-white p-2.5 ring-1 ring-black/5">
               <img src="/fhc-logo.jpg" alt="Ferdinand Herrera Consultants" className="w-full" />
             </div>
@@ -46,6 +144,7 @@ export function Sidebar({ lang }: { lang: Lang }) {
           {/* Oculis Auribus — primary platform brand → home. Blue icon adapts to light + dark. */}
           <Link
             href={`/${q}`}
+            onClick={onNavigate}
             className="mt-3 flex items-center gap-2 rounded-lg p-1 transition-colors hover:bg-[var(--surface-2)]"
             style={{ cursor: "pointer" }}
           >
@@ -60,15 +159,16 @@ export function Sidebar({ lang }: { lang: Lang }) {
         </div>
 
         <nav className="mt-7 flex flex-col gap-0.5">
-          {groups.map((g) => (
-            <div key={g.title} className="mb-3">
-              <div className="eyebrow px-2 pb-2">{g.title}</div>
+          {groups.map((g, gi) => (
+            <div key={g.title ?? gi} className="mb-3">
+              {g.title && <div className="eyebrow px-2 pb-2">{g.title}</div>}
               {g.items.map((n) => {
                 const active = n.match(pathname);
                 return (
                   <Link
                     key={n.href}
                     href={`${n.href}${q}`}
+                    onClick={onNavigate}
                     aria-current={active ? "page" : undefined}
                     className="group flex items-center gap-3 rounded-lg px-2.5 py-2 text-sm transition-colors hover:bg-[var(--surface-2)]"
                     style={{
@@ -105,7 +205,7 @@ export function Sidebar({ lang }: { lang: Lang }) {
           </div>
         </div>
       </div>
-    </aside>
+    </>
   );
 }
 
@@ -115,6 +215,9 @@ function ico(active?: boolean) {
     stroke: active ? "var(--accent)" : "currentColor",
     strokeWidth: 1.6, strokeLinecap: "round" as const, strokeLinejoin: "round" as const,
   };
+}
+function IconHome({ active }: { active?: boolean }) {
+  return (<svg {...ico(active)} viewBox="0 0 24 24"><path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1V10Z" /></svg>);
 }
 function IconGavel({ active }: { active?: boolean }) {
   return (<svg {...ico(active)} viewBox="0 0 24 24"><path d="m14 13-7 7M11 6l7 7M9 4l6 6M16 9l4 4" /><path d="M3 21h8" /></svg>);

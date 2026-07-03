@@ -7,7 +7,7 @@
  * filters across committee name, date, kind and reading statuses.
  */
 import { useMemo, useState } from "react";
-import { ScopeChip, StatusChip, type ActivityItem } from "@/components/monitoring";
+import { AgendaInitiativeChips, ScopeChip, StatusChip, type ActivityItem } from "@/components/monitoring";
 import { formatISODate } from "@/lib/format";
 
 export interface AgendaSection {
@@ -44,6 +44,7 @@ function AgendaRow({ item, es }: { item: ActivityItem; es: boolean }) {
             {statuses.map((s, i) => <StatusChip key={i} raw={s} />)}
           </div>
         )}
+        <AgendaInitiativeChips items={item.initiatives} lang={es ? "es" : "en"} />
       </div>
       {item.agendaUrl && (
         <a href={item.agendaUrl} target="_blank" rel="noreferrer"
@@ -63,10 +64,19 @@ export function AgendaBrowser({ sections, lang }: { sections: AgendaSection[]; l
 
   // De-duplicate (same body + date + kind appears once) then filter by the query.
   const prepared = useMemo(() => {
+    // Dates are searchable both as raw ISO ("2026-06-24") and as the localized string the
+    // user actually sees in the row ("24/06/2026" / "06/24/2026").
     const matches = (it: ActivityItem) =>
       !ql ||
-      [it.body, it.description, it.kind, it.eventDate, rowTitle(it, es), ...(it.statuses ?? [])]
-        .some((v) => String(v ?? "").toLowerCase().includes(ql));
+      [
+        it.body,
+        it.description,
+        it.kind,
+        it.eventDate,
+        it.eventDate ? formatISODate(it.eventDate, es ? "es" : "en") : null,
+        rowTitle(it, es),
+        ...(it.statuses ?? []),
+      ].some((v) => String(v ?? "").toLowerCase().includes(ql));
     return sections.map((s) => {
       const seen = new Set<string>();
       const items: ActivityItem[] = [];

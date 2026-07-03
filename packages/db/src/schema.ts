@@ -6,8 +6,10 @@
  * validated in the app layer against `@oculis/core` types (keeps migrations simple and
  * portable to PGlite for local/dev).
  */
+import { sql } from "drizzle-orm";
 import {
   boolean,
+  check,
   index,
   integer,
   jsonb,
@@ -16,6 +18,7 @@ import {
   serial,
   text,
   timestamp,
+  unique,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 
@@ -54,6 +57,13 @@ export const initiatives = pgTable(
     expiresAt: text("expires_at"),
     sourceUrl: text("source_url"),
 
+    // --- keyword search ---
+    // Normalized (accent-folded) blob of the searchable fields + curated domain concept
+    // tags (see @oculis/core keywordBlob). Written by the worker's --reindex-search
+    // backfill and on ingest. A generated tsvector `search_tsv` + GIN index over this
+    // column live in the client.ts DDL (drizzle can't express a generated tsvector).
+    searchText: text("search_text"),
+
     // --- scoring (null until scored) ---
     riskLevel: text("risk_level"), // ALTO | MEDIO | BAJO
     approvalProbability: text("approval_probability"), // ALTA | MEDIA | BAJA
@@ -75,6 +85,11 @@ export const initiatives = pgTable(
     byRisk: index("initiatives_risk_idx").on(t.riskLevel),
     byChamber: index("initiatives_chamber_idx").on(t.chamber),
     byFiledAt: index("initiatives_filed_at_idx").on(t.filedAt),
+    // serves countApprovedBySponsor's exact sponsor = ? match during scoring
+    bySponsor: index("initiatives_sponsor_idx").on(t.sponsor),
+    // NOTE: client.ts DDL additionally creates pg_trgm GIN indexes on title and code
+    // (initiatives_title_trgm_idx / initiatives_code_trgm_idx) for searchInitiatives'
+    // leading-wildcard ILIKE typeahead — drizzle can't express `USING gin ... gin_trgm_ops`.
   }),
 );
 
@@ -92,8 +107,12 @@ export const statusEvents = pgTable(
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
   (t) => ({
-    // dedupe identical (initiative, status, date) events across re-scrapes
-    uq: uniqueIndex("status_events_uq").on(t.initiativeId, t.status, t.eventDate),
+    // dedupe identical (initiative, status, date) events across re-scrapes.
+    // NULLS NOT DISTINCT so date-less events dedupe too (plain UNIQUE treats each
+    // NULL event_date as distinct → the same row re-inserts on every re-scrape).
+    uq: unique("status_events_uq")
+      .on(t.initiativeId, t.status, t.eventDate)
+      .nullsNotDistinct(),
     byInitiative: index("status_events_initiative_idx").on(t.initiativeId),
   }),
 );
@@ -102,19 +121,29 @@ export const statusEvents = pgTable(
  * The five scoring inputs per initiative (one row each), with provenance so the
  * analyst-review (hybrid scoring) workflow can track auto vs human values.
  */
-export const scoreInputs = pgTable("score_inputs", {
-  initiativeId: integer("initiative_id")
-    .primaryKey()
-    .references(() => initiatives.id, { onDelete: "cascade" }),
-  party: text("party"), // PartyStrength
-  sponsorRecord: text("sponsor_record"), // SponsorTrackRecord
-  executiveSupport: text("executive_support"), // YesNo
-  stakeholderSupport: text("stakeholder_support"), // YesNo
-  socialPressureCount: integer("social_pressure_count"),
-  // which fields were auto-derived vs estimated vs analyst-set
-  provenance: jsonb("provenance"),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+export const scoreInputs = pgTable(
+  "score_inputs",
+  {
+    initiativeId: integer("initiative_id")
+      .primaryKey()
+      .references(() => initiatives.id, { onDelete: "cascade" }),
+    party: text("party"), // PartyStrength
+    sponsorRecord: text("sponsor_record"), // SponsorTrackRecord
+    executiveSupport: text("executive_support"), // YesNo
+    stakeholderSupport: text("stakeholder_support"), // YesNo
+    socialPressureCount: integer("social_pressure_count"),
+    // which fields were auto-derived vs estimated vs analyst-set
+    provenance: jsonb("provenance"),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    // mirrors the CHECK enforced by the client.ts DDL (same constraint name)
+    socialPressureNonNegative: check(
+      "score_inputs_social_pressure_count_check",
+      sql`${t.socialPressureCount} >= 0`,
+    ),
+  }),
+);
 
 /**
  * Daily committee / plenary agenda activity (SIL "actividad" subsystem).
@@ -231,10 +260,14 @@ export const regulations = pgTable(
     institution: text("institution").notNull(), // acronym, e.g. "MISPAS"
     regType: text("reg_type"), // Reglamento | Resolución | Norma | NORDOM | …
     title: text("title").notNull(),
+    // UNUSED (2026-07-02 audit): no adapter writes `purpose` and no query reads it.
+    // Kept (not dropped) to avoid destructive DDL on the live table; wire up or drop
+    // via a deliberate migration if the regulatory adapters ever start extracting it.
     purpose: text("purpose"),
     status: text("status"), // regulatory lifecycle status (Spanish/English label)
     interventionLevel: text("intervention_level"), // HIGH | INTERMEDIATE | LOW
     category: text("category"), // our taxonomy, null until categorized
+    // UNUSED (2026-07-02 audit): same as `purpose` — never written, never read.
     province: text("province"),
     isConsulta: boolean("is_consulta").notNull().default(false), // public consultation / draft
     publishedAt: text("published_at"), // ISO date
@@ -380,6 +413,9 @@ export const feedItems = pgTable(
     byCategory: index("feed_items_category_idx").on(t.category),
     byInitiative: index("feed_items_initiative_idx").on(t.initiativeId),
     byLegislator: index("feed_items_legislator_idx").on(t.legislatorSourceId),
+    // NOTE: client.ts DDL additionally creates feed_items_sort_idx, an expression index
+    // on (coalesce(published_at, first_seen_at) DESC, id DESC) serving listFeedItems'
+    // keyset ordering — drizzle's index builder can't express expression indexes.
   }),
 );
 

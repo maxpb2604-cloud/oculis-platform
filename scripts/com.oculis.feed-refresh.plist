@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.oculis.feed-refresh</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/emilpenabautista/Oculis Auribus/app/scripts/refresh-feed.sh</string>
+  </array>
+
+  <!-- Fixed clock times instead of StartInterval: launchd coalesces a missed
+       calendar run into one catch-up run at wake, so sleep no longer starves
+       the feed (StartInterval simply skips while asleep). -->
+  <key>RunAtLoad</key>
+  <true/>
+  <key>StartCalendarInterval</key>
+  <array>
+    <dict><key>Hour</key><integer>6</integer><key>Minute</key><integer>15</integer></dict>
+    <dict><key>Hour</key><integer>9</integer><key>Minute</key><integer>15</integer></dict>
+    <dict><key>Hour</key><integer>12</integer><key>Minute</key><integer>15</integer></dict>
+    <dict><key>Hour</key><integer>15</integer><key>Minute</key><integer>15</integer></dict>
+    <dict><key>Hour</key><integer>18</integer><key>Minute</key><integer>15</integer></dict>
+    <dict><key>Hour</key><integer>21</integer><key>Minute</key><integer>15</integer></dict>
+  </array>
+
+  <key>StandardOutPath</key>
+  <string>/Users/emilpenabautista/Oculis Auribus/app/.logs/launchd.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/emilpenabautista/Oculis Auribus/app/.logs/launchd.err.log</string>
+
+  <key>ProcessType</key>
+  <string>Background</string>
+</dict>
+</plist>

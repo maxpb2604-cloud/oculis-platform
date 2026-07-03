@@ -45,3 +45,13 @@ export function shortBillName(title: string | null | undefined, code?: string | 
   t = t.charAt(0).toUpperCase() + t.slice(1);
   return t.length > 68 ? `${t.slice(0, 65).trimEnd()}…` : t;
 }
+
+/**
+ * Guard for URLs that came from scraped/external sources (RSS, X, government
+ * portals) before rendering them as hrefs: only http(s) survives, so a
+ * compromised feed can never inject a `javascript:` (or other scheme) link.
+ */
+export function safeHref(url: string | null | undefined): string | undefined {
+  if (!url) return undefined;
+  return /^https?:\/\//i.test(url.trim()) ? url : undefined;
+}

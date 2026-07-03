@@ -74,7 +74,6 @@ export class SenadoRosterAdapter {
       let photoUrl: string | null = null;
       let email: string | null = null;
       let phone: string | null = null;
-      let profession: string | null = null;
       try {
         const html = await fetchText(url, { headers: H });
         const p = this.parseParty(html);
@@ -83,7 +82,6 @@ export class SenadoRosterAdapter {
         photoUrl = parsePhoto(html);
         email = parseEmail(html);
         phone = parsePhone(html);
-        profession = parseProfession(html);
       } catch (e) {
         gaps.push(`roster-senado: no se pudo leer la ficha de ${card.name} (${(e as Error).message}).`);
       }
@@ -102,7 +100,10 @@ export class SenadoRosterAdapter {
         photoUrl,
         email,
         phone,
-        profession,
+        // The Senate fichas carry no labelled "Profesión" field — only a free-form
+        // biography ("Nació el …"). A bio excerpt is not a profession, so this stays
+        // null rather than storing prose in a structured field.
+        profession: null,
         sourceUrl: url,
       });
     }
@@ -229,23 +230,6 @@ function parseEmail(html: string): string | null {
 function parsePhone(html: string): string | null {
   const m = html.match(/Tel[:.]?\s*(\(?\d{3}\)?[\s.\-]?\d{3}[\s.\-]?\d{4})/);
   return m ? m[1]!.replace(/\s+/g, " ").trim() : null;
-}
-
-/**
- * Profession/biography. The fichas carry no labelled "Profesión" field, only a free-form
- * biography that consistently opens with "Nació el…". We surface a trimmed excerpt of that
- * paragraph (the most reliable signal of background/profession), or null when absent.
- */
-function parseProfession(html: string): string | null {
-  const re = /et_pb_text_inner">([\s\S]*?)<\/div>/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(html))) {
-    const txt = stripTags(m[1]!).replace(/\s+/g, " ").trim();
-    // The bio paragraph reliably opens "Nació …" (note: JS \b is ASCII-only and won't
-    // anchor after the accented "ó", so match the following space explicitly).
-    if (/^Naci[oó]\s/.test(txt) && txt.length > 80) return txt.slice(0, 300).trim();
-  }
-  return null;
 }
 
 /** Connector words dropped when matching names (they carry no identity). */

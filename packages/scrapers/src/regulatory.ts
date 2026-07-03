@@ -15,6 +15,9 @@
  */
 import { fetchJson, fetchText } from "./http.js";
 import { buildISODate, spanishMonthToNum } from "./dates.js";
+// Reuse the feed module's rich RSS reader + HTML helpers (entity decoding included)
+// instead of carrying a duplicate mini reader that let encoded titles through raw.
+import { readRichRss, stripHtml } from "./feeds.js";
 
 export interface RawRegulation {
   source: string; // adapter key, e.g. "reg-mispas"
@@ -55,44 +58,6 @@ export function interventionFor(status: string | null, isConsulta: boolean): Raw
   return isConsulta ? "HIGH" : "LOW";
 }
 
-// --- tiny RSS reader (no XML dep) ---
-export interface RssItem {
-  title: string;
-  link: string | null;
-  date: string | null; // ISO
-  description: string | null;
-}
-
-const strip = (s: string) => s.replace(/<!\[CDATA\[|\]\]>/g, "").replace(/<[^>]+>/g, "").trim();
-function tag(block: string, name: string): string | null {
-  const m = block.match(new RegExp(`<${name}[^>]*>([\\s\\S]*?)</${name}>`, "i"));
-  return m ? strip(m[1]!) : null;
-}
-function isoFromRss(d: string | null): string | null {
-  if (!d) return null;
-  const m = d.match(/(\d{1,2})\s+(\w{3})\s+(\d{4})/); // "01 Nov 2025"
-  const months: Record<string, string> = { jan: "01", feb: "02", mar: "03", apr: "04", may: "05", jun: "06", jul: "07", aug: "08", sep: "09", oct: "10", nov: "11", dec: "12" };
-  if (m) {
-    const mm = months[m[2]!.slice(0, 3).toLowerCase()];
-    if (mm) return `${m[3]}-${mm}-${m[1]!.padStart(2, "0")}`;
-  }
-  const iso = d.match(/(\d{4}-\d{2}-\d{2})/);
-  return iso ? iso[1]! : null;
-}
-
-export async function readRss(url: string): Promise<RssItem[]> {
-  const xml = await fetchText(url, { timeoutMs: 20_000, headers: { Accept: "application/rss+xml, application/xml, text/xml, */*" } });
-  return [...xml.matchAll(/<item>([\s\S]*?)<\/item>/gi)].map((m) => {
-    const b = m[1]!;
-    return {
-      title: tag(b, "title") ?? "",
-      link: tag(b, "link"),
-      date: isoFromRss(tag(b, "pubDate") ?? tag(b, "dc:date")),
-      description: tag(b, "description"),
-    };
-  });
-}
-
 /** MISPAS (Ministerio de Salud Pública) — DSpace RSS of technical regulations. */
 export class MispasAdapter {
   readonly source = "reg-mispas";
@@ -100,7 +65,7 @@ export class MispasAdapter {
   constructor(private readonly feed = "https://repositorio.msp.gob.do/feed/rss_2.0/123456789/13") {}
 
   async collect(): Promise<{ regulations: RawRegulation[]; gaps: string[] }> {
-    const items = await readRss(this.feed);
+    const items = await readRichRss(this.feed);
     const regulations = items
       .filter((i) => i.title)
       .map((i): RawRegulation => {
@@ -115,7 +80,7 @@ export class MispasAdapter {
           interventionLevel: interventionFor(status, false),
           category: "SALUD",
           isConsulta: false,
-          publishedAt: i.date,
+          publishedAt: isoDate(i.publishedAt),
           deadline: null,
           url: i.link,
           raw: i,
@@ -135,7 +100,7 @@ export class ProconsumidorAdapter {
     const html = await fetchText(this.page, { timeoutMs: 20_000 });
     // Each consultation links a PDF of the draft resolution (skip the generic comment form).
     const links = [...html.matchAll(/href="([^"]+\.pdf)"[^>]*>([\s\S]*?)<\/a>/gi)]
-      .map((m) => ({ href: m[1]!, text: strip(m[2]!) }))
+      .map((m) => ({ href: m[1]!, text: stripHtml(m[2]!) }))
       .filter((l) => !/formulario/i.test(l.href));
     const base = "https://proconsumidor.gob.do";
     const regulations = links.map((l): RawRegulation => {
@@ -163,7 +128,7 @@ export class ProconsumidorAdapter {
 }
 
 // --- shared helpers for the structured adapters below ---
-const cleanTitle = (t: string) => strip(t).replace(/\s+/g, " ").trim();
+const cleanTitle = (t: string) => stripHtml(t);
 const isoDate = (s?: string | null): string | null => {
   const m = (s ?? "").match(/\d{4}-\d{2}-\d{2}/);
   return m ? m[0] : null;

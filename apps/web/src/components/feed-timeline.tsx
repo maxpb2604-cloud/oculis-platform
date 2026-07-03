@@ -93,6 +93,11 @@ export function FeedTimeline({
   const [cursor, setCursor] = useState(nextCursor);
   const [loading, setLoading] = useState(false);
   const sentinel = useRef<HTMLDivElement>(null);
+  // Request generation: bumped on every filter/data reset so a page fetched for
+  // the PREVIOUS filter set is dropped instead of appended into the new list.
+  const generation = useRef(0);
+  // Prevents overlapping page loads (state `loading` lags behind by a render).
+  const inFlight = useRef(false);
   const yesterday = (() => {
     const d = new Date(`${today}T12:00:00Z`);
     d.setUTCDate(d.getUTCDate() - 1);
@@ -101,29 +106,37 @@ export function FeedTimeline({
 
   // Server re-renders on filter navigation → reset the list.
   useEffect(() => {
+    generation.current += 1;
+    inFlight.current = false;
     setItems(initial);
     setCursor(nextCursor);
+    setLoading(false);
   }, [initial, nextCursor]);
 
   const loadMore = useCallback(async () => {
-    setCursor((cur) => {
-      if (!cur) return cur;
-      setLoading(true);
-      const p = new URLSearchParams();
-      for (const [k, v] of Object.entries(filters)) if (v) p.set(k, String(v));
-      if (cur.publishedAt) p.set("cursorAt", cur.publishedAt);
-      p.set("cursorId", String(cur.id));
-      fetch(`/api/feed?${p.toString()}`)
-        .then((r) => r.json())
-        .then((data) => {
-          setItems((prev) => [...prev, ...(data.items ?? [])]);
-          setCursor(data.nextCursor ?? null);
-        })
-        .catch(() => {})
-        .finally(() => setLoading(false));
-      return cur;
-    });
-  }, [filters]);
+    if (!cursor || inFlight.current) return;
+    inFlight.current = true;
+    const gen = generation.current;
+    setLoading(true);
+    const p = new URLSearchParams();
+    for (const [k, v] of Object.entries(filters)) if (v) p.set(k, String(v));
+    if (cursor.publishedAt) p.set("cursorAt", cursor.publishedAt);
+    p.set("cursorId", String(cursor.id));
+    try {
+      const res = await fetch(`/api/feed?${p.toString()}`);
+      const data = await res.json();
+      if (generation.current !== gen) return; // stale: filters changed mid-flight
+      setItems((prev) => [...prev, ...(data.items ?? [])]);
+      setCursor(data.nextCursor ?? null);
+    } catch {
+      /* network error — keep the current list; the sentinel allows a retry */
+    } finally {
+      if (generation.current === gen) {
+        inFlight.current = false;
+        setLoading(false);
+      }
+    }
+  }, [cursor, filters]);
 
   useEffect(() => {
     const el = sentinel.current;
@@ -175,7 +188,14 @@ export function FeedTimeline({
                 />,
               );
             }
-            out.push(<FeedCard key={`${it.source}-${it.id}`} item={it} lang={lang} />);
+            out.push(
+              <FeedCard
+                key={`${it.source}-${it.id}`}
+                item={it}
+                lang={lang}
+                activeFilters={filters}
+              />,
+            );
           }
           return out;
         })()

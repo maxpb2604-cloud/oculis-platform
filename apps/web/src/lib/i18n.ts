@@ -3,19 +3,14 @@ export type Lang = "es" | "en";
 
 export const dict: Record<Lang, Record<string, string>> = {
   es: {
-    appName: "Oculis Auribus",
     tagline: "Seguimiento Experto de Legislación y Regulaciones",
     legislative: "Monitoreo Legislativo",
-    regulatory: "Monitoreo Regulatorio",
     totalBills: "Iniciativas Totales",
     highRisk: "Riesgo Alto",
-    needsReview: "Por Revisar",
-    published: "Publicadas",
-    byRisk: "Iniciativas por Nivel de Riesgo",
+    highApproval: "Prob. de Aprobación ALTA",
     byApproval: "Probabilidad de Aprobación",
     byCategory: "Iniciativas por Categoría",
     byStatus: "Iniciativas por Estado",
-    byProvince: "Iniciativas por Provincia",
     recent: "Iniciativas Recientes",
     code: "Código",
     title: "Iniciativa",
@@ -26,7 +21,7 @@ export const dict: Record<Lang, Record<string, string>> = {
     sponsor: "Proponente",
     province: "Provincia",
     noData: "Aún no hay datos. Ejecute la ingesta para poblar la plataforma.",
-    source: "Cámara de Diputados (SIL)",
+    source: "Congreso Nacional (SIL)",
 
     // Scope labels (Pleno / Asamblea / Comisión)
     scopePLENARY: "Pleno",
@@ -70,23 +65,23 @@ export const dict: Record<Lang, Record<string, string>> = {
     // Charts
     total: "Total",
 
-    // Approval tag
-    approvalTag: "Prob. aprobación",
+    // Risk / approval pill values (raw DB enums → display)
+    riskALTO: "ALTO",
+    riskMEDIO: "MEDIO",
+    riskBAJO: "BAJO",
+    approvalALTA: "ALTA",
+    approvalMEDIA: "MEDIA",
+    approvalBAJA: "BAJA",
   },
   en: {
-    appName: "Oculis Auribus",
     tagline: "Expert Monitoring of Legislation & Regulations",
     legislative: "Legislative Monitoring",
-    regulatory: "Regulatory Monitoring",
     totalBills: "Total Initiatives",
     highRisk: "High Risk",
-    needsReview: "Needs Review",
-    published: "Published",
-    byRisk: "Initiatives by Business Risk",
+    highApproval: "HIGH Approval Probability",
     byApproval: "Probability of Approval",
     byCategory: "Initiatives by Category",
     byStatus: "Initiatives by Status",
-    byProvince: "Initiatives by Province",
     recent: "Recent Initiatives",
     code: "Code",
     title: "Initiative",
@@ -97,7 +92,7 @@ export const dict: Record<Lang, Record<string, string>> = {
     sponsor: "Sponsor",
     province: "Province",
     noData: "No data yet. Run the ingestion to populate the platform.",
-    source: "Chamber of Deputies (SIL)",
+    source: "National Congress (SIL)",
 
     // Scope labels (Floor / Assembly / Committee)
     scopePLENARY: "Floor",
@@ -141,8 +136,13 @@ export const dict: Record<Lang, Record<string, string>> = {
     // Charts
     total: "Total",
 
-    // Approval tag
-    approvalTag: "Approval prob.",
+    // Risk / approval pill values (raw DB enums → display)
+    riskALTO: "HIGH",
+    riskMEDIO: "MEDIUM",
+    riskBAJO: "LOW",
+    approvalALTA: "HIGH",
+    approvalMEDIA: "MEDIUM",
+    approvalBAJA: "LOW",
   },
 };
 

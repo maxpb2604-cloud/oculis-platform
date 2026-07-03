@@ -24,6 +24,19 @@ const addDays = (d: Date, n: number) => {
 const startOfMonth = (d: Date) => new Date(d.getFullYear(), d.getMonth(), 1);
 const addMonths = (d: Date, n: number) => new Date(d.getFullYear(), d.getMonth() + n, 1);
 
+/**
+ * ISO yyyy-mm-dd for "now" anchored to the app's timezone (America/Santo_Domingo),
+ * not the browser's — the whole app defines "today" in DR time (see lib/data.ts todayISO),
+ * so presets and the today-ring must match regardless of where the visitor is.
+ */
+const todayInAppTZ = () =>
+  new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Santo_Domingo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+
 export function RangePicker({
   initialFrom,
   initialTo,
@@ -42,7 +55,7 @@ export function RangePicker({
   const [start, setStart] = useState<string | null>(initialFrom ?? null);
   const [end, setEnd] = useState<string | null>(initialTo ?? null);
   const [hover, setHover] = useState<string | null>(null);
-  const [view, setView] = useState<Date>(startOfMonth(initialFrom ? fromISO(initialFrom) : new Date()));
+  const [view, setView] = useState<Date>(startOfMonth(fromISO(initialFrom ?? todayInAppTZ())));
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -54,7 +67,17 @@ export function RangePicker({
     return () => document.removeEventListener("mousedown", onDown);
   }, [open]);
 
-  const todayISO = toISO(new Date());
+  // Sync the calendar with the APPLIED range every time the popover opens — otherwise a
+  // stale manual selection lingers after "limpiar" or a preset navigated the page.
+  useEffect(() => {
+    if (!open) return;
+    setStart(initialFrom ?? null);
+    setEnd(initialTo ?? null);
+    setHover(null);
+    setView(startOfMonth(fromISO(initialFrom ?? todayInAppTZ())));
+  }, [open, initialFrom, initialTo]);
+
+  const todayISO = todayInAppTZ();
 
   const grid = useMemo(() => {
     const first = startOfMonth(view);
@@ -93,15 +116,16 @@ export function RangePicker({
     router.push(`${basePath}${langQuery(lang)}`);
   };
 
+  // Presets are anchored to "today" in America/Santo_Domingo (not the browser TZ).
   const presets: { label: string; from: string; to: string }[] = (() => {
-    const now = new Date();
-    const t = toISO(now);
+    const t = todayISO;
+    const today = fromISO(t); // calendar-day container for date arithmetic
     return [
       { label: es ? "Hoy" : "Today", from: t, to: t },
-      { label: es ? "Ayer" : "Yesterday", from: toISO(addDays(now, -1)), to: toISO(addDays(now, -1)) },
-      { label: es ? "Últimos 7 días" : "Last 7 days", from: toISO(addDays(now, -6)), to: t },
-      { label: es ? "Últimos 30 días" : "Last 30 days", from: toISO(addDays(now, -29)), to: t },
-      { label: es ? "Este mes" : "This month", from: toISO(startOfMonth(now)), to: t },
+      { label: es ? "Ayer" : "Yesterday", from: toISO(addDays(today, -1)), to: toISO(addDays(today, -1)) },
+      { label: es ? "Últimos 7 días" : "Last 7 days", from: toISO(addDays(today, -6)), to: t },
+      { label: es ? "Últimos 30 días" : "Last 30 days", from: toISO(addDays(today, -29)), to: t },
+      { label: es ? "Este mes" : "This month", from: toISO(startOfMonth(today)), to: t },
     ];
   })();
 

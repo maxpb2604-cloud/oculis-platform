@@ -2,7 +2,8 @@
  * Persistence operations for ingestion: idempotent upsert of initiatives and
  * append-only status-event recording with change detection.
  */
-import { and, eq, ilike, inArray, isNotNull, or, sql } from "drizzle-orm";
+import { and, eq, ilike, inArray, isNotNull, isNull, ne, notInArray, or, sql, type AnyColumn } from "drizzle-orm";
+import { expandQueryTerms, normalizeText } from "@oculis/core";
 import type { Database } from "./client.js";
 import {
   activityEvents,
@@ -72,13 +73,18 @@ export async function upsertInitiative(
       status: data.status,
       type: data.type,
       sourceCategory: data.sourceCategory,
-      sponsor: data.sponsor,
-      // undefined (bulk crawl) leaves the column untouched; the deposits sync sets them.
-      sponsorRole: data.sponsorRole,
-      sponsorCount: data.sponsorCount,
-      party: data.party,
-      province: data.province,
-      committee: data.committee,
+      // Enrichment fields use COALESCE(new, current): a default (unenriched) crawl
+      // passes nulls, which must NEVER wipe previously enriched values — a plain
+      // assignment here once destroyed sponsor/party/province corpus-wide. Genuine
+      // value changes (non-null → non-null) still refresh; these fields never
+      // legitimately go non-null → null on re-crawl.
+      purpose: sql`coalesce(${data.purpose ?? null}, ${initiatives.purpose})`,
+      sponsor: sql`coalesce(${data.sponsor ?? null}, ${initiatives.sponsor})`,
+      sponsorRole: sql`coalesce(${data.sponsorRole ?? null}, ${initiatives.sponsorRole})`,
+      sponsorCount: sql`coalesce(${data.sponsorCount ?? null}, ${initiatives.sponsorCount})`,
+      party: sql`coalesce(${data.party ?? null}, ${initiatives.party})`,
+      province: sql`coalesce(${data.province ?? null}, ${initiatives.province})`,
+      committee: sql`coalesce(${data.committee ?? null}, ${initiatives.committee})`,
       filedAt: data.filedAt,
       expiresAt: data.expiresAt,
       sourceUrl: data.sourceUrl,
@@ -118,21 +124,29 @@ export async function recordStatusEvents(
 // Scoring support
 // ---------------------------------------------------------------------------
 
-/** Count a sponsor's prior approved/enacted initiatives (for track-record scoring). */
+/**
+ * Count a sponsor's prior approved/enacted initiatives (for track-record scoring).
+ *
+ * Pass `excludeId` = the initiative currently being scored so an already-approved
+ * bill can't count ITSELF as its sponsor's track record. Optional so the existing
+ * caller (apps/worker scoreInitiative) keeps compiling and can adopt it later.
+ * The sponsor match is exact (=), served by initiatives_sponsor_idx.
+ */
 export async function countApprovedBySponsor(
   db: Database,
   sponsor: string | null,
+  opts: { excludeId?: number } = {},
 ): Promise<number> {
   if (!sponsor) return 0;
+  const conds = [
+    eq(initiatives.sponsor, sponsor),
+    sql`(${initiatives.status} ilike '%aprob%' or ${initiatives.status} ilike '%promulg%')`,
+  ];
+  if (opts.excludeId != null) conds.push(ne(initiatives.id, opts.excludeId));
   const [row] = await db
     .select({ n: sql<number>`count(*)::int` })
     .from(initiatives)
-    .where(
-      and(
-        eq(initiatives.sponsor, sponsor),
-        sql`(${initiatives.status} ilike '%aprob%' or ${initiatives.status} ilike '%promulg%')`,
-      ),
-    );
+    .where(and(...conds));
   return row?.n ?? 0;
 }
 
@@ -145,9 +159,16 @@ export interface ScorableRow {
   category: string | null;
 }
 
-/** All initiatives with the fields needed to (re)score them. */
-export async function listForScoring(db: Database): Promise<ScorableRow[]> {
-  return db
+/**
+ * Initiatives with the fields needed to (re)score them. `onlyMissing` restricts
+ * to rows that never got a score (risk_level IS NULL) so a cheap heuristic pass
+ * can fill gaps without overwriting existing (possibly Claude-quality) scores.
+ */
+export async function listForScoring(
+  db: Database,
+  opts: { onlyMissing?: boolean } = {},
+): Promise<ScorableRow[]> {
+  const base = db
     .select({
       id: initiatives.id,
       title: initiatives.title,
@@ -157,6 +178,47 @@ export async function listForScoring(db: Database): Promise<ScorableRow[]> {
       category: initiatives.category,
     })
     .from(initiatives);
+  return opts.onlyMissing ? base.where(isNull(initiatives.riskLevel)) : base;
+}
+
+export interface CategorizableRow {
+  id: number;
+  title: string;
+  sourceCategory: string | null;
+  purpose: string | null;
+}
+
+/**
+ * Initiatives with the fields needed to (re)categorize them. `onlyMissing`
+ * restricts to rows with no category yet, so a Claude pass can clear the
+ * backlog without touching rows already classified.
+ */
+export async function listForCategorizing(
+  db: Database,
+  opts: { onlyMissing?: boolean } = {},
+): Promise<CategorizableRow[]> {
+  const base = db
+    .select({
+      id: initiatives.id,
+      title: initiatives.title,
+      sourceCategory: initiatives.sourceCategory,
+      purpose: initiatives.purpose,
+    })
+    .from(initiatives);
+  return opts.onlyMissing ? base.where(isNull(initiatives.category)) : base;
+}
+
+/** Persist a (re)computed category for one initiative. */
+export async function saveCategory(
+  db: Database,
+  initiativeId: number,
+  category: string,
+  confidence: number,
+): Promise<void> {
+  await db
+    .update(initiatives)
+    .set({ category, categoryConfidence: confidence, updatedAt: sql`now()` })
+    .where(eq(initiatives.id, initiativeId));
 }
 
 /** Persist a computed score + its inputs/provenance for one initiative. */
@@ -241,7 +303,6 @@ export const countByRisk = (db: Database) => countBy(db, sql`risk_level`);
 export const countByStatus = (db: Database) => countBy(db, sql`status`);
 export const countByApprovalProbability = (db: Database) =>
   countBy(db, sql`approval_probability`);
-export const countByChamber = (db: Database) => countBy(db, sql`chamber`);
 export const countByProvince = (db: Database) => countBy(db, sql`province`);
 
 export interface LegislatorRow {
@@ -490,6 +551,21 @@ export async function upsertActivityEvent(
       .where(eq(activityEvents.id, id));
   }
 
+  // Reconcile links on the edited-agenda path: codes REMOVED from the agenda must
+  // drop their link rows too (the refresh contract above), not linger forever.
+  if (!inserted) {
+    await db
+      .delete(activityInitiatives)
+      .where(
+        a.initiativeCodes.length
+          ? and(
+              eq(activityInitiatives.activityId, id),
+              notInArray(activityInitiatives.initiativeCode, a.initiativeCodes),
+            )
+          : eq(activityInitiatives.activityId, id),
+      );
+  }
+
   if (a.initiativeCodes.length) {
     // resolve codes to initiative ids where the bill is already ingested
     const matched = await db
@@ -716,7 +792,16 @@ export async function regulationsByInstitution(db: Database): Promise<Bucket[]> 
 // Commissions, documents, health — Phase 1 segmented sources
 // ---------------------------------------------------------------------------
 
-/** Upsert a committee (by source+chamber+name); refreshes president. */
+/**
+ * Upsert a committee (by source+chamber+name); refreshes president.
+ *
+ * DATA BUG (2026-07-02 audit): this is the ONLY writer of `commissions`, and NOTHING
+ * calls it — the live table is EMPTY (0 rows) while `listCommissions` feeds both the
+ * web UI and the feed ingester's COMMISSION entity tagger, which therefore always see
+ * an empty list. Deliberately kept (not deleted as dead code) so the missing
+ * commissions scraper can wire it up; committee membership meanwhile lives in
+ * `commission_members` via upsertCommissionMember.
+ */
 export async function upsertCommission(db: Database, c: NewCommission): Promise<void> {
   await db
     .insert(commissions)
@@ -727,21 +812,29 @@ export async function upsertCommission(db: Database, c: NewCommission): Promise<
     });
 }
 
+/**
+ * Committee directory. Derived from `commission_members` (the roster ingestion
+ * populates it — 1300+ rows) because the dedicated `commissions` table has no
+ * writer yet (see upsertCommission above): deriving keeps the feed's COMMISSION
+ * entity tagger and any directory consumer working with real data. President is
+ * inferred from the member whose cargo is "Presidente/a".
+ */
 export async function listCommissions(
   db: Database,
   opts: { chamber?: string } = {},
 ): Promise<Array<{ chamber: string; name: string; president: string | null; sourceUrl: string | null }>> {
-  const where = opts.chamber ? eq(commissions.chamber, opts.chamber) : undefined;
+  const where = opts.chamber ? eq(commissionMembers.chamber, opts.chamber) : undefined;
   return db
     .select({
-      chamber: commissions.chamber,
-      name: commissions.name,
-      president: commissions.president,
-      sourceUrl: commissions.sourceUrl,
+      chamber: commissionMembers.chamber,
+      name: commissionMembers.commissionName,
+      president: sql<string | null>`max(${commissionMembers.legislatorName}) filter (where ${commissionMembers.cargo} ilike 'president%')`,
+      sourceUrl: sql<string | null>`max(${commissionMembers.sourceUrl})`,
     })
-    .from(commissions)
+    .from(commissionMembers)
     .where(where)
-    .orderBy(commissions.chamber, commissions.name);
+    .groupBy(commissionMembers.chamber, commissionMembers.commissionName)
+    .orderBy(commissionMembers.chamber, commissionMembers.commissionName);
 }
 
 /** Upsert a document (by source+source_doc_id); resolves initiativeId by code. */
@@ -793,23 +886,6 @@ export async function listDocumentsToFetch(
     .where(sql`${documents.url} is not null`)
     .orderBy(sql`${documents.id} desc`);
   return opts.limit ? q.limit(opts.limit) : q;
-}
-
-/** Documents for one initiative (by id), newest upload first. */
-export async function listDocuments(
-  db: Database,
-  initiativeId: number,
-): Promise<Array<{ docType: string | null; extension: string | null; url: string | null; uploadedAt: string | null }>> {
-  return db
-    .select({
-      docType: documents.docType,
-      extension: documents.extension,
-      url: documents.url,
-      uploadedAt: documents.uploadedAt,
-    })
-    .from(documents)
-    .where(eq(documents.initiativeId, initiativeId))
-    .orderBy(sql`${documents.uploadedAt} desc nulls last`);
 }
 
 export interface DepositItem {
@@ -1140,6 +1216,122 @@ export async function legislatorCommittees(db: Database): Promise<LegislatorComm
     .orderBy(commissionMembers.commissionName);
 }
 
+export interface ActivityInitiativeRef {
+  activityId: number;
+  code: string;
+  initiativeId: number | null;
+  title: string | null; // resolved bill title when the code links to an ingested initiative
+}
+
+/**
+ * The initiatives referenced by a set of activity/agenda events (batch, keyed by
+ * activityId) — so the Hoy and committee views can render each agenda item's bills
+ * as clickable chips with their full names instead of a bare "N iniciativas" count.
+ * Title is resolved via the linked initiative when available; otherwise null (the UI
+ * shows the code).
+ */
+export async function activityInitiativesByActivity(
+  db: Database,
+  activityIds: number[],
+): Promise<Map<number, ActivityInitiativeRef[]>> {
+  const out = new Map<number, ActivityInitiativeRef[]>();
+  if (activityIds.length === 0) return out;
+  const rows = await db
+    .select({
+      activityId: activityInitiatives.activityId,
+      code: activityInitiatives.initiativeCode,
+      initiativeId: activityInitiatives.initiativeId,
+      title: initiatives.title,
+    })
+    .from(activityInitiatives)
+    .leftJoin(initiatives, eq(activityInitiatives.initiativeId, initiatives.id))
+    .where(inArray(activityInitiatives.activityId, activityIds))
+    .orderBy(activityInitiatives.initiativeCode);
+  for (const r of rows) {
+    const list = out.get(r.activityId) ?? [];
+    list.push({ activityId: r.activityId, code: r.code, initiativeId: r.initiativeId, title: r.title });
+    out.set(r.activityId, list);
+  }
+  return out;
+}
+
+/**
+ * Resolve one legislator to a full profile row for the click-to-open bubble.
+ * Matches by exact `sourceId` first (reliable, from committee-member links), else by
+ * name using accent-insensitive equality, then trigram similarity as a misspelling-
+ * tolerant fallback (committee agendas and sponsor fields carry names, not ids).
+ * Returns the single best match or null.
+ */
+export async function findLegislator(
+  db: Database,
+  opts: { sourceId?: string | null; name?: string | null; chamber?: string | null },
+): Promise<RosterMember | null> {
+  const cols = {
+    id: legislators.id,
+    sourceId: legislators.sourceId,
+    chamber: legislators.chamber,
+    fullName: legislators.fullName,
+    province: legislators.province,
+    circumscription: legislators.circumscription,
+    party: legislators.party,
+    partyShort: legislators.partyShort,
+    role: legislators.role,
+    representationLevel: legislators.representationLevel,
+    period: legislators.period,
+    photoUrl: legislators.photoUrl,
+    email: legislators.email,
+    phone: legislators.phone,
+    profession: legislators.profession,
+    sourceUrl: legislators.sourceUrl,
+  };
+
+  if (opts.sourceId) {
+    const [row] = await db.select(cols).from(legislators).where(eq(legislators.sourceId, opts.sourceId)).limit(1);
+    if (row) return row;
+  }
+
+  const name = opts.name?.trim();
+  if (!name) return null;
+
+  // unaccent(lower()) equality — exact name match ignoring accents/case, both sides.
+  const norm = (c: AnyColumn) =>
+    sql`lower(translate(${c}, 'ÁÉÍÓÚÀÈÌÒÙÜÑáéíóúàèìòùüñ', 'AEIOUAEIOUUNaeiouaeiouun'))`;
+  const normName = name
+    .toLowerCase()
+    .replace(/[áàä]/g, "a").replace(/[éèë]/g, "e").replace(/[íìï]/g, "i")
+    .replace(/[óòö]/g, "o").replace(/[úùü]/g, "u").replace(/ñ/g, "n");
+  const chamberCond = opts.chamber ? eq(legislators.chamber, opts.chamber) : undefined;
+
+  const [exact] = await db
+    .select(cols)
+    .from(legislators)
+    .where(chamberCond ? and(eq(norm(legislators.fullName), normName), chamberCond) : eq(norm(legislators.fullName), normName))
+    .limit(1);
+  if (exact) return exact;
+
+  // Trigram similarity fallback (tolerates typos / partial names). Guarded: if pg_trgm
+  // isn't present (e.g. PGlite) this throws — callers treat that as "no match".
+  try {
+    const rows = await db
+      .select({ ...cols, score: sql<number>`similarity(${norm(legislators.fullName)}, ${normName})` })
+      .from(legislators)
+      .where(
+        chamberCond
+          ? and(sql`similarity(${norm(legislators.fullName)}, ${normName}) > 0.35`, chamberCond)
+          : sql`similarity(${norm(legislators.fullName)}, ${normName}) > 0.35`,
+      )
+      .orderBy(sql`similarity(${norm(legislators.fullName)}, ${normName}) desc`)
+      .limit(1);
+    if (rows[0]) {
+      const { score: _score, ...rest } = rows[0];
+      return rest;
+    }
+  } catch {
+    // extension unavailable — no fuzzy match
+  }
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // Feed window (news / official / social / legislative-signal items)
 // ---------------------------------------------------------------------------
@@ -1205,6 +1397,24 @@ export async function upsertFeedItem(
       .where(eq(feedItems.id, id));
   }
 
+  // Reconcile tags on re-ingest: entities NO LONGER produced for this item are removed
+  // (a re-tagged card must not keep stale chips), then the current set is upserted in
+  // ONE multi-row insert instead of a query per tag.
+  if (!inserted) {
+    await db
+      .delete(feedItemEntities)
+      .where(
+        tags.length
+          ? and(
+              eq(feedItemEntities.feedItemId, id),
+              sql`(${feedItemEntities.entityType}, ${feedItemEntities.label}) not in (${sql.join(
+                tags.map((t) => sql`(${t.entityType}, ${t.label})`),
+                sql`, `,
+              )})`,
+            )
+          : eq(feedItemEntities.feedItemId, id),
+      );
+  }
   if (tags.length) {
     const codes = tags
       .filter((t) => t.entityType === "INITIATIVE" && t.initiativeCode)
@@ -1217,24 +1427,30 @@ export async function upsertFeedItem(
         .where(inArray(initiatives.code, codes));
       for (const r of rows) if (r.code) codeToId.set(r.code, r.id);
     }
-    for (const t of tags) {
-      const initiativeId = t.initiativeCode ? codeToId.get(t.initiativeCode) ?? null : null;
-      await db
-        .insert(feedItemEntities)
-        .values({
+    // Dedupe by the conflict key so the single multi-row INSERT can't touch a row twice.
+    const byKey = new Map<string, FeedEntityTag>();
+    for (const t of tags) byKey.set(`${t.entityType} ${t.label}`, t);
+    await db
+      .insert(feedItemEntities)
+      .values(
+        [...byKey.values()].map((t) => ({
           feedItemId: id,
           entityType: t.entityType,
           initiativeCode: t.initiativeCode ?? null,
-          initiativeId,
+          initiativeId: t.initiativeCode ? codeToId.get(t.initiativeCode) ?? null : null,
           legislatorSourceId: t.legislatorSourceId ?? null,
           commissionName: t.commissionName ?? null,
           label: t.label,
-        })
-        .onConflictDoUpdate({
-          target: [feedItemEntities.feedItemId, feedItemEntities.entityType, feedItemEntities.label],
-          set: { initiativeId },
-        });
-    }
+        })),
+      )
+      // keep an already-resolved link; backfill when the bill got ingested later
+      // (mirrors the activityInitiatives idiom above).
+      .onConflictDoUpdate({
+        target: [feedItemEntities.feedItemId, feedItemEntities.entityType, feedItemEntities.label],
+        set: {
+          initiativeId: sql`coalesce(${feedItemEntities.initiativeId}, excluded.initiative_id)`,
+        },
+      });
   }
   return { id, inserted };
 }
@@ -1307,6 +1523,41 @@ export interface FeedCursor {
  * id desc) — feeds grow at the head, so keyset avoids the dupes/skips of offset paging.
  * Each item carries its full entity-tag set (fetched in a second query, merged in memory).
  */
+/** Delete one feed item (its entity tags cascade via the FK). Used by the relink
+ *  pass to drop items that are no longer Congress-relevant under stricter rules. */
+export async function deleteFeedItem(db: Database, id: number): Promise<void> {
+  await db.delete(feedItems).where(eq(feedItems.id, id));
+}
+
+/** Every stored feed item as a full NewFeedItem-shaped row — for the entity re-link
+ *  backfill (recompute which bills/legislators/committees each item is tagged to). */
+export async function listAllFeedItems(db: Database): Promise<
+  Array<NewFeedItem & { id: number }>
+> {
+  const rows = await db.select().from(feedItems);
+  return rows.map((r) => ({
+    id: r.id,
+    source: r.source,
+    sourceId: r.sourceId,
+    kind: r.kind,
+    title: r.title,
+    summary: r.summary,
+    imageUrl: r.imageUrl,
+    url: r.url,
+    author: r.author,
+    handle: r.handle,
+    platform: r.platform,
+    category: r.category,
+    publishedAt: r.publishedAt,
+    initiativeId: r.initiativeId,
+    initiativeCode: r.initiativeCode,
+    legislatorSourceId: r.legislatorSourceId,
+    commissionName: r.commissionName,
+    chamber: r.chamber,
+    raw: r.raw as object | null,
+  }));
+}
+
 export async function listFeedItems(
   db: Database,
   f: FeedFilters = {},
@@ -1605,21 +1856,140 @@ export async function initiativeByCode(
   return row ?? null;
 }
 
+export type SearchInitiativeResult = {
+  id: number;
+  code: string;
+  title: string;
+  status: string | null;
+  chamber: string | null;
+};
+
+export interface SearchIndexRow {
+  id: number;
+  title: string;
+  purpose: string | null;
+  category: string | null;
+  sponsor: string | null;
+  party: string | null;
+  province: string | null;
+  committee: string | null;
+}
+
+/** Every initiative with the fields needed to (re)build its keyword blob (search_text).
+ *  Consumed by the worker's `--reindex-search` backfill. */
+export async function listForSearchIndex(db: Database): Promise<SearchIndexRow[]> {
+  return db
+    .select({
+      id: initiatives.id,
+      title: initiatives.title,
+      purpose: initiatives.purpose,
+      category: initiatives.category,
+      sponsor: initiatives.sponsor,
+      party: initiatives.party,
+      province: initiatives.province,
+      committee: initiatives.committee,
+    })
+    .from(initiatives)
+    .orderBy(sql`${initiatives.id} asc`);
+}
+
+/** Persist the precomputed keyword blob (search_text) for one initiative. The generated
+ *  `search_tsv` tsvector column updates itself from it — no extra write needed. */
+export async function saveSearchText(
+  db: Database,
+  initiativeId: number,
+  searchText: string,
+): Promise<void> {
+  await db
+    .update(initiatives)
+    .set({ searchText })
+    .where(eq(initiatives.id, initiativeId));
+}
+
+// Ranking weights for the primary FTS path. ts_rank is small (≈0–0.1) so it's scaled up;
+// word_similarity + similarity are already 0–1. Exact-code match dominates (a user who
+// typed a code wants that bill first); a plain title substring gets a modest nudge.
+const W_TS_RANK = 3.0; // Spanish full-text relevance (synonym-expanded tsquery)
+const W_WORD_SIM = 2.0; // best fuzzy word match anywhere in the blob (typo tolerance)
+const W_CODE_SIM = 2.0; // trigram closeness of the official code
+const BOOST_TITLE_SUBSTR = 0.75; // literal title substring
+const BOOST_CODE_EXACT = 5.0; // exact official-code hit
+// word_similarity floor for the trigram-recall clause: high enough to reject noise, low
+// enough to still catch a one-word typo like "socal" → "social" (measured ≈0.8).
+const WORD_SIM_THRESHOLD = 0.5;
+
 /**
- * Typeahead search over legislative bills (PDLs) by keyword — matches the bill
- * title or official code. Returns the lightest payload needed to render an
- * autocomplete option and then filter the feed by `code`.
+ * INTENSIVE keyword search over legislative bills (PDLs) — misspelling- and
+ * synonym-tolerant, so a bill is findable even when the keyword is NOT literally in its
+ * title. Layered, with graceful degradation:
+ *
+ *   1. Postgres Spanish full-text search over the generated `search_tsv` (built from the
+ *      curated keyword blob), with the query EXPANDED via @oculis/core `expandQueryTerms`
+ *      so "impuesto" also matches ITBIS/tributario/DGII bills. tsquery is an OR of the
+ *      raw (accent-folded) query plus every synonym.
+ *   2. Trigram recall (pg_trgm `word_similarity` over the blob) catches typos/accents the
+ *      FTS misses ("seguridad socal" → "seguridad social"), plus code trigram closeness.
+ *   3. Ranked by ts_rank + word_similarity + code similarity + exact-code/title boosts.
+ *
+ * FALLBACK: if the FTS column/config is unavailable (PGlite in tests, or the query throws)
+ * we degrade to a synonym-EXPANDED ILIKE over title/purpose/search_text so the feature
+ * still returns and tests still pass. Return shape is stable ({id, code, title, status,
+ * chamber}); the feed UI depends on those five fields.
  */
 export async function searchInitiatives(
   db: Database,
   query: string,
   opts: { limit?: number } = {},
-): Promise<
-  Array<{ id: number; code: string; title: string; status: string | null; chamber: string | null }>
-> {
+): Promise<SearchInitiativeResult[]> {
   const q = query.trim();
   if (q.length < 2) return [];
+  const limit = opts.limit ?? 40;
+  const qnorm = normalizeText(q);
+  const expanded = expandQueryTerms(q);
+  // Unique, non-empty terms: the accent-folded query + every domain synonym.
+  const terms = [...new Set([qnorm, ...expanded].filter((t) => t.length > 0))];
   const like = `%${q}%`;
+
+  // No usable text terms (e.g. query was all punctuation) → straight to ILIKE fallback.
+  if (terms.length > 0) {
+    // tsquery = plainto_tsquery(term1) || plainto_tsquery(term2) || … (OR of synonyms;
+    // plainto ANDs words WITHIN a multiword synonym, which is what we want per phrase).
+    const tsq = sql`(${sql.join(
+      terms.map((t) => sql`plainto_tsquery('spanish', ${t})`),
+      sql` || `,
+    )})`;
+    try {
+      const res = await db.execute(sql`
+        select id, code, title, status, chamber
+        from initiatives
+        where kind = 'LEGISLATIVE' and code is not null and (
+          search_tsv @@ ${tsq}
+          or word_similarity(${qnorm}, coalesce(search_text, '')) >= ${WORD_SIM_THRESHOLD}
+          or title ilike ${like}
+          or code ilike ${like}
+        )
+        order by (
+          ts_rank(search_tsv, ${tsq}) * ${W_TS_RANK}
+          + word_similarity(${qnorm}, coalesce(search_text, '')) * ${W_WORD_SIM}
+          + similarity(coalesce(code, ''), ${qnorm}) * ${W_CODE_SIM}
+          + (case when title ilike ${like} then ${BOOST_TITLE_SUBSTR} else 0.0 end)
+          + (case when lower(coalesce(code, '')) = lower(${q}) then ${BOOST_CODE_EXACT} else 0.0 end)
+        ) desc, filed_at desc nulls last
+        limit ${limit}
+      `);
+      return (res as unknown as { rows: SearchInitiativeResult[] }).rows;
+    } catch {
+      // search_tsv / pg_trgm unavailable (PGlite) or query error → degrade gracefully.
+    }
+  }
+
+  // FALLBACK: synonym-expanded ILIKE over title + purpose + search_text. Portable to
+  // PGlite (no FTS, no pg_trgm). Each pattern is OR'd; expanded synonyms broaden recall.
+  const patterns = [...new Set([q, ...expanded].filter((p) => p.length > 0))];
+  const patternConds = patterns.map((p) => {
+    const l = `%${p}%`;
+    return sql`(${initiatives.title} ilike ${l} or coalesce(${initiatives.purpose}, '') ilike ${l} or coalesce(${initiatives.searchText}, '') ilike ${l})`;
+  });
   const rows = await db
     .select({
       id: initiatives.id,
@@ -1633,20 +2003,12 @@ export async function searchInitiatives(
       and(
         eq(initiatives.kind, "LEGISLATIVE"),
         isNotNull(initiatives.code),
-        or(ilike(initiatives.title, like), ilike(initiatives.code, like)),
+        patternConds.length ? or(...patternConds) : ilike(initiatives.title, like),
       ),
     )
-    // Surface filed bills first, newest by filing date.
     .orderBy(sql`${initiatives.filedAt} desc nulls last`)
-    .limit(opts.limit ?? 8);
-  // `code` is non-null here thanks to the WHERE clause.
-  return rows as Array<{
-    id: number;
-    code: string;
-    title: string;
-    status: string | null;
-    chamber: string | null;
-  }>;
+    .limit(limit);
+  return rows as SearchInitiativeResult[];
 }
 
 export interface CommissionWithMembers {
@@ -1688,12 +2050,4 @@ export async function commissionsWithMembers(
     c.members.sort((a, b) => rank(a.cargo) - rank(b.cargo) || a.name.localeCompare(b.name));
   }
   return out;
-}
-
-/** Full roster grouped by province → { diputados, senadores }, keyed by raw province name. */
-export async function rosterByProvince(
-  db: Database,
-): Promise<Array<{ province: string | null; member: RosterMember }>> {
-  const rows = await listLegislators(db);
-  return rows.map((member) => ({ province: member.province, member }));
 }

@@ -63,17 +63,6 @@ export const PROVINCIAS: ProvinciaFeature[] = RAW.map(
   }),
 );
 
-export const PROVINCIAS_FC = {
-  type: "FeatureCollection" as const,
-  features: PROVINCIAS,
-};
-
 /** Map centering for all three sketches. */
 export const DR_CENTER: [number, number] = [-70.3, 18.9];
 export const DR_ZOOM = 7.1;
-
-export const RIESGO_COLORS: Record<Riesgo, string> = {
-  alto: "#d9655d",
-  medio: "#d2a24a",
-  bajo: "#4cb185",
-};

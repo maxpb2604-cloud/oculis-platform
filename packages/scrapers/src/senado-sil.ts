@@ -128,6 +128,20 @@ async function req(
   return { status: 0, text: "", url: current };
 }
 
+/**
+ * ASP.NET error pages the legacy SIL serves (sometimes with HTTP 200): the Spanish
+ * yellow-screen ("Error de servidor en la aplicación") and its signature NullReference
+ * message ("Referencia a objeto no establecida como instancia de un objeto").
+ */
+const SIL_ERROR_PAGE_RE = /Referencia a objeto no establecida|Error de servidor en la aplicaci/i;
+
+/** Throw a clear error when a SIL response is not a usable 2xx page. */
+function ensureSilOk(res: { status: number; url: string }, what: string): void {
+  if (res.status < 200 || res.status >= 300) {
+    throw new Error(`Senado SIL: ${what} respondió HTTP ${res.status} (${res.url})`);
+  }
+}
+
 function hiddenField(html: string, id: string): string {
   const m = html.match(new RegExp(`id="${id}"[^>]*value="([^"]*)"`, "i"));
   return m?.[1] ?? "";
@@ -184,6 +198,7 @@ export class SenadoSilAdapter {
   async loginPublic(timeoutMs = 35_000): Promise<Jar> {
     const jar: Jar = new Map();
     const login = await req(`${this.base}/login.aspx`, jar, { timeoutMs });
+    ensureSilOk(login, "la página de login");
     const body = new URLSearchParams({
       __VIEWSTATE: hiddenField(login.text, "__VIEWSTATE"),
       __VIEWSTATEGENERATOR: hiddenField(login.text, "__VIEWSTATEGENERATOR"),
@@ -192,11 +207,19 @@ export class SenadoSilAdapter {
       "imgBtnIngresoAlternativo.y": "10",
     }).toString();
     const post = await req(`${this.base}/login.aspx`, jar, { method: "POST", body, timeoutMs });
-    // Walking the redirect chain lands on colecciones.aspx and binds the active period to
-    // the session; if we still see the login form, the public login failed.
-    const ok = /colecciones\.aspx/i.test(post.url) || /lista_expedientes|Colecci/i.test(post.text);
-    if (!ok && !jar.has("ASP.NET_SessionId")) {
-      throw new Error("Senado SIL public login failed (no session established)");
+    ensureSilOk(post, "el login público");
+    // Walking the redirect chain must land on a logged-in page (colecciones.aspx or the
+    // expedientes list). Note the ASP.NET_SessionId cookie is NOT proof of login — ASP.NET
+    // issues it even on an anonymous GET — and being served the login form again (its
+    // "Ingreso Alternativo" button is only rendered there) means the login failed.
+    const landed =
+      /colecciones\.aspx|lista_expedientes\.aspx/i.test(post.url) ||
+      /lista_expedientes|Colecci/i.test(post.text);
+    const stillLoginForm = /imgBtnIngresoAlternativo/i.test(post.text);
+    if (!landed || stillLoginForm) {
+      throw new Error(
+        `Senado SIL: el login público no estableció sesión (la respuesta ${stillLoginForm ? "sigue siendo el formulario de login" : `no es una página de sesión: ${post.url}`})`,
+      );
     }
     return jar;
   }
@@ -206,6 +229,12 @@ export class SenadoSilAdapter {
     const { since, until, coleccion = SENADO_SIL_COLECCION_ACTUAL, timeoutMs } = opts;
     const jar = await this.loginPublic(timeoutMs);
     const res = await req(`${this.base}/lista_expedientes.aspx?coleccion=${coleccion}`, jar, { timeoutMs });
+    // Error/login pages would otherwise "parse" to 0 deposits and be recorded as an ok
+    // run — fail loudly instead so the ingestion run records the real failure.
+    ensureSilOk(res, "lista_expedientes");
+    if (SIL_ERROR_PAGE_RE.test(res.text)) {
+      throw new Error(`Senado SIL: lista_expedientes devolvió una página de error ASP.NET (${res.url})`);
+    }
     let rows = parseExpedientesList(res.text, coleccion);
     if (since) rows = rows.filter((r) => !r.filedAt || r.filedAt >= since);
     if (until) rows = rows.filter((r) => !r.filedAt || r.filedAt <= until);
@@ -231,6 +260,14 @@ export class SenadoSilAdapter {
       jar,
       { timeoutMs },
     );
+    // Never hand an upstream error page to callers as a "ficha" — throw so the web
+    // proxy's 502 path (a clear "no se pudo abrir" page) handles it instead.
+    ensureSilOk(res, `la Ficha del expediente ${idExpediente}`);
+    if (SIL_ERROR_PAGE_RE.test(res.text)) {
+      throw new Error(
+        `Senado SIL: la Ficha del expediente ${idExpediente} devolvió una página de error ASP.NET (p. ej. "Referencia a objeto no establecida")`,
+      );
+    }
     return res.text;
   }
 

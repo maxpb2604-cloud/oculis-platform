@@ -2,21 +2,13 @@ import Link from "next/link";
 import { FeedTopicsBar } from "@/components/charts";
 import { langQuery, type Lang } from "@/lib/i18n";
 import { shortBillName } from "@/lib/format";
+import { KIND_LABEL as ACCOUNT_KIND } from "@/components/feed-social-directory";
 import type { Bucket, TrendingEntity, FeedAccount } from "@/lib/data";
 
 /** Trending row label: bill NAME for initiatives, else the label. */
 function entityDisplay(e: TrendingEntity): string {
   return e.entityType === "INITIATIVE" ? shortBillName(e.title, e.label) : e.label;
 }
-
-const ACCOUNT_KIND: Record<string, { es: string; en: string }> = {
-  SENADO_OFFICIAL: { es: "Senado", en: "Senate" },
-  INSTITUTION: { es: "Institución", en: "Institution" },
-  NEWSPAPER: { es: "Medio", en: "Outlet" },
-  JOURNALIST: { es: "Periodista", en: "Journalist" },
-  SENATOR: { es: "Senador/a", en: "Senator" },
-  DEPUTY: { es: "Diputado/a", en: "Deputy" },
-};
 
 function entityHref(e: TrendingEntity, lang: Lang): string {
   const p = new URLSearchParams();
@@ -35,16 +27,26 @@ export function FeedRail({
   entities,
   accounts,
   windowDays,
+  searchParams = {},
 }: {
   lang: Lang;
   topics: Bucket[];
   entities: TrendingEntity[];
   accounts: FeedAccount[];
   windowDays: number;
+  /** The page's current query params — window links must preserve active filters. */
+  searchParams?: Record<string, string | undefined>;
 }) {
   const es = lang === "es";
   const q = langQuery(lang);
   const windows = [7, 14, 30];
+  /** Change ONLY the trending window, keeping every other active param. */
+  const windowHref = (w: number): string => {
+    const p = new URLSearchParams();
+    for (const [k, v] of Object.entries(searchParams)) if (v != null) p.set(k, v);
+    p.set("window", String(w));
+    return `/feed?${p.toString()}`;
+  };
 
   return (
     <aside className="flex flex-col gap-4">
@@ -55,7 +57,7 @@ export function FeedRail({
             {windows.map((w) => (
               <Link
                 key={w}
-                href={`/feed?window=${w}${lang === "en" ? "&lang=en" : ""}`}
+                href={windowHref(w)}
                 className="rounded px-1.5 py-0.5"
                 style={{
                   background: w === windowDays ? "var(--accent-soft)" : "transparent",

@@ -1,15 +1,17 @@
 import { getConsultas } from "@/lib/data";
 import type { Lang } from "@/lib/i18n";
 import { AppShell } from "@/components/app-shell";
-import { Panel } from "@/components/dashboard";
-import { RegulationList, StatTile, type RegulationItem } from "@/components/monitoring";
+import { Panel } from "@/components/ui/panel";
+import { RegulationList, StatTile, isConsultaOpen, type RegulationItem } from "@/components/monitoring";
 
 export const dynamic = "force-dynamic";
 
 export default async function ConsultasPage({ searchParams }: { searchParams: Promise<{ lang?: string }> }) {
   const lang: Lang = (await searchParams).lang === "en" ? "en" : "es";
   const es = lang === "es";
-  const consultas = (await getConsultas()) as RegulationItem[];
+  // "Open" = comment deadline today or later (America/Santo_Domingo); no deadline = still open.
+  // Same rule as the /regulatorio overview so both pages agree.
+  const consultas = ((await getConsultas()) as RegulationItem[]).filter(isConsultaOpen);
   const byInst = new Set(consultas.map((c) => c.institution)).size;
 
   return (

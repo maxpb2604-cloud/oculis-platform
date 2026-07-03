@@ -9,7 +9,7 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import { Modal } from "@/components/ui/modal";
-import { StatusChip, type ActivityItem } from "@/components/monitoring";
+import { StatusChip, AgendaInitiativeChips, type ActivityItem } from "@/components/monitoring";
 import { formatISODayMonth } from "@/lib/format";
 import type { CommissionWithMembers } from "@/lib/data";
 
@@ -51,15 +51,18 @@ export function CommitteeBubbles({
   lang,
   chamber,
   members,
+  initialFilter,
 }: {
   items: ActivityItem[];
   lang: "es" | "en";
   chamber: string;
   members?: CommissionWithMembers[];
+  /** Optional deep-link filter (e.g. ?comision=Salud) — pre-fills the committee search. */
+  initialFilter?: string;
 }) {
   const es = lang === "es";
   const locale = es ? "es-DO" : "en-US";
-  const [q, setQ] = useState("");
+  const [q, setQ] = useState(initialFilter ?? "");
   const [openName, setOpenName] = useState<string | null>(null);
 
   // Index roster membership by normalized committee name for matching against agenda bodies.
@@ -213,6 +216,8 @@ export function CommitteeBubbles({
                       {m.kind && <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>· {m.kind}</span>}
                     </div>
                     {m.description && <p className="mt-1 text-[13px] leading-relaxed">{m.description}</p>}
+                    {/* Bills discussed that day — each chip opens the global initiative bubble on top. */}
+                    <AgendaInitiativeChips items={m.initiatives} lang={lang} />
                     {(m.statuses?.length ?? 0) > 0 && (
                       <div className="mt-1.5 flex flex-wrap gap-1.5">{m.statuses!.map((s, j) => <StatusChip key={`${m.id}-${j}`} raw={s} />)}</div>
                     )}
@@ -243,7 +248,17 @@ function CommitteeMembers({ committee, es }: { committee: CommissionWithMembers 
       {committee && committee.members.length > 0 ? (
         <ul className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
           {committee.members.map((m, i) => (
-            <li key={`${m.name}-${m.cargo ?? ""}-${i}`} className="flex items-center justify-between gap-2 rounded-lg px-3 py-1.5 text-[12.5px]" style={{ background: "var(--surface-2)" }}>
+            // Roster members carry no source id, so open the legislator bubble by name
+            // (scoped to this committee's chamber). The global LegislatorModalHost handles it.
+            <li
+              key={`${m.name}-${m.cargo ?? ""}-${i}`}
+              data-legislator-name={m.name}
+              data-legislator-chamber={committee.chamber}
+              role="button"
+              tabIndex={0}
+              aria-label={es ? `Ver perfil de ${m.name}` : `View profile of ${m.name}`}
+              className="flex cursor-pointer items-center justify-between gap-2 rounded-lg bg-[var(--surface-2)] px-3 py-1.5 text-[12.5px] outline-none transition-colors hover:bg-[var(--accent-soft)] focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+            >
               <span className="min-w-0 truncate">{m.name}</span>
               <span className="flex shrink-0 items-center gap-1.5">
                 {m.party && <span className="text-[10.5px]" style={{ color: "var(--text-muted)" }}>{m.party}</span>}
@@ -259,8 +274,8 @@ function CommitteeMembers({ committee, es }: { committee: CommissionWithMembers 
       ) : (
         <div className="rounded-xl border border-dashed px-4 py-3 text-[12px]" style={{ borderColor: "var(--border-strong)", color: "var(--text-muted)" }}>
           {es
-            ? "Composición no disponible para esta comisión. Ejecuta la ingesta del roster (npm run roster) para integrarla."
-            : "Membership not available for this committee. Run the roster ingestion (npm run roster) to integrate it."}
+            ? "La composición de esta comisión aún no está disponible. Se mostrará automáticamente cuando el registro oficial esté integrado."
+            : "This committee's membership is not yet available. It will appear automatically once the official roster is integrated."}
         </div>
       )}
     </>

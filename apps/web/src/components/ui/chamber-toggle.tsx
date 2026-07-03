@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 
 /**
  * Animated segmented control to switch between the two congressional chambers.
@@ -36,11 +36,28 @@ export function ChamberToggle({
     senadores: null,
   });
   const [pill, setPill] = useState({ left: 0, width: 0 });
+  // Measure before paint and skip the transition on the first measure, so the
+  // pill doesn't visibly animate in from left:0/width:0 on mount.
+  const measured = useRef(false);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const el = refs.current[value];
-    if (el) setPill({ left: el.offsetLeft, width: el.offsetWidth });
+    if (el) {
+      setPill({ left: el.offsetLeft, width: el.offsetWidth });
+      requestAnimationFrame(() => {
+        measured.current = true;
+      });
+    }
   }, [value]);
+
+  // Roving-tabindex arrow-key support (ARIA tabs keyboard pattern).
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+    e.preventDefault();
+    const next: Chamber = value === "diputados" ? "senadores" : "diputados";
+    onChange(next);
+    refs.current[next]?.focus();
+  };
 
   return (
     <div
@@ -52,7 +69,7 @@ export function ChamberToggle({
       {/* Sliding pill — animates between the active tabs. */}
       <span
         aria-hidden
-        className="absolute z-0 rounded-full transition-[left,width] duration-300 ease-[cubic-bezier(0.34,1.4,0.64,1)]"
+        className={`absolute z-0 rounded-full ${measured.current ? "transition-[left,width] duration-300 ease-[cubic-bezier(0.34,1.4,0.64,1)]" : ""}`}
         style={{
           left: pill.left,
           width: pill.width,
@@ -72,8 +89,10 @@ export function ChamberToggle({
             }}
             role="tab"
             aria-selected={active}
+            tabIndex={active ? 0 : -1}
             type="button"
             onClick={() => onChange(opt.value)}
+            onKeyDown={onKeyDown}
             className="relative z-10 flex items-center gap-2 rounded-full px-5 py-2 text-[13px] font-semibold transition-colors duration-200"
             style={{ color: active ? "#fff" : "var(--text-muted)" }}
           >

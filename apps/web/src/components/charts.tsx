@@ -32,12 +32,6 @@ function useFilterNav(param: string, lang: string, basePath = "/initiatives") {
   };
 }
 
-const RISK_COLORS: Record<string, string> = {
-  ALTO: "var(--risk-alto)",
-  MEDIO: "var(--risk-medio)",
-  BAJO: "var(--risk-bajo)",
-  "N/D": "var(--border-strong)",
-};
 const PROB_COLORS: Record<string, string> = {
   ALTA: "var(--accent)",
   MEDIA: "var(--risk-medio)",
@@ -45,7 +39,8 @@ const PROB_COLORS: Record<string, string> = {
   "N/D": "var(--border-strong)",
 };
 // Tonal, brand-led categorical scale (emerald → teal → slate → ochre → clay).
-const DONUT_COLORS = [
+// Exported so the dashboard Legend shares the exact same palette/assignment order.
+export const DONUT_COLORS = [
   "#0b6e4f",
   "#2f8f74",
   "#5aa897",
@@ -64,6 +59,10 @@ const tooltipStyle = {
   fontSize: 12,
   boxShadow: "0 8px 24px -16px rgba(0,0,0,.4)",
 };
+// Recharts colors the tooltip's label + item text on its OWN inline spans (default a
+// dark ink / the series color), so contentStyle's color alone leaves them unreadable on
+// the dark surface. Force theme text color on both so the tooltip reads in dark mode.
+const tooltipTextStyle = { color: "var(--text)" };
 
 function BarPanel({
   data,
@@ -89,34 +88,39 @@ function BarPanel({
           tickLine={false}
           axisLine={false}
         />
-        <Tooltip contentStyle={tooltipStyle} cursor={{ fill: "var(--surface-2)" }} />
+        <Tooltip contentStyle={tooltipStyle} itemStyle={tooltipTextStyle} labelStyle={tooltipTextStyle} cursor={{ fill: "var(--surface-2)" }} />
         <Bar
           dataKey="count"
           radius={[0, 3, 3, 0]}
           barSize={16}
-          cursor={onSelect ? "pointer" : undefined}
           onClick={(d: { key?: string }) => onSelect?.(d.key ?? "")}
         >
-          {rows.map((r, i) => (
-            <Cell
-              key={i}
-              fill={colorMap?.[r.key] ?? "var(--accent)"}
-              // Clickable bars navigate, so make them keyboard-operable (Enter/Space).
-              role={onSelect ? "button" : undefined}
-              tabIndex={onSelect ? 0 : undefined}
-              aria-label={onSelect ? `${r.label}: ${r.count}` : undefined}
-              onKeyDown={
-                onSelect
-                  ? (e: React.KeyboardEvent) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.preventDefault();
-                        onSelect(r.key);
+          {rows.map((r, i) => {
+            // "N/D" is not a filterable value (useFilterNav no-ops on it), so those
+            // segments must not advertise interactivity (no pointer, no button role).
+            const interactive = !!onSelect && r.key !== "N/D";
+            return (
+              <Cell
+                key={i}
+                fill={colorMap?.[r.key] ?? "var(--accent)"}
+                cursor={interactive ? "pointer" : "default"}
+                // Clickable bars navigate, so make them keyboard-operable (Enter/Space).
+                role={interactive ? "button" : undefined}
+                tabIndex={interactive ? 0 : undefined}
+                aria-label={interactive ? `${r.label}: ${r.count}` : undefined}
+                onKeyDown={
+                  interactive
+                    ? (e: React.KeyboardEvent) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          onSelect(r.key);
+                        }
                       }
-                    }
-                  : undefined
-              }
-            />
-          ))}
+                    : undefined
+                }
+              />
+            );
+          })}
           <LabelList
             dataKey="count"
             position="right"
@@ -129,9 +133,6 @@ function BarPanel({
   );
 }
 
-export const RiskBar = ({ data, lang }: { data: Bucket[]; lang: string }) => (
-  <BarPanel data={data} colorMap={RISK_COLORS} onSelect={useFilterNav("risk", lang)} />
-);
 export const ApprovalBar = ({ data, lang }: { data: Bucket[]; lang: string }) => (
   <BarPanel data={data} colorMap={PROB_COLORS} onSelect={useFilterNav("approval", lang)} />
 );
@@ -167,19 +168,25 @@ export function StatusDonut({ data, lang }: { data: Bucket[]; lang: Lang }) {
             paddingAngle={1.5}
             stroke="var(--surface)"
             strokeWidth={2}
-            cursor="pointer"
             onClick={(d: { key?: string }) => nav(d.key ?? "")}
           >
-            {data.map((_, i) => (
-              <Cell key={i} fill={DONUT_COLORS[i % DONUT_COLORS.length]} />
+            {data.map((d, i) => (
+              // "N/D" slices don't filter (nav no-ops), so don't show a pointer on them.
+              <Cell key={i} fill={DONUT_COLORS[i % DONUT_COLORS.length]} cursor={d.key === "N/D" ? "default" : "pointer"} />
             ))}
           </Pie>
-          <Tooltip contentStyle={tooltipStyle} />
+          <Tooltip contentStyle={tooltipStyle} itemStyle={tooltipTextStyle} labelStyle={tooltipTextStyle} />
         </PieChart>
       </ResponsiveContainer>
       <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-        <div className="tnum serif text-2xl font-semibold">{total.toLocaleString()}</div>
-        <div className="eyebrow">{t(lang, "total")}</div>
+        {/* Explicit theme color so the total is unmistakably readable in both themes
+            (white on dark, ink on light) — never relies on inherited color. */}
+        <div className="tnum serif text-2xl font-semibold" style={{ color: "var(--text)" }}>
+          {total.toLocaleString()}
+        </div>
+        <div className="eyebrow" style={{ color: "var(--text)", opacity: 0.75 }}>
+          {t(lang, "total")}
+        </div>
       </div>
     </div>
   );

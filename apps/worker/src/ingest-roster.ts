@@ -7,6 +7,7 @@
  * its own health row so one chamber failing never aborts the other.
  */
 import {
+  legislators,
   recordIngestionRun,
   upsertCommissionMember,
   upsertLegislator,
@@ -75,11 +76,17 @@ async function runOne(
   log(`\n▶ ${source}`);
   try {
     const r = await collect();
+    // upsertLegislator doesn't report insert-vs-update, so derive it from the row
+    // count delta (the two chamber runs are sequential, so the delta is this run's).
+    // Previously the health row claimed inserted == seen on every run.
+    const before = await db.$count(legislators);
     await persist(db, r);
+    const insertedCount = Math.max(0, (await db.$count(legislators)) - before);
     await recordIngestionRun(db, {
       source,
       seen: r.legislators.length,
-      inserted: r.legislators.length,
+      inserted: insertedCount,
+      updated: Math.max(0, r.legislators.length - insertedCount),
       ok: true,
       details: r.gaps.length ? { gaps: r.gaps } : null,
     });

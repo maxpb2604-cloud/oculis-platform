@@ -7,8 +7,9 @@ import { CommitteeBubbles } from "@/components/committee-bubbles";
 
 export const dynamic = "force-dynamic";
 
-export default async function SenadoPage({ searchParams }: { searchParams: Promise<{ lang?: string }> }) {
-  const lang: Lang = (await searchParams).lang === "en" ? "en" : "es";
+export default async function SenadoPage({ searchParams }: { searchParams: Promise<{ lang?: string; comision?: string }> }) {
+  const sp = await searchParams;
+  const lang: Lang = sp.lang === "en" ? "en" : "es";
   const es = lang === "es";
   const [items, members] = await Promise.all([
     getChamberActivity("SENADO", 200) as Promise<ActivityItem[]>,
@@ -26,10 +27,14 @@ export default async function SenadoPage({ searchParams }: { searchParams: Promi
         <StatTile value={asamblea.length} label={es ? "Asamblea" : "Assembly"} accent="#0d9488" />
         <StatTile value={comisiones.length} label={es ? "Agenda comisiones" : "Committee agendas"} accent="#8b5cf6" />
       </div>
+      {/* The feed is capped at 200 rows, so these counts describe that window — say so. */}
+      <p className="mt-2 text-[11px]" style={{ color: "var(--text-muted)" }}>
+        {es ? "Conteos sobre los últimos 200 registros." : "Counts over the latest 200 records."}
+      </p>
 
       <div className="mt-7">
         <h2 className="serif mb-3 text-lg font-semibold">{es ? "Comisiones" : "Committees"}</h2>
-        <CommitteeBubbles items={comisiones} lang={lang} chamber={es ? "Senado" : "Senate"} members={members} />
+        <CommitteeBubbles items={comisiones} lang={lang} chamber={es ? "Senado" : "Senate"} members={members} initialFilter={sp.comision} />
       </div>
 
       <div className="mt-8">

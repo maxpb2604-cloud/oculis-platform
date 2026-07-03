@@ -1,8 +1,8 @@
 import { getRegulatoryOverview } from "@/lib/data";
 import type { Lang } from "@/lib/i18n";
 import { AppShell } from "@/components/app-shell";
-import { Panel } from "@/components/dashboard";
-import { RegulationList, StatTile, type RegulationItem } from "@/components/monitoring";
+import { Panel } from "@/components/ui/panel";
+import { RegulationList, StatTile, isConsultaOpen, type RegulationItem } from "@/components/monitoring";
 
 export const dynamic = "force-dynamic";
 
@@ -10,6 +10,9 @@ export default async function RegulatorioPage({ searchParams }: { searchParams: 
   const lang: Lang = (await searchParams).lang === "en" ? "en" : "es";
   const es = lang === "es";
   const { kpis, byInstitution, recent, consultas } = await getRegulatoryOverview();
+  // "Open" = comment deadline today or later (America/Santo_Domingo); no deadline = still open.
+  // Both the KPI tile and the panel below derive from this same filtered list so they always agree.
+  const openConsultas = (consultas as RegulationItem[]).filter(isConsultaOpen);
 
   return (
     <AppShell
@@ -23,7 +26,7 @@ export default async function RegulatorioPage({ searchParams }: { searchParams: 
     >
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <StatTile value={kpis.total} label={es ? "Instrumentos monitoreados" : "Instruments monitored"} />
-        <StatTile value={kpis.consultas} label={es ? "Consultas públicas abiertas" : "Open public consultations"} accent="#0b6e4f" />
+        <StatTile value={openConsultas.length} label={es ? "Consultas públicas abiertas" : "Open public consultations"} accent="#0b6e4f" />
         <StatTile value={kpis.highIntervention} label={es ? "Alta posibilidad de intervención" : "High possibility of intervention"} accent="#d97706" />
         <StatTile value={kpis.institutions} label={es ? "Instituciones con actividad" : "Institutions with activity"} accent="#8b5cf6" />
       </div>
@@ -34,15 +37,15 @@ export default async function RegulatorioPage({ searchParams }: { searchParams: 
             <RegulationList
               items={recent as RegulationItem[]}
               lang={lang}
-              empty={es ? "Aún no hay normas ingestadas. Ejecuta npm run regulatory." : "No rules ingested yet. Run npm run regulatory."}
+              empty={es ? "Aún no hay actividad regulatoria. Los datos se actualizan automáticamente." : "No regulatory activity yet. Data refreshes automatically."}
             />
           </Panel>
         </div>
         <div>
-          <Panel title={`${es ? "Consultas públicas" : "Public consultations"} · ${consultas.length}`} flush
+          <Panel title={`${es ? "Consultas públicas" : "Public consultations"} · ${openConsultas.length}`} flush
             action={<span className="text-[11px]" style={{ color: "var(--text-muted)" }}>{es ? "oportunidad de intervenir" : "opportunity to intervene"}</span>}>
             <RegulationList
-              items={consultas as RegulationItem[]}
+              items={openConsultas}
               lang={lang}
               empty={es ? "Sin consultas públicas abiertas detectadas." : "No open public consultations detected."}
             />
@@ -75,7 +78,7 @@ export default async function RegulatorioPage({ searchParams }: { searchParams: 
             <b style={{ color: "var(--accent)" }}>HIGH</b> = draft or public consultation (you can still influence it) ·{" "}
             <b style={{ color: "var(--warn)" }}>MEDIUM</b> = under internal review ·{" "}
             <b>LOW</b> = already published (too late to intervene). Active sources: MISPAS, PROCONSUMIDOR, INDOTEL,
-            INDOCAL, MICM, INTRANT — the remaining ~36 institutions of the regulatory map will be added over time.
+            INDOCAL, MICM, INTRANT — the rest of the ~36 institutions of the regulatory map will be added over time.
           </>
         )}
       </div>

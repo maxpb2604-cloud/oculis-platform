@@ -18,9 +18,18 @@ export async function GET(req: NextRequest) {
     commissionName: sp.get("commissionName") ?? undefined,
     search: sp.get("search") ?? undefined,
   };
+  // Cursor params end up in SQL casts (`::timestamp`, integer compare) — validate
+  // them and silently fall back to the first page on garbage instead of 500ing.
+  // Accepts what the cursor itself emits: "YYYY-MM-DD HH:MM:SS[.ffffff][tz]" (or T).
+  const TS_RE =
+    /^\d{4}-\d{2}-\d{2}([ T]\d{2}:\d{2}(:\d{2}(\.\d+)?)?( ?([zZ]|[+-]\d{2}(:?\d{2})?))?)?$/;
   const cAt = sp.get("cursorAt");
-  const cId = sp.get("cursorId");
-  const cursor: FeedCursor | null = cAt && cId ? { publishedAt: cAt, id: Number(cId) } : null;
+  const cIdRaw = sp.get("cursorId");
+  const cId = cIdRaw && /^\d+$/.test(cIdRaw) ? Number(cIdRaw) : NaN;
+  const cursor: FeedCursor | null =
+    cAt && TS_RE.test(cAt) && Number.isSafeInteger(cId) && cId > 0
+      ? { publishedAt: cAt, id: cId }
+      : null;
 
   const { items, nextCursor } = await getFeed(filters, { limit, cursor });
   return NextResponse.json({ items, nextCursor }, { headers: { "cache-control": "no-store" } });

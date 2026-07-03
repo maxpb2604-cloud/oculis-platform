@@ -6,6 +6,13 @@ import { STAGE_META, normalizeStatus } from "@oculis/core";
 import { t, type Lang } from "@/lib/i18n";
 import { formatISODate, formatISODayMonth } from "@/lib/format";
 
+/** One initiative referenced by an agenda item — rendered as a clickable chip. */
+export interface AgendaInitiative {
+  code: string;
+  initiativeId: number | null;
+  title: string | null;
+}
+
 export interface ActivityItem {
   id: number;
   scope: string;
@@ -17,6 +24,49 @@ export interface ActivityItem {
   agendaUrl: string | null;
   statuses: string[] | null;
   initiativeCount: number;
+  /** Bills referenced by this agenda item (from lib/data attachInitiatives). */
+  initiatives?: AgendaInitiative[];
+}
+
+/**
+ * Chips for the initiatives on an agenda item. Each opens the initiative bubble via
+ * the global host (data-initiative-id when the code resolves to an ingested bill,
+ * else data-initiative-code). Shows the full bill title when known, else the code.
+ */
+export function AgendaInitiativeChips({
+  items,
+  lang = "es",
+}: {
+  items: AgendaInitiative[] | undefined;
+  lang?: Lang;
+}) {
+  if (!items || items.length === 0) return null;
+  const es = lang === "es";
+  return (
+    <div className="mt-2 flex flex-wrap gap-1.5">
+      {items.map((ini) => {
+        const attrs =
+          ini.initiativeId != null
+            ? { "data-initiative-id": ini.initiativeId }
+            : { "data-initiative-code": ini.code };
+        return (
+          <button
+            key={ini.code}
+            {...attrs}
+            type="button"
+            title={es ? "Ver iniciativa" : "View initiative"}
+            className="inline-flex max-w-full items-center gap-1 rounded-md px-2 py-1 text-left text-[11.5px] transition-colors hover:bg-[var(--accent-soft)]"
+            style={{ background: "var(--surface-2)", color: "var(--text)", cursor: "pointer" }}
+          >
+            <span className="tnum shrink-0 font-semibold" style={{ color: "var(--accent)" }}>
+              {ini.code}
+            </span>
+            {ini.title && <span className="truncate" style={{ color: "var(--text-muted)" }}>· {ini.title}</span>}
+          </button>
+        );
+      })}
+    </div>
+  );
 }
 
 const STAGE_COLOR: Record<string, string> = {
@@ -67,6 +117,12 @@ export function ActivityRow({ item, lang = "es" }: { item: ActivityItem; lang?: 
   const statuses = item.statuses ?? [];
   // show description only when it adds detail beyond the body title
   const showDesc = item.description && item.description.trim() !== (item.body ?? "").trim();
+  // "Ir a la comisión": deep-link a committee movement to its chamber's agenda page,
+  // pre-filtered by committee name (lang preserved). Only for committee-scope rows.
+  const committeeHref =
+    item.scope === "COMMITTEE" && item.body
+      ? `/${item.chamber === "SENADO" ? "senado" : "diputados"}?comision=${encodeURIComponent(item.body)}${lang === "en" ? "&lang=en" : ""}`
+      : null;
   return (
     <div className="flex items-start gap-3 border-b px-5 py-3 last:border-0">
       <div className="pt-0.5"><ScopeChip scope={item.scope} lang={lang} /></div>
@@ -93,7 +149,14 @@ export function ActivityRow({ item, lang = "es" }: { item: ActivityItem; lang?: 
               {t(lang, "viewDocument")}
             </a>
           )}
+          {committeeHref && (
+            <a href={committeeHref}
+              className="font-medium underline-offset-2 hover:underline" style={{ color: "var(--accent)" }}>
+              {lang === "es" ? "Ir a la comisión" : "Go to committee"} →
+            </a>
+          )}
         </div>
+        <AgendaInitiativeChips items={item.initiatives} lang={lang} />
       </div>
       {item.eventDate && (
         <div className="tnum shrink-0 text-[11px]" style={{ color: "var(--text-muted)" }}>
@@ -110,24 +173,6 @@ export function ActivityList({ items, empty, lang = "es" }: { items: ActivityIte
     return <div role="status" className="px-5 py-8 text-center text-sm" style={{ color: "var(--text-muted)" }}>{empty}</div>;
   }
   return <div>{items.map((i) => <ActivityRow key={i.id} item={i} lang={lang} />)}</div>;
-}
-
-/** Legend explaining the lifecycle stages (makes the dashboard self-explanatory). */
-export function StatusLegend() {
-  const stages = Object.entries(STAGE_META).sort((a, b) => a[1].order - b[1].order);
-  return (
-    <div className="flex flex-wrap gap-x-4 gap-y-2">
-      {stages.map(([key, m]) => {
-        const color = STAGE_COLOR[m.color] ?? "#64748b";
-        return (
-          <span key={key} className="inline-flex items-center gap-1.5 text-[12px]" style={{ color: "var(--text-muted)" }}>
-            <span aria-hidden className="h-2 w-2 rounded-full" style={{ background: color }} />
-            {m.label}
-          </span>
-        );
-      })}
-    </div>
-  );
 }
 
 // --- Daily deposits building blocks (the "depositadas hoy" feed) ---
@@ -200,7 +245,18 @@ export function DepositCard({ item, lang = "es" }: { item: DepositItem; lang?: L
       {item.sponsor && (
         <div className="flex flex-wrap items-center gap-x-1.5 text-[12px]" style={{ color: "var(--text-muted)" }}>
           <span>{t(lang, "filedBy")}</span>
-          <span className="font-semibold" style={{ color: "var(--text)" }}>{item.sponsor}</span>
+          <span
+            data-legislator-name={item.sponsor}
+            data-legislator-chamber={item.chamber ?? undefined}
+            data-no-bubble
+            role="button"
+            tabIndex={0}
+            title={lang === "es" ? "Ver legislador" : "View legislator"}
+            className="cursor-pointer font-semibold underline-offset-2 hover:underline"
+            style={{ color: "var(--accent)" }}
+          >
+            {item.sponsor}
+          </span>
           {item.sponsorRole && <span>· {item.sponsorRole}</span>}
           {sponsorMeta && <span>· {sponsorMeta}</span>}
           {others > 0 && (
@@ -256,6 +312,25 @@ export interface RegulationItem {
   url: string | null;
 }
 
+/** Today's date (YYYY-MM-DD) in the platform's timezone (America/Santo_Domingo). */
+function todayInSantoDomingo(): string {
+  // en-CA locale renders dates as YYYY-MM-DD, matching the stored ISO-day format.
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Santo_Domingo" }).format(new Date());
+}
+
+/**
+ * Whether a public consultation is still open for comments: its deadline is today or
+ * later in America/Santo_Domingo. Consultations without a parseable deadline are treated
+ * as open (expiry can't be confirmed) — the UI simply shows no deadline for them.
+ * Single source of truth for every "open consultations" KPI/list.
+ */
+export function isConsultaOpen(item: Pick<RegulationItem, "deadline">): boolean {
+  if (!item.deadline) return true;
+  const day = item.deadline.slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return true;
+  return day >= todayInSantoDomingo();
+}
+
 const INTERV_COLOR: Record<string, string> = {
   HIGH: "#0b6e4f",
   INTERMEDIATE: "#d97706",
@@ -267,12 +342,24 @@ const INTERV_KEYS: Record<string, { label: string; short: string }> = {
   LOW: { label: "intervLow", short: "intervLowShort" },
 };
 
-/** Possibility-of-intervention chip — the key regulatory signal (HIGH = act now). */
+/** Possibility-of-intervention chip — the key regulatory signal (HIGH = act now).
+ *  Unknown/null levels render a neutral "N/D" chip instead of claiming LOW. */
 export function InterventionChip({ level, lang = "es" }: { level: string | null; lang?: Lang }) {
-  const key = level && INTERV_KEYS[level] ? level : "LOW";
-  const color = INTERV_COLOR[key];
-  const label = t(lang, INTERV_KEYS[key].label);
-  const short = t(lang, INTERV_KEYS[key].short);
+  const meta = level ? INTERV_KEYS[level] : undefined;
+  if (!meta) {
+    const label = lang === "es" ? "Sin evaluación" : "Not assessed";
+    return (
+      <span title={label} aria-label={label}
+        className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-semibold"
+        style={{ background: "var(--surface-2)", color: "var(--text-muted)" }}>
+        <span aria-hidden className="h-1.5 w-1.5 rounded-full" style={{ background: "var(--text-muted)" }} />
+        N/D
+      </span>
+    );
+  }
+  const color = (level && INTERV_COLOR[level]) || "#64748b";
+  const label = t(lang, meta.label);
+  const short = t(lang, meta.short);
   return (
     <span title={label} aria-label={label}
       className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-semibold"
@@ -299,7 +386,7 @@ export function RegulationRow({ item, lang = "es" }: { item: RegulationItem; lan
         <div className="mt-1 text-sm font-medium leading-snug">{item.title}</div>
         <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[11px]" style={{ color: "var(--text-muted)" }}>
           {item.status && <span>{item.status}</span>}
-          {item.deadline && <span className="font-medium" style={{ color: "var(--warn)" }}>{t(lang, "deadline")}: {item.deadline}</span>}
+          {item.deadline && <span className="font-medium" style={{ color: "var(--warn)" }}>{t(lang, "deadline")}: {formatISODate(item.deadline, lang)}</span>}
           {item.url && (
             <a href={item.url} target="_blank" rel="noreferrer"
               className="font-medium underline-offset-2 hover:underline" style={{ color: "var(--accent)" }}>
@@ -310,7 +397,7 @@ export function RegulationRow({ item, lang = "es" }: { item: RegulationItem; lan
       </div>
       <div className="shrink-0 text-right">
         <InterventionChip level={item.interventionLevel} lang={lang} />
-        {item.publishedAt && <div className="tnum mt-1 text-[11px]" style={{ color: "var(--text-muted)" }}>{item.publishedAt}</div>}
+        {item.publishedAt && <div className="tnum mt-1 text-[11px]" style={{ color: "var(--text-muted)" }}>{formatISODate(item.publishedAt, lang)}</div>}
       </div>
     </div>
   );
@@ -319,22 +406,4 @@ export function RegulationRow({ item, lang = "es" }: { item: RegulationItem; lan
 export function RegulationList({ items, empty, lang = "es" }: { items: RegulationItem[]; empty: React.ReactNode; lang?: Lang }) {
   if (!items.length) return <div role="status" className="px-5 py-8 text-center text-sm" style={{ color: "var(--text-muted)" }}>{empty}</div>;
   return <div>{items.map((i) => <RegulationRow key={i.id} item={i} lang={lang} />)}</div>;
-}
-
-// --- Health (Estado de monitoreo) building blocks ---
-
-/** OK / WARN / ERROR pill using design tokens (dark-mode safe). */
-export function HealthPill({ state, children }: { state: "ok" | "warn" | "error"; children: React.ReactNode }) {
-  const map = {
-    ok: { bg: "var(--accent-soft)", fg: "var(--accent)" },
-    warn: { bg: "var(--warn-soft)", fg: "var(--warn)" },
-    error: { bg: "var(--danger-soft)", fg: "var(--danger)" },
-  }[state];
-  return (
-    <span className="inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[11px] font-semibold"
-      style={{ background: map.bg, color: map.fg }}>
-      <span aria-hidden className="h-1.5 w-1.5 rounded-full" style={{ background: map.fg }} />
-      {children}
-    </span>
-  );
 }

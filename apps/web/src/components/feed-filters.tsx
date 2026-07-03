@@ -7,10 +7,9 @@ import { FeedBillSearch } from "@/components/feed-bill-search";
 
 interface Facets {
   categories: string[];
-  kinds: string[];
 }
 
-/** Left column: kind / topic / chamber / search filters + the active-entity filter chip. */
+/** Left column: kind / topic / chamber / bill-search filters + the active-entity filter chip. */
 export function FeedFilters({
   lang,
   facets,
@@ -73,17 +72,7 @@ export function FeedFilters({
         </div>
       )}
 
-      <FeedBillSearch
-        lang={lang}
-        onSelect={(code) =>
-          navigate({
-            initiativeCode: code,
-            legislatorSourceId: null,
-            commissionName: null,
-            search: null,
-          })
-        }
-      />
+      <FeedBillSearch lang={lang} />
 
       <div className="card p-3">
         <div className="eyebrow mb-2">{es ? "Tipo" : "Type"}</div>

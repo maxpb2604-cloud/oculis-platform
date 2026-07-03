@@ -1,0 +1,858 @@
+[
+ {
+  "name": "Administradora de Subsidios Sociales (ADESS)",
+  "handle": "@AdessRD",
+  "category": "social",
+  "confidence": "high",
+  "url": "https://x.com/AdessRD",
+  "notes": "Cuenta histórica oficial (adess.gob.do). En transición: ADESS pasó a ser Dirección de Desarrollo Social Supérate (DDSS) y la cuenta está siendo desactivada, redirigiendo la información oficial a @SuperateRDO."
+ },
+ {
+  "name": "Armada de República Dominicana",
+  "handle": "@ArmadaRepDom",
+  "category": "seguridad",
+  "confidence": "high",
+  "url": "https://x.com/ArmadaRepDom",
+  "notes": "Official Navy account. Note: X handle is @ArmadaRepDom (Facebook uses @ArmadaRD, Instagram @armada_rd)."
+ },
+ {
+  "name": "Autoridad Portuaria Dominicana (APORDOM)",
+  "handle": "@PortuariaRD",
+  "category": "servicio",
+  "confidence": "high",
+  "url": "https://x.com/PortuariaRD",
+  "notes": "Main official account (created 2014), links to portuaria.gob.do. A secondary @PortuariaRD_ also exists but @PortuariaRD is the primary."
+ },
+ {
+  "name": "Banco Agrícola de la República Dominicana",
+  "handle": "@bagricolaRD",
+  "category": "autonoma",
+  "confidence": "high",
+  "url": "https://x.com/bagricolaRD",
+  "notes": "Grounded: el sitio oficial bancoagricola.gob.do enlaza esta cuenta en su sección de transparencia (bancoagricola.gob.do/transparencia/twitter/)."
+ },
+ {
+  "name": "Banco Central de la República Dominicana",
+  "handle": "@BancoCentralRD",
+  "category": "autonoma",
+  "confidence": "high",
+  "url": "https://x.com/BancoCentralRD",
+  "notes": "Cuenta oficial del BCRD (ente emisor autónomo de rango constitucional). Verificada, ~135K seguidores, sitio bancentral.gov.do."
+ },
+ {
+  "name": "Banco de Reservas de la República Dominicana (Banreservas)",
+  "handle": "@BanreservasRD",
+  "category": "autonoma",
+  "confidence": "high",
+  "url": "https://x.com/BanreservasRD",
+  "notes": "Banco estatal. Handle consistente con Facebook (BanreservasRD) e Instagram (banreservas)."
+ },
+ {
+  "name": "Centro de Operaciones de Emergencias (COE)",
+  "handle": "@COE_RD",
+  "category": "seguridad",
+  "confidence": "high",
+  "url": "https://x.com/COE_RD",
+  "notes": "Official COE account, ~372K followers, joined March 2011; matches coe.gob.do. Posts official emergency/weather alerts."
+ },
+ {
+  "name": "Consejo Nacional de Discapacidad (CONADIS)",
+  "handle": "@ConadisRD",
+  "category": "social",
+  "confidence": "high",
+  "url": "https://x.com/ConadisRD",
+  "notes": "Cuenta oficial (posts recientes 2025); coincide con conadis.gob.do. Institución autónoma/descentralizada, órgano rector en materia de discapacidad."
+ },
+ {
+  "name": "Consejo Nacional de la Persona Envejeciente (CONAPE)",
+  "handle": "@CONAPERD",
+  "category": "social",
+  "confidence": "high",
+  "url": "https://x.com/CONAPERD",
+  "notes": "Cuenta oficial; coincide con conape.gob.do y FB CONAPERD. Órgano rector de políticas para adultos mayores (Ley 352-98)."
+ },
+ {
+  "name": "Consejo Nacional para la Niñez y la Adolescencia (CONANI)",
+  "handle": "@CONANIRDo",
+  "category": "social",
+  "confidence": "high",
+  "url": "https://x.com/CONANIRDo",
+  "notes": "Cuenta oficial del órgano rector del Sistema Nacional de Protección de Derechos de la Niñez; coincide con conani.gob.do e IG @conanirdo."
+ },
+ {
+  "name": "Consultoría Jurídica del Poder Ejecutivo",
+  "handle": "@CJPE_RD",
+  "url": "https://x.com/CJPE_RD",
+  "category": "poder_estado",
+  "confidence": "high",
+  "notes": "Cuenta oficial 'Consultoría Jurídica (@CJPE_RD)' (consultoria.gov.do); en X desde septiembre 2016."
+ },
+ {
+  "name": "Contraloría General de la República",
+  "handle": "@ContraloriaRD",
+  "url": "https://x.com/ContraloriaRD",
+  "category": "organo_constitucional",
+  "confidence": "high",
+  "notes": "Cuenta oficial (contraloria.gob.do); en X desde septiembre 2013, ~27K seguidores."
+ },
+ {
+  "name": "Corporación Dominicana de Empresas Eléctricas Estatales (CDEEE)",
+  "handle": "@CDEEE_RD",
+  "category": "servicio",
+  "confidence": "high",
+  "url": "https://x.com/CDEEE_RD",
+  "notes": "Official CDEEE account (matches Instagram @cdeeerd, cdeee.gob.do). Note: CDEEE was legally dissolved/liquidated in 2020, so the account is likely dormant; its former subsidiaries (EDESUR/EDEESTE/EDENORTE/EGEHID/ETED) now operate independently."
+ },
+ {
+  "name": "Corporación del Acueducto y Alcantarillado de Santiago (CORAASAN)",
+  "handle": "@CORAASANRDO",
+  "category": "servicio",
+  "confidence": "high",
+  "url": "https://x.com/CORAASANRDO",
+  "notes": "Active official account (links to coraasan.gob.do, ~3,751 posts). An older account @CORAASAN also exists but @CORAASANRDO is the current active one."
+ },
+ {
+  "name": "Corporación del Acueducto y Alcantarillado de Santo Domingo (CAASD)",
+  "handle": "@caasdrd",
+  "category": "servicio",
+  "confidence": "high",
+  "url": "https://x.com/caasdrd",
+  "notes": "Official CAASD account, links to portal.caasd.gob.do; matches Instagram @caasdrd."
+ },
+ {
+  "name": "Cuerpo Especializado de Seguridad Fronteriza Terrestre (CESFRONT)",
+  "handle": "@CESFRONTRD",
+  "category": "seguridad",
+  "confidence": "high",
+  "url": "https://x.com/CESFRONTRD",
+  "notes": "Official CESFRONT account (Ministry of Defense); matches cesfront.mil.do."
+ },
+ {
+  "name": "Cuerpo Especializado en Seguridad Aeroportuaria y de la Aviación Civil (CESAC)",
+  "handle": "@CESAC_RD",
+  "category": "seguridad",
+  "confidence": "high",
+  "url": "https://x.com/CESAC_RD",
+  "notes": "Official CESAC account (Ministry of Defense dependency, Law 188-11); joined Feb 2016."
+ },
+ {
+  "name": "Cuerpo de Bomberos del Distrito Nacional (CBDN)",
+  "handle": "@BomberosDn",
+  "category": "seguridad",
+  "confidence": "high",
+  "url": "https://x.com/BomberosDn",
+  "notes": "Bomberos in DR are municipal, no single national fire agency. CBDN (capital) is the flagship; matches cbdn.gob.do. National coordination body is UNABOM (@UNABOM_Oficial); Santo Domingo Este uses @Bomberossde."
+ },
+ {
+  "name": "Cámara de Cuentas de la República Dominicana",
+  "handle": "@camaracuentasrd",
+  "url": "https://x.com/camaracuentasrd",
+  "category": "organo_constitucional",
+  "confidence": "high",
+  "notes": "Cuenta oficial (camaradecuentas.gob.do); mismo handle en Instagram @camaracuentasrd."
+ },
+ {
+  "name": "Cámara de Diputados de la República Dominicana",
+  "handle": "@DiputadosRD",
+  "url": "https://x.com/DiputadosRD",
+  "category": "poder_estado",
+  "confidence": "high",
+  "notes": "Cuenta oficial; enlaza a camaradediputados.gob.do. En X desde septiembre 2011."
+ },
+ {
+  "name": "Defensa Civil",
+  "handle": "@DefensaCivilRD",
+  "category": "seguridad",
+  "confidence": "high",
+  "url": "https://x.com/DefensaCivilRD",
+  "notes": "Official Defensa Civil (Oficina Nacional de Defensa Civil) account, ~196K followers; matches defensacivil.gob.do."
+ },
+ {
+  "name": "Defensor del Pueblo",
+  "handle": "@DefensorRD",
+  "url": "https://x.com/DefensorRD",
+  "category": "organo_constitucional",
+  "confidence": "high",
+  "notes": "Cuenta oficial (defensordelpueblo.gob.do); en X desde agosto 2014."
+ },
+ {
+  "name": "Dirección General de Aduanas (DGA)",
+  "handle": "@aduanard",
+  "category": "direccion_general",
+  "confidence": "high",
+  "url": "https://x.com/aduanard",
+  "notes": "Cuenta oficial activa (~15.7K posts), dependencia del Ministerio de Hacienda."
+ },
+ {
+  "name": "Dirección General de Bienes Nacionales (DGBN)",
+  "handle": "@DGBNRDO",
+  "category": "direccion_general",
+  "confidence": "high",
+  "url": "https://x.com/DGBNRDO",
+  "notes": "Cuenta oficial 'Bienes Nacionales RD'; sitio bn.gob.do."
+ },
+ {
+  "name": "Dirección General de Catastro Nacional (DGCN)",
+  "handle": "@CatastroRD",
+  "category": "direccion_general",
+  "confidence": "high",
+  "url": "https://x.com/CatastroRD",
+  "notes": "Cuenta oficial (~6,499 seguidores, se unió jun. 2010); enlaza a catastro.gob.do."
+ },
+ {
+  "name": "Dirección General de Cine (DGCINE)",
+  "handle": "@DGCINERD",
+  "category": "direccion_general",
+  "confidence": "high",
+  "url": "https://x.com/DGCINERD",
+  "notes": "Órgano oficial del cine (Ley 108-10); sitio dgcine.gob.do."
+ },
+ {
+  "name": "Dirección General de Contabilidad Gubernamental (DIGECOG)",
+  "handle": "@digecogrd",
+  "category": "direccion_general",
+  "confidence": "high",
+  "url": "https://x.com/digecogrd",
+  "notes": "Órgano rector del Sistema de Contabilidad Gubernamental (Ley 126-01)."
+ },
+ {
+  "name": "Dirección General de Contrataciones Públicas (DGCP)",
+  "handle": "@ComprasRD",
+  "category": "direccion_general",
+  "confidence": "high",
+  "url": "https://x.com/ComprasRD",
+  "notes": "Confirmada en la página de contacto oficial dgcp.gob.do/contacto."
+ },
+ {
+  "name": "Dirección General de Desarrollo Fronterizo (DGDF)",
+  "handle": "@DGDFRD__",
+  "category": "direccion_general",
+  "confidence": "high",
+  "url": "https://x.com/DGDFRD__",
+  "notes": "Cuenta oficial (se unió mar. 2019, tel. 809-689-9666); sitio dgdf.gob.do. Handle termina en doble guion bajo."
+ },
+ {
+  "name": "Dirección General de Impuestos Internos (DGII)",
+  "handle": "@DGii",
+  "category": "direccion_general",
+  "confidence": "high",
+  "url": "https://x.com/DGii",
+  "notes": "Cuenta oficial verificada, aparece como @DGii en resultados y enlazada desde dgii.gov.do."
+ },
+ {
+  "name": "Dirección General de Información y Defensa de los Afiliados a la Seguridad Social (DIDA)",
+  "handle": "@DIDA_RDo",
+  "category": "direccion_general",
+  "confidence": "high",
+  "url": "https://x.com/DIDA_RDo",
+  "notes": "Cuenta oficial (~7,620 seguidores); entidad autónoma de la seguridad social. Sitio dida.gob.do."
+ },
+ {
+  "name": "Dirección General de Jubilaciones y Pensiones a Cargo del Estado (DGJP)",
+  "handle": "@pensionesrd",
+  "category": "direccion_general",
+  "confidence": "high",
+  "url": "https://x.com/pensionesrd",
+  "notes": "Dependencia del Ministerio de Hacienda; sitio dgjp.gob.do."
+ },
+ {
+  "name": "Dirección General de Migración",
+  "handle": "@MigracionRDo",
+  "category": "direccion_general",
+  "confidence": "high",
+  "url": "https://x.com/MigracionRDo",
+  "notes": "Cuenta oficial vigente; existe una antigua @DGMRD en desuso."
+ },
+ {
+  "name": "Dirección General de Pasaportes",
+  "handle": "@Pasaportesrd",
+  "category": "direccion_general",
+  "confidence": "high",
+  "url": "https://x.com/Pasaportesrd",
+  "notes": "Cuenta oficial, misma marca en Facebook/Instagram; sitio pasaportes.gob.do."
+ },
+ {
+  "name": "Dirección General de Presupuesto (DIGEPRES)",
+  "handle": "@DIGEPRESRD",
+  "category": "direccion_general",
+  "confidence": "high",
+  "url": "https://x.com/DIGEPRESRD",
+  "notes": "Bio: órgano rector del Sistema Presupuestario dominicano (Ley 423-06)."
+ },
+ {
+  "name": "Dirección General de Seguridad de Tránsito y Transporte Terrestre (DIGESETT)",
+  "handle": "@digesettrd_",
+  "category": "direccion_general",
+  "confidence": "high",
+  "url": "https://x.com/digesettrd_",
+  "notes": "Flagship DIGESETT X account (~243K followers, joined 2011), matches Instagram @digesettrd and Facebook DIGESETTRD. A shorter @digesett account also exists but @digesettrd_ is the primary. DIGESETT is a specialized directorate under the Policía Nacional."
+ },
+ {
+  "name": "Dirección General de Ética e Integridad Gubernamental (DIGEIG)",
+  "handle": "@DIGEIGRD",
+  "category": "direccion_general",
+  "confidence": "high",
+  "url": "https://x.com/DIGEIGRD",
+  "notes": "Órgano rector de ética, transparencia y gobierno abierto; adscrito al Min. de la Presidencia."
+ },
+ {
+  "name": "Dirección Nacional de Control de Drogas (DNCD)",
+  "handle": "@DNCDRD",
+  "category": "seguridad",
+  "confidence": "high",
+  "url": "https://x.com/DNCDRD",
+  "notes": "Official DNCD account; handle also listed as social media of dncd.gob.do."
+ },
+ {
+  "name": "Ejército de República Dominicana",
+  "handle": "@EjercitoRD",
+  "category": "seguridad",
+  "confidence": "high",
+  "url": "https://x.com/EjercitoRD",
+  "notes": "Official Army account; matches ejercito.mil.do institution."
+ },
+ {
+  "name": "Empresa Distribuidora de Electricidad del Este (EDEESTE Dominicana)",
+  "handle": "@EdeesteRD",
+  "category": "servicio",
+  "confidence": "high",
+  "url": "https://x.com/EdeesteRD",
+  "notes": "Official EDEESTE account (joined 2011, ~22K followers), links to edeeste.com.do. A variant @EdeesteRD_ (trailing underscore) also appears in searches; the clean @EdeesteRD is the primary."
+ },
+ {
+  "name": "Empresa Distribuidora de Electricidad del Norte (EDENORTE Dominicana)",
+  "handle": "@EdenorteRD",
+  "category": "servicio",
+  "confidence": "high",
+  "url": "https://x.com/EdenorteRD",
+  "notes": "Official EDENORTE account, links to edenorte.com.do."
+ },
+ {
+  "name": "Empresa Distribuidora de Electricidad del Sur (EDESUR Dominicana)",
+  "handle": "@EdesurRD",
+  "category": "servicio",
+  "confidence": "high",
+  "url": "https://x.com/EdesurRD",
+  "notes": "Official EDESUR account, links to edesur.com.do; call center 809-683-9393."
+ },
+ {
+  "name": "Empresa de Generación Hidroeléctrica Dominicana (EGEHID)",
+  "handle": "@EgehidRD",
+  "category": "servicio",
+  "confidence": "high",
+  "url": "https://x.com/EgehidRD",
+  "notes": "Confirmed via official egehid.gob.do website footer which links to twitter.com/EgehidRD; matches Facebook/Instagram @EgehidRD."
+ },
+ {
+  "name": "Empresa de Transmisión Eléctrica Dominicana (ETED)",
+  "handle": "@ETED_RD",
+  "category": "servicio",
+  "confidence": "high",
+  "url": "https://x.com/ETED_RD",
+  "notes": "Official ETED account (joined 2013), links to eted.gob.do; state high-voltage transmission company."
+ },
+ {
+  "name": "Fuerza Aérea de República Dominicana (FARD)",
+  "handle": "@FuerzaAereaRD",
+  "category": "seguridad",
+  "confidence": "high",
+  "url": "https://x.com/FuerzaAereaRD",
+  "notes": "Official Air Force account; matches fard.mil.do."
+ },
+ {
+  "name": "Gabinete de Coordinación de Política Social (GCPS)",
+  "handle": "@gabsocialRD",
+  "category": "social",
+  "confidence": "high",
+  "url": "https://x.com/gabsocialRD",
+  "notes": "Cuenta oficial; coincide con gabinetesocial.gob.do y FB @GabSocialRD. Coordina las políticas sociales del Estado."
+ },
+ {
+  "name": "Instituto Dominicano de Aviación Civil (IDAC)",
+  "handle": "@IDAC_RD",
+  "category": "servicio",
+  "confidence": "high",
+  "url": "https://x.com/IDAC_RD",
+  "notes": "Official IDAC account, active 2026, links to idac.gob.do."
+ },
+ {
+  "name": "Instituto Nacional de Aguas Potables y Alcantarillados (INAPA)",
+  "handle": "@INAPAGOB",
+  "category": "servicio",
+  "confidence": "high",
+  "url": "https://x.com/INAPAGOB",
+  "notes": "Official INAPA X account, display 'INAPA - República Dominicana', active (2026 posts about acueductos), matches Facebook/Instagram @inapagob and inapa.gob.do."
+ },
+ {
+  "name": "Instituto Nacional de Atención Integral a la Primera Infancia (INAIPI)",
+  "handle": "@INAIPIRD",
+  "category": "social",
+  "confidence": "high",
+  "url": "https://x.com/INAIPIRD",
+  "notes": "Cuenta oficial (creada feb. 2015); coincide con inaipi.gob.do y FB INAIPIRD."
+ },
+ {
+  "name": "Instituto Nacional de Bienestar Estudiantil (INABIE)",
+  "handle": "@INABIERD",
+  "category": "social",
+  "confidence": "high",
+  "url": "https://x.com/INABIERD",
+  "notes": "Cuenta oficial; organismo descentralizado adscrito al MINERD. Coincide con inabie.gob.do e IG/FB @inabierd."
+ },
+ {
+  "name": "Instituto Nacional de Estabilización de Precios (INESPRE)",
+  "handle": "@inesprerd",
+  "category": "social",
+  "confidence": "high",
+  "url": "https://x.com/inesprerd",
+  "notes": "Cuenta oficial; coincide con inespre.gob.do e IG @inesprerd."
+ },
+ {
+  "name": "Instituto Nacional de Formación Técnico Profesional (INFOTEP)",
+  "handle": "@InfotepRD",
+  "category": "social",
+  "confidence": "high",
+  "url": "https://x.com/InfotepRD",
+  "notes": "Cuenta oficial; organismo autónomo del Estado (Ley 116-80). Coincide con infotep.gob.do."
+ },
+ {
+  "name": "Instituto Nacional de Protección de los Derechos del Consumidor (ProConsumidor)",
+  "handle": "@ProConsumidorRD",
+  "category": "servicio",
+  "confidence": "high",
+  "url": "https://x.com/ProConsumidorRD",
+  "notes": "Cuenta oficial, ~225K seguidores, sitio proconsumidor.gob.do. NOTA: 'ProConsumidor' y 'Instituto Nacional de Protección de los Derechos del Consumidor' son la MISMA institución (ProConsumidor es el nombre comercial); comparten este único handle."
+ },
+ {
+  "name": "Instituto Nacional de Recursos Hidráulicos (INDRHI)",
+  "handle": "@INDRHIRD",
+  "category": "servicio",
+  "confidence": "high",
+  "url": "https://x.com/INDRHIRD",
+  "notes": "Official INDRHI account (joined 2010, ~31K followers), links to indrhi.gob.do."
+ },
+ {
+  "name": "Instituto Nacional de Tránsito y Transporte Terrestre (INTRANT)",
+  "handle": "@INTRANT_RD",
+  "category": "servicio",
+  "confidence": "high",
+  "url": "https://x.com/INTRANT_RD",
+  "notes": "Official INTRANT account; email info@intrant.gob.do listed. Not to be confused with Venezuela's @InttContigo."
+ },
+ {
+  "name": "Instituto Nacional de la Vivienda (INVI)",
+  "handle": "@INVI_RD",
+  "category": "servicio",
+  "confidence": "high",
+  "url": "https://x.com/INVI_RD",
+  "notes": "Official INVI account; the profile now displays as 'mivhed.rd' since INVI was absorbed into the Ministerio de la Vivienda, Hábitat y Edificaciones (MIVHED). Handle still @INVI_RD."
+ },
+ {
+  "name": "Instituto Postal Dominicano (INPOSDOM)",
+  "handle": "@InposdomRD",
+  "category": "servicio",
+  "confidence": "high",
+  "url": "https://x.com/InposdomRD",
+  "notes": "Official INPOSDOM account, active 2026, matches Instagram @inposdomrd and inposdom.gob.do."
+ },
+ {
+  "name": "Junta Central Electoral (JCE)",
+  "handle": "@juntacentral",
+  "url": "https://x.com/juntacentral",
+  "category": "organo_constitucional",
+  "confidence": "high",
+  "notes": "Cuenta oficial verificada (jce.gob.do). Cuenta de soporte aparte: @JCEAsistencia."
+ },
+ {
+  "name": "Junta de Aviación Civil (JAC)",
+  "handle": "@JAC_RD",
+  "category": "servicio",
+  "confidence": "high",
+  "url": "https://x.com/JAC_RD",
+  "notes": "Official JAC account, links to jac.gob.do; civil aviation policy/regulatory board."
+ },
+ {
+  "name": "Ministerio de Administración Pública (MAP)",
+  "handle": "@MapRDo",
+  "url": "https://x.com/MapRDo",
+  "category": "ministerio",
+  "confidence": "high",
+  "notes": "Cuenta oficial @MapRDo (sitio map.gob.do, Instagram @map.rdo, Facebook maprdo). Existe también @maprerd pero la principal/activa es @MapRDo."
+ },
+ {
+  "name": "Ministerio de Agricultura",
+  "handle": "@AgriculturaRD",
+  "category": "ministerio",
+  "confidence": "high",
+  "url": "https://x.com/AgriculturaRD",
+  "notes": "Official X profile appears in results (48.6K followers, joined Apr 2011); matches Instagram/Facebook @AgriculturaRD and site agricultura.gob.do."
+ },
+ {
+  "name": "Ministerio de Cultura",
+  "handle": "@MiculturaRD",
+  "category": "ministerio",
+  "confidence": "high",
+  "url": "https://x.com/MiculturaRD",
+  "notes": "Official X profile (89.7K followers, active since Nov 2010); consistent with Facebook/Instagram/YouTube miculturard and site cultura.gob.do."
+ },
+ {
+  "name": "Ministerio de Defensa (MIDE)",
+  "handle": "@MDefensaRD",
+  "category": "ministerio",
+  "confidence": "high",
+  "url": "https://x.com/MDefensaRD",
+  "notes": "Cuenta oficial 'MinisterioDefensaRD'; sitio mide.gob.do, IG @mdefensard, FB MDefensaRD."
+ },
+ {
+  "name": "Ministerio de Deportes y Recreación (MIDEREC)",
+  "handle": "@miderec_rd",
+  "category": "ministerio",
+  "confidence": "high",
+  "url": "https://x.com/miderec_rd",
+  "notes": "Official X profile 'Ministerio Deportes'; site miderec.gob.do."
+ },
+ {
+  "name": "Ministerio de Economía, Planificación y Desarrollo (MEPyD)",
+  "handle": "@mineconomiard",
+  "category": "ministerio",
+  "confidence": "high",
+  "url": "https://x.com/mineconomiard",
+  "notes": "Cuenta oficial enlazada desde mepyd.gob.do y Portal de Datos Abiertos."
+ },
+ {
+  "name": "Ministerio de Educación (MINERD)",
+  "handle": "@EducacionRDo",
+  "category": "ministerio",
+  "confidence": "high",
+  "url": "https://x.com/EducacionRDo",
+  "notes": "Official X profile 'Ministerio Educación RD'; ministry site ministeriodeeducacion.gob.do / minerd.gob.do."
+ },
+ {
+  "name": "Ministerio de Educación Superior, Ciencia y Tecnología (MESCyT)",
+  "handle": "@MESCYTRD",
+  "category": "ministerio",
+  "confidence": "high",
+  "url": "https://x.com/mescytrd",
+  "notes": "Official X profile appears in results; consistent with YouTube MESCyTRD and site mescyt.gob.do."
+ },
+ {
+  "name": "Ministerio de Energía y Minas (MEM)",
+  "handle": "@energiayminasrd",
+  "category": "ministerio",
+  "confidence": "high",
+  "url": "https://x.com/energiayminasrd",
+  "notes": "Official X account; consistent with Instagram @energiayminasrd and Facebook /memrd; site mem.gob.do."
+ },
+ {
+  "name": "Ministerio de Hacienda",
+  "handle": "@MinHaciendard",
+  "category": "ministerio",
+  "confidence": "high",
+  "url": "https://x.com/minhaciendard",
+  "notes": "Cuenta oficial; el perfil ahora figura como 'Ministerio de Hacienda y Economía' tras reestructuración. Sitio hacienda.gob.do."
+ },
+ {
+  "name": "Ministerio de Industria, Comercio y Mipymes (MICM)",
+  "handle": "@MIC_RD",
+  "category": "ministerio",
+  "confidence": "high",
+  "url": "https://x.com/MIC_RD",
+  "notes": "Cuenta oficial (micm.gob.do). IG @micmrd, LinkedIn micmrd."
+ },
+ {
+  "name": "Ministerio de Interior y Policía",
+  "handle": "@MinInteriorRD",
+  "category": "ministerio",
+  "confidence": "high",
+  "url": "https://x.com/MinInteriorRD",
+  "notes": "Cuenta oficial verificada; enlazada desde mip.gob.do y redes oficiales (IG @mininteriorrd, FB MinInteriorRD)."
+ },
+ {
+  "name": "Ministerio de Medio Ambiente y Recursos Naturales",
+  "handle": "@AmbienteRD",
+  "category": "ministerio",
+  "confidence": "high",
+  "url": "https://x.com/AmbienteRD",
+  "notes": "Official X profile 'Ministerio de Medio Ambiente RD'; consistent with Instagram/Facebook/YouTube @ambienterd and site ambiente.gob.do."
+ },
+ {
+  "name": "Ministerio de Obras Públicas y Comunicaciones (MOPC)",
+  "handle": "@MOPCRD",
+  "category": "ministerio",
+  "confidence": "high",
+  "url": "https://x.com/mopcrd",
+  "notes": "Primary/current handle, consistent with Facebook /mopcrd and Instagram @mopcrd. An older account @RDMOPC also exists in results."
+ },
+ {
+  "name": "Ministerio de Relaciones Exteriores (MIREX)",
+  "handle": "@MIREXRD",
+  "category": "ministerio",
+  "confidence": "high",
+  "url": "https://x.com/MIREXRD",
+  "notes": "Cuenta oficial de la Cancillería (mirex.gob.do). Perfil aparece como 'Cancillería de República Dominicana'."
+ },
+ {
+  "name": "Ministerio de Salud Pública y Asistencia Social (MISPAS)",
+  "handle": "@SaludPublicaRD",
+  "category": "ministerio",
+  "confidence": "high",
+  "url": "https://x.com/SaludPublicaRD",
+  "notes": "Official X account 'Salud Pública RD'; site msp.gob.do. Profile references the sitting minister."
+ },
+ {
+  "name": "Ministerio de Trabajo",
+  "handle": "@MTrabajoRD",
+  "category": "ministerio",
+  "confidence": "high",
+  "url": "https://x.com/MTrabajoRD",
+  "notes": "Cuenta oficial (mt.gob.do); IG @mtrabajord."
+ },
+ {
+  "name": "Ministerio de Turismo (MITUR)",
+  "handle": "@TurismoRD",
+  "category": "ministerio",
+  "confidence": "high",
+  "url": "https://x.com/TurismoRD",
+  "notes": "Cuenta oficial activa 'Ministerio de Turismo RD' (mitur.gob.do); coincide con IG @turismord y FB TurismoRD. El identificador 'mturismord' es de LinkedIn, no la cuenta X activa."
+ },
+ {
+  "name": "Ministerio de la Juventud",
+  "handle": "@JuventudRD",
+  "category": "ministerio",
+  "confidence": "high",
+  "url": "https://x.com/juventudrd",
+  "notes": "Official X profile 'Ministerio Juventud' (joined Apr 2010); Instagram @juventudrd; site juventud.gob.do."
+ },
+ {
+  "name": "Ministerio de la Mujer",
+  "handle": "@MMujerRD",
+  "category": "ministerio",
+  "confidence": "high",
+  "url": "https://x.com/MMujerRD",
+  "notes": "Official X account 'Ministerio de la Mujer República Dominicana'; consistent with Instagram/Facebook @MMujerRD and site mujer.gob.do."
+ },
+ {
+  "name": "Ministerio de la Presidencia (MINPRE)",
+  "handle": "@MinpreRD",
+  "url": "https://x.com/MinpreRD",
+  "category": "ministerio",
+  "confidence": "high",
+  "notes": "Perfil oficial 'Ministerio de la Presidencia (@MinpreRD)'; también en Facebook MinPresidenciaRD."
+ },
+ {
+  "name": "Ministerio de la Vivienda y Edificaciones (MIVED)",
+  "handle": "@Mivedrd",
+  "category": "ministerio",
+  "confidence": "high",
+  "url": "https://x.com/Mivedrd",
+  "notes": "Official X profile 'Ministerio de Vivienda y Edificaciones' (created Sep 2016); Instagram/Facebook @mivedrd; site mivhed.gob.do."
+ },
+ {
+  "name": "Oficina Gubernamental de Tecnologías de la Información y Comunicación (OGTIC)",
+  "handle": "@OGTICRDO",
+  "category": "direccion_general",
+  "confidence": "high",
+  "url": "https://x.com/OGTICRDO",
+  "notes": "Cuenta oficial (~29.1K seguidores, se unió mar. 2010); sitio ogtic.gob.do."
+ },
+ {
+  "name": "Oficina Nacional de Estadística (ONE)",
+  "handle": "@ONERD_",
+  "category": "direccion_general",
+  "confidence": "high",
+  "url": "https://x.com/ONERD_",
+  "notes": "Cuenta oficial (mismo handle en Instagram @onerd_); sitio one.gob.do."
+ },
+ {
+  "name": "Oficina Nacional de la Propiedad Industrial (ONAPI)",
+  "handle": "@OnapiRD",
+  "category": "direccion_general",
+  "confidence": "high",
+  "url": "https://x.com/OnapiRD",
+  "notes": "Cuenta oficial (mismo handle en Facebook @ONAPIRD); sitio onapi.gob.do."
+ },
+ {
+  "name": "Poder Judicial / Suprema Corte de Justicia",
+  "handle": "@PoderJudicialRD",
+  "url": "https://x.com/PoderJudicialRD",
+  "category": "poder_estado",
+  "confidence": "high",
+  "notes": "Cuenta oficial del Poder Judicial de la RD; canaliza también la comunicación de la Suprema Corte de Justicia (poderjudicial.gob.do)."
+ },
+ {
+  "name": "Policía Nacional",
+  "handle": "@PoliciaRD",
+  "category": "seguridad",
+  "confidence": "high",
+  "url": "https://x.com/PoliciaRD",
+  "notes": "Verified official account, ~555K followers, created May 2011. Grounded in search results and official presence."
+ },
+ {
+  "name": "Presidencia de la República",
+  "handle": "@PresidenciaRD",
+  "url": "https://x.com/PresidenciaRD",
+  "category": "poder_estado",
+  "confidence": "high",
+  "notes": "Cuenta oficial de la Presidencia de la RD; verificada en resultados de búsqueda (twitter.com/PresidenciaRD, x.com/presidenciard)."
+ },
+ {
+  "name": "Procuraduría General de la República",
+  "handle": "@ProcuraduriaRD",
+  "url": "https://x.com/ProcuraduriaRD",
+  "category": "organo_constitucional",
+  "confidence": "high",
+  "notes": "Cuenta oficial del Ministerio Público / PGR (pgr.gob.do)."
+ },
+ {
+  "name": "Programa de Medicamentos Esenciales / Central de Apoyo Logístico (PROMESE/CAL)",
+  "handle": "@PromesecalRD",
+  "category": "social",
+  "confidence": "high",
+  "url": "https://x.com/PromesecalRD",
+  "notes": "Cuenta oficial (creada nov. 2016); coincide con promesecal.gob.do, IG y FB @promesecalrd. Opera las Farmacias del Pueblo."
+ },
+ {
+  "name": "Seguro Nacional de Salud (SeNaSa)",
+  "handle": "@ARSSeNaSaRD",
+  "category": "social",
+  "confidence": "high",
+  "url": "https://x.com/ARSSeNaSaRD",
+  "notes": "Cuenta oficial de la ARS pública SeNaSa; consistente con Instagram/Facebook @ARSSeNaSaRD y sitio arssenasa.gob.do."
+ },
+ {
+  "name": "Senado de la República",
+  "handle": "@SenadoRD",
+  "url": "https://x.com/SenadoRD",
+  "category": "poder_estado",
+  "confidence": "high",
+  "notes": "Cuenta oficial verificada; enlaza a senadord.gob.do. ~186K seguidores, en X desde julio 2010."
+ },
+ {
+  "name": "Servicio Nacional de Salud (SNS)",
+  "handle": "@SNSRDO",
+  "category": "social",
+  "confidence": "high",
+  "url": "https://x.com/SNSRDO",
+  "notes": "Cuenta oficial verificada en X; enlazada desde sns.gob.do. Institución rectora de la provisión de servicios de salud (SRS)."
+ },
+ {
+  "name": "Sistema Nacional de Atención a Emergencias y Seguridad 9-1-1",
+  "handle": "@Sistema911_RD",
+  "category": "seguridad",
+  "confidence": "high",
+  "url": "https://x.com/Sistema911_RD",
+  "notes": "Official 911 system account, joined April 2014; matches 911.gob.do."
+ },
+ {
+  "name": "Sistema Único de Beneficiarios (SIUBEN)",
+  "handle": "@SiubenRD",
+  "category": "social",
+  "confidence": "high",
+  "url": "https://x.com/SiubenRD",
+  "notes": "Cuenta oficial (creada nov. 2011); coincide con siuben.gob.do. Adscrito al Gabinete de Coordinación de Políticas Sociales."
+ },
+ {
+  "name": "Superintendencia de Bancos de la República Dominicana",
+  "handle": "@SuperdeBancosRD",
+  "category": "superintendencia",
+  "confidence": "high",
+  "url": "https://x.com/SuperdeBancosRD",
+  "notes": "Cuenta oficial. Sitio sb.gob.do. Facebook y X coinciden en SuperdeBancosRD."
+ },
+ {
+  "name": "Superintendencia de Electricidad (SIE)",
+  "handle": "@SIEGOBRD",
+  "category": "superintendencia",
+  "confidence": "high",
+  "url": "https://x.com/SIEGOBRD",
+  "notes": "Cuenta oficial. Sitio sie.gob.do. Facebook SIEGOBRD coincide."
+ },
+ {
+  "name": "Superintendencia de Pensiones (SIPEN)",
+  "handle": "@SipenRD",
+  "category": "superintendencia",
+  "confidence": "high",
+  "url": "https://x.com/SipenRD",
+  "notes": "Cuenta oficial. Sitio sipen.gob.do. Instagram sipenrd coincide."
+ },
+ {
+  "name": "Superintendencia de Salud y Riesgos Laborales (SISALRIL)",
+  "handle": "@SISALRILRD",
+  "category": "superintendencia",
+  "confidence": "high",
+  "url": "https://x.com/SISALRILRD",
+  "notes": "Grounded: enlazada en el pie de página del sitio oficial sisalril.gob.do ('X (antes Twitter) de SISALRIL'). Instagram sisalrilrd y Facebook SISALRILRD coinciden."
+ },
+ {
+  "name": "Superintendencia de Seguros",
+  "handle": "@SuperSegurosDO",
+  "category": "superintendencia",
+  "confidence": "high",
+  "url": "https://x.com/SuperSegurosDO",
+  "notes": "Cuenta oficial. Sitio superseguros.gob.do."
+ },
+ {
+  "name": "Superintendencia del Mercado de Valores",
+  "handle": "@SIMVRDO",
+  "category": "superintendencia",
+  "confidence": "high",
+  "url": "https://x.com/SIMVRDO",
+  "notes": "Cuenta oficial. Sitio simv.gob.do. Instagram simvrdo coincide."
+ },
+ {
+  "name": "Supérate (antes Progresando con Solidaridad / Prosoli)",
+  "handle": "@SuperateRDO",
+  "category": "social",
+  "confidence": "high",
+  "url": "https://x.com/SuperateRDO",
+  "notes": "Cuenta oficial actual del programa Supérate (sustituye a Prosoli @prosolird); coincide con superate.gob.do y canal YouTube @SuperateRDO."
+ },
+ {
+  "name": "Tesorería de la Seguridad Social (TSS)",
+  "handle": "@TSSDOM",
+  "category": "social",
+  "confidence": "high",
+  "url": "https://x.com/TSSDOM",
+  "notes": "Cuenta oficial (creada ago. 2012). Sitio tss.gob.do. Facebook y Threads tssdom coinciden."
+ },
+ {
+  "name": "Tribunal Constitucional (TCRD)",
+  "handle": "@TribunalConstRD",
+  "url": "https://x.com/TribunalConstRD",
+  "category": "organo_constitucional",
+  "confidence": "high",
+  "notes": "Perfil oficial 'TCRD (@TribunalConstRD)'; en X desde noviembre 2011, ~90K seguidores."
+ },
+ {
+  "name": "Tribunal Superior Electoral (TSE)",
+  "handle": "@tse_rd",
+  "url": "https://x.com/tse_rd",
+  "category": "organo_constitucional",
+  "confidence": "high",
+  "notes": "Cuenta oficial del TSE (sitio tse.do). Instagram institucional @tselectoral_rd."
+ },
+ {
+  "name": "Vicepresidencia de la República Dominicana",
+  "handle": "@ViceRDo",
+  "url": "https://x.com/ViceRDo",
+  "category": "poder_estado",
+  "confidence": "high",
+  "notes": "Perfil oficial 'Vicepresidencia de la República Dominicana (@ViceRDo)'. La vicepresidenta Raquel Peña usa cuenta personal aparte (@RaquelPenaVice)."
+ },
+ {
+  "name": "Corporación Estatal de Radio y Televisión (CERTV / RTVD)",
+  "handle": "@rtvd_4",
+  "category": "servicio",
+  "confidence": "medium",
+  "url": "https://x.com/rtvd_4",
+  "notes": "CERTV rebranded its public broadcasting as RTVD (Canal 4). @rtvd_4 is the active X account for the state broadcaster ('Televisión Pública de la RD #RTVD'). The corporate brand also uses Instagram @certvrd / @certv4rd; certv.gob.do footer only lists Instagram, so no dedicated corporate CERTV X handle was confirmed — @rtvd_4 is the operative broadcaster account."
+ },
+ {
+  "name": "Instituto Nacional de Ciencias Forenses (INACIF)",
+  "handle": "@InacifRD",
+  "category": "seguridad",
+  "confidence": "medium",
+  "url": "https://x.com/InacifRD",
+  "notes": "Account named 'Instituto Nacional de Ciencias Forenses INACIF' matches the DR institution, but joined March 2025 with no/low posts. INACIF's primary active channel is Instagram (@inacifrd). Do NOT confuse with @inacifgt (Guatemala)."
+ }
+]

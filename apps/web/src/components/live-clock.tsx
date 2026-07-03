@@ -43,7 +43,7 @@ export function LiveClock({ lang, initialDate }: { lang: "es" | "en"; initialDat
         <div className="serif mt-2 text-2xl font-semibold leading-tight first-letter:uppercase sm:text-[30px]">{date}</div>
       </div>
 
-      <div className="font-mono text-5xl font-bold leading-none tracking-tight tabular-nums sm:text-6xl" style={{ color: "var(--text)" }} aria-label={`Hora ${time}`}>
+      <div className="font-mono text-5xl font-bold leading-none tracking-tight tabular-nums sm:text-6xl" style={{ color: "var(--text)" }} aria-label={lang === "es" ? `Hora ${time}` : `Time ${time}`}>
         {hh}<span style={{ color: "var(--text-muted)" }}>:</span>{mm}<span style={{ color: "var(--danger)" }}>:{ss}</span>
       </div>
     </div>

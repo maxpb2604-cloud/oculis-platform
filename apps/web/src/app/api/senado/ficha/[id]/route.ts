@@ -17,6 +17,10 @@ export const dynamic = "force-dynamic";
 // Short in-memory cache so repeat opens don't re-login (the legacy login is ~4 requests).
 const CACHE = new Map<string, { html: string; at: number }>();
 const TTL_MS = 5 * 60_000;
+const CACHE_MAX = 200; // fichas are ~50-100KB each; keep the map bounded
+
+const escapeHtml = (s: string) =>
+  s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -30,12 +34,18 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   } catch (e) {
     return new NextResponse(
       `<!doctype html><meta charset="utf-8"><body style="font-family:system-ui;padding:2rem;color:#333">` +
-        `<h2>No se pudo abrir el expediente del Senado</h2><p>${(e as Error).message}</p>` +
+        `<h2>No se pudo abrir el expediente del Senado</h2><p>${escapeHtml((e as Error).message)}</p>` +
         `<p>El Sistema de Gestión de Expedientes Digitales puede estar caído. Intente de nuevo.</p></body>`,
       { status: 502, headers: { "content-type": "text/html; charset=utf-8" } },
     );
   }
-  if (!fresh) CACHE.set(id, { html, at: Date.now() });
+  if (!fresh) {
+    if (CACHE.size >= CACHE_MAX) {
+      for (const [k, v] of CACHE) if (Date.now() - v.at >= TTL_MS) CACHE.delete(k);
+      if (CACHE.size >= CACHE_MAX) CACHE.delete(CACHE.keys().next().value!); // oldest insertion
+    }
+    CACHE.set(id, { html, at: Date.now() });
+  }
 
   const base = `${SenadoSilAdapter.BASE}/`;
   const patched = html
@@ -51,6 +61,10 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       "cache-control": "private, max-age=120",
       // Allow the legacy http assets to load when our app is served over http (dev).
       "referrer-policy": "no-referrer",
+      // The ficha is third-party HTML fetched over plain http and served on our
+      // origin: sandbox it so its (or a MITM's) scripts can never run as us.
+      // The page is static content; the IE-era scripts we already neuter above.
+      "content-security-policy": "sandbox; default-src * data:; style-src * 'unsafe-inline'; img-src * data:; script-src 'none'",
     },
   });
 }

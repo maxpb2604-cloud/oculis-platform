@@ -1,7 +1,8 @@
 import { type Lang } from "@/lib/i18n";
 import type { FeedAccount } from "@/lib/data";
 
-const KIND_LABEL: Record<string, { es: string; en: string }> = {
+/** Registry-account kind → bilingual label. Shared with the right rail (FeedRail). */
+export const KIND_LABEL: Record<string, { es: string; en: string }> = {
   SENADO_OFFICIAL: { es: "Senado", en: "Senate" },
   INSTITUTION: { es: "Institución", en: "Institution" },
   NEWSPAPER: { es: "Medio", en: "Outlet" },

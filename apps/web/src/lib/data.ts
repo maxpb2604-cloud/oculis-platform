@@ -5,20 +5,21 @@
  */
 import "server-only";
 import { unstable_cache } from "next/cache";
+import { normalizeStatus } from "@oculis/core";
 import { normProvince, resolveProvince } from "./provinces";
 export { normProvince, resolveProvince } from "./provinces";
 import {
   createDb,
-  activityCountsByDate,
   countByApprovalProbability,
   countByCategory,
   countByProvince,
-  countByRisk,
   countByStatus,
   legislatorsByProvince,
   listLegislators,
   commissionsWithMembers,
   legislatorCommittees,
+  activityInitiativesByActivity,
+  findLegislator,
   type RosterMember,
   type CommissionWithMembers,
   dashboardKpis,
@@ -26,7 +27,6 @@ import {
   getInitiativeById,
   latestRunsBySource,
   listActivity,
-  listCommissions,
   listDeposits,
   listInitiatives,
   listRecentInitiatives,
@@ -60,25 +60,48 @@ export type {
 } from "@oculis/db";
 
 let handle: DbHandle | null = null;
+let schemaReady: Promise<void> | null = null;
 async function db() {
+  // Assign synchronously so concurrent first requests share ONE handle and all
+  // await the same ensureSchema run (instead of racing the ~70 DDL statements).
   if (!handle) {
     handle = createDb();
-    await handle.ensureSchema(); // safe no-op if tables already exist
+    schemaReady = handle.ensureSchema(); // safe no-op if tables already exist
   }
+  await schemaReady;
   return handle.db;
 }
 
-export async function getDashboardData() {
+/**
+ * Dashboard aggregates change only when the worker ingests (6×/day schedule),
+ * so serving them from a 2-minute cache removes ~5 aggregate queries per
+ * request without any visible staleness.
+ */
+export const getDashboardData = unstable_cache(_getDashboardData, ["dashboard-data"], {
+  revalidate: 120,
+});
+
+async function _getDashboardData() {
   const d = await db();
-  const [kpis, byRisk, byApproval, byCategory, byStatus, recent] = await Promise.all([
+  const [kpis, byApproval, byCategory, byStatusRaw, recent] = await Promise.all([
     dashboardKpis(d),
-    countByRisk(d),
     countByApprovalProbability(d),
     countByCategory(d),
     countByStatus(d),
     listRecentInitiatives(d, { limit: 40 }),
   ]);
-  return { kpis, byRisk, byApproval, byCategory, byStatus, recent };
+  // The chambers word statuses differently ("Enviado/Enviada a Comisión",
+  // "Depositado/Depositada"...). Fold raw values through the canonical taxonomy
+  // so the donut/legend show one bucket per real stage instead of split pairs.
+  const folded = new Map<string, number>();
+  for (const b of byStatusRaw) {
+    const label = normalizeStatus(b.key).label;
+    folded.set(label, (folded.get(label) ?? 0) + b.count);
+  }
+  const byStatus = [...folded]
+    .map(([key, count]) => ({ key, count }))
+    .sort((a, b) => b.count - a.count);
+  return { kpis, byApproval, byCategory, byStatus, recent };
 }
 
 export type DashboardData = Awaited<ReturnType<typeof getDashboardData>>;
@@ -239,10 +262,49 @@ export async function browseInitiatives(f: InitiativeFilters) {
 
 export async function getInitiative(id: number) {
   const d = await db();
-  const ini = await getInitiativeById(d, id);
+  const [ini, relatedNews] = await Promise.all([
+    getInitiativeById(d, id),
+    listFeedForInitiative(d, id, 10),
+  ]);
   if (!ini) return null;
-  const relatedNews = await listFeedForInitiative(d, id, 10);
-  return { ...ini, relatedNews };
+  // Neither the detail page nor the modal renders the raw scrape payload —
+  // shipping it doubled the /api/initiatives/:id response for nothing.
+  const { raw: _raw, ...rest } = ini as typeof ini & { raw?: unknown };
+  return { ...rest, relatedNews };
+}
+
+/**
+ * Same rich detail as getInitiative, but resolved from the official CODE — powers
+ * "click any initiative (by code) → bubble" from agendas, where we hold codes, not ids.
+ */
+export async function getInitiativeDetailByCode(code: string) {
+  const d = await db();
+  const ref = await initiativeByCode(d, code);
+  if (!ref) return null;
+  return getInitiative(ref.id);
+}
+
+/**
+ * Resolve a legislator to the profile shape the click-to-open bubble renders,
+ * with their committee seats attached. By sourceId (reliable) or name (fuzzy).
+ */
+export async function resolveLegislator(opts: {
+  sourceId?: string | null;
+  name?: string | null;
+  chamber?: string | null;
+}): Promise<LegislatorProfile | null> {
+  const d = await db();
+  const member = await findLegislator(d, opts);
+  if (!member) return null;
+  const seats = await legislatorCommittees(d);
+  const committees = seats
+    .filter((s) =>
+      member.sourceId && s.legislatorSourceId
+        ? s.legislatorSourceId === member.sourceId
+        : normProvince(s.legislatorName) === normProvince(member.fullName),
+    )
+    .map((s) => ({ name: s.commissionName, cargo: s.cargo }));
+  return { ...member, committees };
 }
 
 // --- Phase 1: daily activity monitoring (both chambers) ---
@@ -258,7 +320,7 @@ export function todayISO(): string {
 }
 
 /** Shift an ISO date by N days (negative = earlier). */
-function shiftISO(iso: string, days: number): string {
+export function shiftISO(iso: string, days: number): string {
   const [y, m, d] = iso.split("-").map(Number);
   const dt = new Date(Date.UTC(y!, m! - 1, d!));
   dt.setUTCDate(dt.getUTCDate() + days);
@@ -278,7 +340,24 @@ export async function getDayActivity(opts: { date?: string; senateWindowDays?: n
     listActivity(d, { date, chamber: "DIPUTADOS", limit: 500 }),
     listActivity(d, { dateFrom: since, dateTo: date, chamber: "SENADO", limit: 500 }),
   ]);
+  await attachInitiatives(d, [...dip, ...sen]);
   return { date, senateSince: since, dip, sen };
+}
+
+/**
+ * Attach each activity/agenda event's referenced initiatives (code + resolved id +
+ * full title) in one batch query, so the UI can render them as clickable chips.
+ * Mutates the items in place (adds an `initiatives` array).
+ */
+async function attachInitiatives<T extends { id: number }>(
+  d: DbHandle["db"],
+  items: T[],
+): Promise<Array<T & { initiatives: import("@oculis/db").ActivityInitiativeRef[] }>> {
+  const byActivity = await activityInitiativesByActivity(d, items.map((i) => i.id));
+  for (const it of items) {
+    (it as T & { initiatives: unknown }).initiatives = byActivity.get(it.id) ?? [];
+  }
+  return items as Array<T & { initiatives: import("@oculis/db").ActivityInitiativeRef[] }>;
 }
 
 /** Initiatives deposited on a given date (the "depositadas hoy" feed). Diputados by default. */
@@ -300,12 +379,6 @@ export async function getDepositsRange(from: string, to: string, chamber = "DIPU
  * SIL publishes with lag, so a single day is often empty — the short window mirrors the
  * manual playbook ("revisar ese día y los anteriores") and keeps the feed non-empty.
  */
-export async function getSenateDeposits(date: string, windowDays = 7): Promise<DepositItem[]> {
-  const d = await db();
-  const from = shiftISO(date, -(windowDays - 1));
-  return listDeposits(d, { dateFrom: from, dateTo: date, limit: 500, chamber: "SENADO" });
-}
-
 /** Committee/plenary activity (both chambers) within an inclusive [from, to] range. */
 export async function getRangeActivity(from: string, to: string) {
   const d = await db();
@@ -313,25 +386,16 @@ export async function getRangeActivity(from: string, to: string) {
     listActivity(d, { dateFrom: from, dateTo: to, chamber: "DIPUTADOS", limit: 1000 }),
     listActivity(d, { dateFrom: from, dateTo: to, chamber: "SENADO", limit: 1000 }),
   ]);
+  await attachInitiatives(d, [...dip, ...sen]);
   return { dip, sen };
 }
 
 /** Recent activity (no date filter) for a chamber — its standing feed. */
 export async function getChamberActivity(chamber: string, limit = 120) {
   const d = await db();
-  return listActivity(d, { chamber, limit });
-}
-
-/** Per-day committee/plenary counts for the activity sparkline/calendar. */
-export async function getActivityCalendar(since?: string) {
-  const d = await db();
-  return activityCountsByDate(d, { since });
-}
-
-/** Health of every source for the "Estado de monitoreo" page. */
-export async function getMonitoringHealth() {
-  const d = await db();
-  return latestRunsBySource(d);
+  const items = await listActivity(d, { chamber, limit });
+  await attachInitiatives(d, items);
+  return items;
 }
 
 /**
@@ -339,8 +403,15 @@ export async function getMonitoringHealth() {
  * most-recent successful run time overall, plus a per-source breakdown (name,
  * ok, when, item count). Reads `ingestion_runs` (the same data the monitoring
  * page uses), filtered to `feed-*` sources.
+ *
+ * Cached 60s — the underlying runs land 6×/day; the percentile CTE it triggers
+ * was running on every /feed render.
  */
-export async function getFeedFreshness() {
+export const getFeedFreshness = unstable_cache(_getFeedFreshness, ["feed-freshness"], {
+  revalidate: 60,
+});
+
+async function _getFeedFreshness() {
   const d = await db();
   const all = await latestRunsBySource(d);
   const LABELS: Record<string, string> = {
@@ -368,11 +439,6 @@ export async function getFeedFreshness() {
     .sort();
   const updatedAt = times.length ? times[times.length - 1]! : null;
   return { updatedAt, sources };
-}
-
-export async function getCommissions(chamber?: string) {
-  const d = await db();
-  return listCommissions(d, { chamber });
 }
 
 /** Committees with full membership (president/VP/secretary/members) for a chamber.
@@ -404,11 +470,6 @@ export async function getConsultas() {
   return listRegulations(d, { consultaOnly: true, limit: 100 });
 }
 
-export async function getRegulations(opts: { institution?: string; intervention?: string } = {}) {
-  const d = await db();
-  return listRegulations(d, { ...opts, limit: 200 });
-}
-
 // --- Feed (news / official / social / legislative signals) ---
 
 /** A page of feed items (keyset paginated). Not cached — filters + cursor vary per request. */
@@ -420,11 +481,16 @@ export async function getFeed(
   return listFeedItems(d, filters, opts);
 }
 
-/** Distinct categories + kinds present in the feed (left-panel dropdowns). */
-export async function getFeedFacets() {
-  const d = await db();
-  return feedFacets(d);
-}
+/** Distinct categories present in the feed (left-panel dropdowns). Cached 5 min —
+ *  two full-table group-bys that only change when the worker ingests. */
+export const getFeedFacets = unstable_cache(
+  async () => {
+    const d = await db();
+    return feedFacets(d);
+  },
+  ["feed-facets"],
+  { revalidate: 300 },
+);
 
 /** Resolve a bill code → title for the feed's active-filter chip. */
 export async function getInitiativeByCode(code: string) {
@@ -432,10 +498,11 @@ export async function getInitiativeByCode(code: string) {
   return initiativeByCode(d, code);
 }
 
-/** Typeahead: bills (PDLs) whose title or code matches a keyword. */
+/** Keyword search: bills (PDLs) matched by the intensive synonym/typo-tolerant engine
+ *  (searchInitiatives). Limit raised so the full-page search overlay shows many hits. */
 export async function searchBills(query: string) {
   const d = await db();
-  return searchInitiatives(d, query, { limit: 8 });
+  return searchInitiatives(d, query, { limit: 40 });
 }
 
 /** Hot topics + trending entities for the right rail. Cached 5 min. */

@@ -42,10 +42,6 @@ export interface Grupo {
   descripcion: string;
   icono: string;
 }
-export interface Materia {
-  id: number;
-  descripcion: string;
-}
 export interface Page<T> {
   page: number;
   pageSize: number;
@@ -122,12 +118,6 @@ export class SilDiputadosAdapter implements SourceAdapter {
     return fetchJson<Grupo[]>(`${this.base}/Grupos?periodoId=0`, { headers });
   }
 
-  async materias(grupo: number): Promise<Materia[]> {
-    return fetchJson<Materia[]>(`${this.base}/Materias?grupo=${grupo}&periodoId=0`, {
-      headers,
-    });
-  }
-
   /** Build the (verified) paginated list URL. */
   buildListUrl(grupo: number, tipo: boolean, page: number): string {
     const qs = new URLSearchParams({
@@ -163,20 +153,20 @@ export class SilDiputadosAdapter implements SourceAdapter {
         let page = 1;
         while (page <= maxPagesPerSlice) {
           const env = await this.listPage(g.id, tipo, page);
-          for (const row of env.results) yield mapInitiative(row);
-          if (page * env.pageSize >= env.total || env.results.length === 0) break;
+          const rows = env.results ?? [];
+          if (rows.length === 0) break;
+          for (const row of rows) yield mapInitiative(row);
+          // Pagination guards mirroring sil-actividad's fetchAll: terminate on a short
+          // page (primary signal) and never trust a zero/NaN pageSize/total to keep going.
+          const pageSize = Number(env.pageSize);
+          const total = Number(env.total);
+          if (!Number.isFinite(pageSize) || pageSize <= 0) break;
+          if (rows.length < pageSize) break;
+          if (Number.isFinite(total) && page * pageSize >= total) break;
           page++;
         }
       }
     }
-  }
-
-  async detail(sourceId: string): Promise<RawInitiative | null> {
-    const data = await fetchJson<SilIniciativa | null>(
-      `${this.base}/iniciativa/${encodeURIComponent(sourceId)}`,
-      { headers },
-    );
-    return data == null ? null : mapInitiative(data);
   }
 
   /** Sponsors for an initiative (party + province live here). */

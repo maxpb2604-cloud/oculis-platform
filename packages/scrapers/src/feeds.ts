@@ -4,9 +4,10 @@
  * Three kinds of source feed the Congress timeline, all link-back-able and verifiable:
  *  - OFFICIAL: Senado + Cámara de Diputados news (their WordPress RSS).
  *  - NEWS: respected DR papers' RSS (the worker filters to Congress/cabinet relevance).
- *  - SOCIAL: X / Instagram via a CREDENTIAL-GATED adapter driven by the curated
- *    account registry (`feed_accounts`). With no API token it returns nothing (the
- *    accounts remain a browsable directory); with a token it pulls recent posts.
+ *  - SOCIAL: X via a CREDENTIAL-GATED adapter driven by the curated account registry
+ *    (`feed_accounts`). With no API token it returns nothing (the accounts remain a
+ *    browsable directory); with a token it pulls recent posts. Instagram accounts are
+ *    directory-only (no posts adapter — Meta Graph API needs business accounts).
  *
  * The "before the news" legislative-signal cards (deposits / agenda / status changes)
  * are produced in the worker (`feed-signals.ts`) because they read the DB — adapters
@@ -115,14 +116,16 @@ function safeCodePoint(n: number): string {
   }
 }
 
-const strip = (s: string) =>
+/** Strip CDATA + tags, decode HTML entities, collapse whitespace. Shared with the
+ *  regulatory adapters (regulatory.ts) so encoded titles decode everywhere. */
+export const stripHtml = (s: string) =>
   decodeEntities(s.replace(/<!\[CDATA\[|\]\]>/g, "").replace(/<[^>]+>/g, ""))
     .replace(/\s+/g, " ")
     .trim();
 
 function tagText(block: string, name: string): string | null {
   const m = block.match(new RegExp(`<${name}[^>]*>([\\s\\S]*?)</${name}>`, "i"));
-  return m ? strip(m[1]!) : null;
+  return m ? stripHtml(m[1]!) : null;
 }
 function rawTag(block: string, name: string): string | null {
   const m = block.match(new RegExp(`<${name}[^>]*>([\\s\\S]*?)</${name}>`, "i"));
@@ -185,7 +188,7 @@ export async function readRichRss(url: string): Promise<RichRssItem[]> {
     const summary =
       tagText(b, "description") ??
       tagText(b, "summary") ??
-      (content ? strip(content).slice(0, 400) : null);
+      (content ? stripHtml(content).slice(0, 400) : null);
     return {
       title: tagText(b, "title") ?? "",
       link,
@@ -220,9 +223,22 @@ export const CONGRESS_RE =
 export const CABINET_RE =
   /\bgabinete\b|\b(?:juramenta\w*|juramentaci[óo]n|destituy\w*|destituci[óo]n|design[aó]\w*|designaci[óo]n|nombr[aó]\w*|nombramiento|renunci[aó]\w*|sustituy\w*|relev[aó]\w*|ratific\w*|posesion\w*|toma\s+de\s+posesi[óo]n)\b[^.;]{0,45}\b(ministr[oa]s?|gabinete|c[óo]nsul|embajador(?:a)?|director(?:a)?\s+general|superintendent\w*|procurador\w*|viceministr\w*|senador(?:es|a)?|diputad[oa]s?)\b/i;
 
+/**
+ * Clearly-FOREIGN markers. The Dominican Republic is a presidential republic with NO
+ * "primer ministro" / "canciller" / "parlamento", so those (and world-body names) signal
+ * an international story. Used to veto the WEAK cabinet-change signal — e.g. "renuncia
+ * como primer ministro de Moldavia" must not be treated as a DR cabinet change. It never
+ * vetoes the STRONG Congress signal (a story genuinely about the Congreso Nacional that
+ * merely mentions a foreign leader still qualifies).
+ */
+export const FOREIGN_RE =
+  /\bprimer[ao]?\s+ministr[oa]s?\b|\bcanciller\b|\bcasa\s+blanca\b|\bkremlin\b|\bdowning\s+street\b|\b(?:uni[óo]n|parlamento|comisi[óo]n|banco\s+central)\s+europe[oa]\b|\bconsejo\s+de\s+seguridad\b|\bonu\b|\botan\b/i;
+
 /** Whether a piece of text concerns Congress, legislation, or a cabinet/congressist change. */
 export function isCongressRelevant(text: string): boolean {
-  return CONGRESS_RE.test(text) || CABINET_RE.test(text);
+  // Strong Congress signal always qualifies. The weaker cabinet-change signal is
+  // vetoed when the text is clearly about a foreign government.
+  return CONGRESS_RE.test(text) || (CABINET_RE.test(text) && !FOREIGN_RE.test(text));
 }
 
 /**
@@ -546,37 +562,43 @@ export class XSocialAdapter {
     // 429s honoring the reset header (up to ~2 short waits) before giving up, and
     // give clear messages for auth/tier problems so the gap is actionable.
     for (let attempt = 0; ; attempt++) {
-      const res = await fetch(`https://api.twitter.com${path}`, {
-        headers: { Authorization: `Bearer ${this.token}` },
-      });
-      if (res.ok) return res.json();
-      if (res.status === 429 && attempt < 2) {
-        const reset = Number(res.headers.get("x-rate-limit-reset")) * 1000;
-        const waitMs = Math.min(Math.max(reset - Date.now(), 1000), 60_000) || 5000;
-        await new Promise((r) => setTimeout(r, waitMs));
-        continue;
+      // ~20s abort window per call (http.ts convention), covering headers AND body —
+      // one hung X API request must not stall the whole feed ingest.
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 20_000);
+      try {
+        const res = await fetch(`https://api.twitter.com${path}`, {
+          headers: { Authorization: `Bearer ${this.token}` },
+          signal: ctrl.signal,
+        });
+        if (res.ok) return await res.json();
+        if (res.status === 429 && attempt < 2) {
+          const reset = Number(res.headers.get("x-rate-limit-reset")) * 1000;
+          const waitMs = Math.min(Math.max(reset - Date.now(), 1000), 60_000) || 5000;
+          await new Promise((r) => setTimeout(r, waitMs));
+          continue;
+        }
+        if (res.status === 401)
+          throw new Error("401 token inválido o vencido (revisa X_BEARER_TOKEN)");
+        if (res.status === 402)
+          throw new Error("402 se requieren créditos de X API (cuenta pay-per-use sin saldo)");
+        if (res.status === 403)
+          throw new Error("403 acceso denegado — el plan de la app de X no cubre este endpoint");
+        if (res.status === 429) throw new Error("429 límite de tasa de X agotado (reintentar luego)");
+        throw new Error(`X API ${res.status} ${res.statusText}`);
+      } catch (err) {
+        if ((err as Error).name === "AbortError")
+          throw new Error(`X API: timeout de 20s en ${path}`);
+        throw err;
+      } finally {
+        clearTimeout(timer);
       }
-      if (res.status === 401)
-        throw new Error("401 token inválido o vencido (revisa X_BEARER_TOKEN)");
-      if (res.status === 402)
-        throw new Error("402 se requieren créditos de X API (cuenta pay-per-use sin saldo)");
-      if (res.status === 403)
-        throw new Error("403 acceso denegado — el plan de la app de X no cubre este endpoint");
-      if (res.status === 429) throw new Error("429 límite de tasa de X agotado (reintentar luego)");
-      throw new Error(`X API ${res.status} ${res.statusText}`);
     }
   }
 }
 
-/** Instagram adapter stub — Meta Graph API requires business accounts + app review. */
-export class InstagramSocialAdapter {
-  readonly source = "feed-instagram";
-  readonly kind: FeedKind = "SOCIAL";
-  async collect(_accounts: SocialAccount[]): Promise<{ items: RawFeedItem[]; gaps: string[] }> {
-    return {
-      items: [],
-      gaps: ["feed-instagram · requiere Meta Graph API (cuentas business) — modo directorio."],
-    };
-  }
-}
 /* eslint-enable @typescript-eslint/no-explicit-any */
+
+// NOTE: Instagram deliberately has no posts adapter — the Meta Graph API needs business
+// accounts + app review. Instagram accounts in `feed_accounts` remain a browsable
+// directory (platform "INSTAGRAM"); nothing here instantiates a fetcher for them.

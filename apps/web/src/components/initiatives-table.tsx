@@ -1,5 +1,5 @@
 import { CATEGORY_LABELS, type Category } from "@oculis/core";
-import { dict, type Lang } from "@/lib/i18n";
+import { dict, t as tr, type Lang } from "@/lib/i18n";
 
 export interface Row {
   id: number;
@@ -23,15 +23,15 @@ const RISK_TONE: Record<string, { fg: string; bg: string }> = {
   BAJO: { fg: "var(--risk-bajo)", bg: "var(--risk-bajo-soft)" },
 };
 
-export function RiskPill({ level }: { level: string | null }) {
+export function RiskPill({ level, lang }: { level: string | null; lang: Lang }) {
   const tone = level ? RISK_TONE[level] : undefined;
-  if (!tone) return <span style={{ color: "var(--text-muted)" }}>—</span>;
+  if (!tone || !level) return <span style={{ color: "var(--text-muted)" }}>—</span>;
   return (
     <span
       className="rounded-full px-2.5 py-0.5 text-[11px] font-semibold"
       style={{ color: tone.fg, background: tone.bg }}
     >
-      {level}
+      {tr(lang, `risk${level}`)}
     </span>
   );
 }
@@ -43,17 +43,21 @@ const APPROVAL_TONE: Record<string, { fg: string; bg: string }> = {
 };
 
 /** Probability-of-approval pill (ALTA / MEDIA / BAJA). */
-export function ApprovalPill({ level }: { level: string | null }) {
+export function ApprovalPill({ level, lang }: { level: string | null; lang: Lang }) {
   const tone = level ? APPROVAL_TONE[level] : undefined;
   if (!tone || !level) return <span style={{ color: "var(--text-muted)" }}>—</span>;
   return (
     <span className="rounded-full px-2.5 py-0.5 text-[11px] font-semibold" style={{ color: tone.fg, background: tone.bg }}>
-      {level}
+      {tr(lang, `approval${level}`)}
     </span>
   );
 }
 
-/** Shared, hairline-row initiative table. Rows link to the detail page. */
+/**
+ * Shared, hairline-row initiative table. Rows open the initiative modal (via the
+ * `data-initiative-id` delegation in InitiativeModalHost); the modal links on to
+ * the full detail page at /initiatives/[id].
+ */
 export function InitiativesTable({ rows, lang }: { rows: Row[]; lang: Lang }) {
   const t = dict[lang];
   return (
@@ -75,7 +79,12 @@ export function InitiativesTable({ rows, lang }: { rows: Row[]; lang: Lang }) {
             <tr
               key={r.id}
               data-initiative-id={r.id}
-              className="cursor-pointer border-b transition-colors hover:bg-[var(--surface-2)]"
+              // Modal trigger: focusable + button role so keyboard users can open it
+              // (Enter/Space handled by the delegated keydown in InitiativeModalHost).
+              tabIndex={0}
+              role="button"
+              aria-label={r.title}
+              className="cursor-pointer border-b transition-colors hover:bg-[var(--surface-2)] focus-visible:bg-[var(--surface-2)]"
             >
               <td className="tnum whitespace-nowrap px-5 py-2.5 font-mono text-xs" style={{ color: "var(--text-muted)" }}>
                 {r.code ?? "—"}
@@ -83,19 +92,6 @@ export function InitiativesTable({ rows, lang }: { rows: Row[]; lang: Lang }) {
               <td className="max-w-[460px] px-3 py-2.5">
                 <div className="flex items-center gap-2">
                   <span className="min-w-0 truncate">{r.title}</span>
-                  {r.needsReview && (
-                    <span
-                      className="shrink-0 rounded px-1.5 py-0.5 text-[9.5px] font-semibold uppercase tracking-wide"
-                      style={{ color: "var(--warn)", background: "var(--warn-soft)" }}
-                      title={
-                        lang === "es"
-                          ? "Clasificación automática (IA), pendiente de validación"
-                          : "Auto-classified (AI), pending validation"
-                      }
-                    >
-                      {lang === "es" ? "IA · pendiente" : "AI · pending"}
-                    </span>
-                  )}
                 </div>
               </td>
               <td className="px-3 py-2.5" style={{ color: "var(--text-muted)" }}>
@@ -105,10 +101,10 @@ export function InitiativesTable({ rows, lang }: { rows: Row[]; lang: Lang }) {
                 {r.status ?? "—"}
               </td>
               <td className="px-3 py-2.5">
-                <RiskPill level={r.riskLevel} />
+                <RiskPill level={r.riskLevel} lang={lang} />
               </td>
               <td className="px-3 py-2.5">
-                <ApprovalPill level={r.approvalProbability} />
+                <ApprovalPill level={r.approvalProbability} lang={lang} />
               </td>
               <td className="px-5 py-2.5" style={{ color: "var(--text-muted)" }}>
                 {r.province ?? "—"}

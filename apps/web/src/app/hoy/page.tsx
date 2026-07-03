@@ -4,6 +4,7 @@ import {
   getDeposits,
   getDepositsRange,
   getRangeActivity,
+  shiftISO,
   todayISO,
 } from "@/lib/data";
 import { langParam, langQuery, type Lang } from "@/lib/i18n";
@@ -15,13 +16,6 @@ import { RangePicker } from "@/components/range-picker";
 export const dynamic = "force-dynamic";
 
 const ISO_RE = /^\d{4}-\d{2}-\d{2}$/;
-
-function shift(iso: string, days: number): string {
-  const [y, m, d] = iso.split("-").map(Number);
-  const dt = new Date(Date.UTC(y!, m! - 1, d!));
-  dt.setUTCDate(dt.getUTCDate() + days);
-  return dt.toISOString().slice(0, 10);
-}
 
 export default async function HoyPage({
   searchParams,
@@ -94,7 +88,7 @@ export default async function HoyPage({
   const prevLink = (label: string) =>
     isRange ? null : (
       <Link
-        href={dlink(shift(date, -1))}
+        href={dlink(shiftISO(date, -1))}
         className="font-medium underline"
         style={{ color: "var(--accent)" }}
       >
@@ -152,7 +146,7 @@ export default async function HoyPage({
           <>
             <span className="eyebrow mr-1">{es ? "Mostrando" : "Showing"}</span>
             <Link
-              href={dlink(shift(date, -1))}
+              href={dlink(shiftISO(date, -1))}
               className="card px-2.5 py-1 text-sm"
               aria-label={es ? "Día anterior" : "Previous day"}
             >
@@ -170,7 +164,7 @@ export default async function HoyPage({
               {isToday ? (es ? "HOY" : "TODAY") : es ? "FECHA" : "DATE"} · {date}
             </span>
             <Link
-              href={dlink(shift(date, 1))}
+              href={dlink(shiftISO(date, 1))}
               className="card px-2.5 py-1 text-sm"
               aria-label={es ? "Día siguiente" : "Next day"}
             >
@@ -203,7 +197,6 @@ export default async function HoyPage({
         prevDayLink={prevLink(es ? "ver día anterior" : "see previous day")}
         deposits={deposits}
         senDeposits={senDeposits}
-        senDepositsWindow={false}
         dipCommittee={dipCommittee}
         senCommittee={senCommittee}
         dipPlenary={dipPlenary}

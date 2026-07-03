@@ -11,6 +11,8 @@
  * cheap enough to run every morning.
  */
 import {
+  getInitiativeById,
+  initiativeByCode,
   recordIngestionRun,
   upsertDocument,
   upsertInitiative,
@@ -24,6 +26,7 @@ import {
   type SilDocumento,
   type SilIniciativa,
 } from "@oculis/scrapers";
+import { isoDay, toDocumentRow } from "./ingest-documents.js";
 
 export const DEPOSITS_SOURCE = "sil-deposits";
 export const SENADO_DEPOSITS_SOURCE = "senado-sil-deposits";
@@ -38,11 +41,6 @@ export interface DepositsSummary {
   withDocUploaded: number;
   error?: string;
 }
-
-const isoDay = (v: string | null | undefined): string | null => {
-  const m = /^(\d{4}-\d{2}-\d{2})/.exec(v ?? "");
-  return m ? m[1]! : null;
-};
 
 function shiftISO(iso: string, days: number): string {
   const [y, m, d] = iso.split("-").map(Number);
@@ -109,9 +107,11 @@ export async function ingestDeposits(
       const id = String(d.id);
       let props: Awaited<ReturnType<typeof adapter.proponentes>> = [];
       let docs: SilDocumento[] = [];
+      let enriched = true;
       try {
         [props, docs] = await Promise.all([adapter.proponentes(id), adapter.documentos(id)]);
       } catch (err) {
+        enriched = false;
         log(`    ⚠ enrich ${d.numero ?? id} falló: ${(err as Error).message}`);
       }
       const principal = props.find((p) => p.principal) ?? props[0];
@@ -127,11 +127,14 @@ export async function ingestDeposits(
         status: d.estado ?? d.condicion ?? null,
         chamber: "DIPUTADOS",
         sourceCategory: d.grupo ?? d.materia ?? null,
-        sponsor: proponenteName(principal),
-        sponsorRole: rep?.funcion ?? null,
-        sponsorCount: props.length || null,
-        party: rep?.partido?.siglas ?? rep?.partido?.nombre ?? null,
-        province: rep?.provincia ?? null,
+        // On a transient proponentes/documentos failure, OMIT the sponsor fields
+        // (undefined leaves the columns untouched on update) — an explicit null here
+        // used to wipe previously enriched sponsor/party/province data.
+        sponsor: enriched ? proponenteName(principal) : undefined,
+        sponsorRole: enriched ? (rep?.funcion ?? null) : undefined,
+        sponsorCount: enriched ? props.length || null : undefined,
+        party: enriched ? (rep?.partido?.siglas ?? rep?.partido?.nombre ?? null) : undefined,
+        province: enriched ? (rep?.provincia ?? null) : undefined,
         filedAt: isoDay(d.fechaDeposito),
         sourceUrl: `https://www.diputadosrd.gob.do/sil/iniciativa/${id}`,
         raw: d as object,
@@ -141,18 +144,9 @@ export async function ingestDeposits(
 
       let anyUploaded = false;
       for (const doc of docs) {
-        const uploadedAt = isoDay(doc.cargado);
-        if (uploadedAt) anyUploaded = true;
-        const isNew = await upsertDocument(db, {
-          source: "sil-diputados",
-          initiativeId: res.id,
-          initiativeCode: doc.documento ?? d.numero ?? null,
-          docType: doc.descripcion ?? null,
-          extension: doc.extension ?? null,
-          url: adapter.documentUrl(doc.id),
-          uploadedAt,
-          sourceDocId: String(doc.id),
-        });
+        const row = toDocumentRow(adapter, doc, { id: res.id, code: d.numero ?? null });
+        if (row.uploadedAt) anyUploaded = true;
+        const isNew = await upsertDocument(db, row);
         if (isNew) documents++;
       }
       if (anyUploaded) withDocUploaded++;
@@ -188,7 +182,14 @@ export async function ingestSenateDeposits(
 ): Promise<DepositsSummary> {
   const log = opts.log ?? (() => {});
   const today = opts.today ?? new Date().toISOString().slice(0, 10);
-  const since = shiftISO(today, -(opts.sinceDays ?? 21));
+  // The Senate SIL list is NOT paginated — it returns only the ~50 newest expedientes of
+  // colección 53 in one request, which we filter client-side. A short window would drop
+  // any of those 50 older than N days for no benefit, so default to the full cuatrienio
+  // (~1000 days): capture every exposed row each run. Since we upsert-and-never-delete,
+  // Senate coverage then ACCUMULATES forward over time (unlike Diputados, the Senate has
+  // no corpus crawl — this deposits pass is its only source, so it can't backfill history
+  // before we started capturing).
+  const since = shiftISO(today, -(opts.sinceDays ?? 1000));
   const adapter = new SenadoSilAdapter();
 
   log(`\n▶ ${SENADO_DEPOSITS_SOURCE} — Senate deposits since ${since}`);
@@ -200,7 +201,7 @@ export async function ingestSenateDeposits(
     for (const r of rows) {
       const record: NewInitiative = {
         source: "senado-sil",
-        sourceId: r.idExpediente ?? r.code,
+        sourceId: await senadoSourceId(db, r.code),
         kind: "LEGISLATIVE",
         code: r.code,
         title: r.title ?? `${r.type ?? "Iniciativa"} ${r.code}`,
@@ -231,4 +232,24 @@ export async function ingestSenateDeposits(
     log(`  ✖ FAILED: ${error}`);
     return { source: SENADO_DEPOSITS_SOURCE, ok: false, windowFrom: since, deposits: 0, inserted: 0, documents: 0, withDocUploaded: 0, error };
   }
+}
+
+/**
+ * Stable identity for a Senate expediente. The Ficha id (idExpediente) is often
+ * missing on a brand-new filing and only appears on a later scrape, so the old
+ * `idExpediente ?? code` key re-inserted the same expediente under a second identity
+ * once the id showed up. The code (e.g. "01677-2026-PLO-SE") is always present and
+ * never changes, so: reuse whatever sourceId an existing senado-sil row with this
+ * code already carries (legacy rows are keyed by their Ficha id), and key brand-new
+ * rows by the code itself — upsertInitiative matches on (source, source_id), so every
+ * scrape keeps hitting the same row. (Senate codes end in "-SE", so the code lookup
+ * cannot collide with Diputados "-CD" codes; the source check guards the rest.)
+ */
+async function senadoSourceId(db: Database, code: string): Promise<string> {
+  const match = await initiativeByCode(db, code);
+  if (match) {
+    const existing = await getInitiativeById(db, match.id);
+    if (existing?.source === "senado-sil") return existing.sourceId;
+  }
+  return code;
 }
