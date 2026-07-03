@@ -116,19 +116,34 @@ export class ClaudeCategorizer implements Categorizer {
 
     const text = res.content.find((b) => b.type === "text");
     if (!text || text.type !== "text") return { category: null, confidence: 0, by: "claude" };
-    const parsed = JSON.parse(text.text) as { category: string; confidence: number };
+    let parsed: { category: string; confidence: number };
+    try {
+      parsed = JSON.parse(text.text) as typeof parsed;
+    } catch {
+      // Malformed/truncated model JSON — per-item null result (stays needsReview).
+      // Deliberately NOT thrown: one bad response must not degrade the whole run.
+      return { category: null, confidence: 0, by: "claude" };
+    }
     const category = (CATEGORIES as readonly string[]).includes(parsed.category)
       ? (parsed.category as Category)
       : null;
-    return { category, confidence: parsed.confidence ?? 0, by: "claude" };
+    return { category, confidence: clamp01(parsed.confidence ?? 0), by: "claude" };
   }
+}
+
+/** Clamp a model-returned confidence to [0,1] (8 or -0.3 must not persist). */
+function clamp01(n: number) {
+  return Math.max(0, Math.min(1, n));
 }
 
 /**
  * Wraps a primary categorizer (Claude) with the offline heuristic as a fallback.
- * On the FIRST primary failure (e.g. "credit balance too low", auth, or rate
- * limit) it logs once and switches to the heuristic for the rest of the run, so
- * a billing/API outage degrades gracefully instead of failing the whole scrape.
+ * On the FIRST primary failure it logs once and switches to the heuristic for the
+ * rest of the run, so a billing/API outage degrades gracefully instead of failing
+ * the whole scrape. Degrading the entire run is intentional: malformed model JSON
+ * is handled per-item inside ClaudeCategorizer and never throws, so any error that
+ * reaches this catch is a real API failure (no credit, bad key, rate limit,
+ * network) that would recur on every subsequent call.
  */
 export class FallbackCategorizer implements Categorizer {
   readonly kind = "claude" as const;

@@ -22,8 +22,14 @@ export async function buildLegislativeSignals(
   const fromDate = new Date(Date.now() - sinceDays * 86_400_000).toISOString().slice(0, 10);
   const items: RawFeedItem[] = [];
 
-  // 1. Recent deposits → "Nueva iniciativa"
-  const deposits = await listRecentInitiatives(db, { limit: 60 });
+  // 1. Recent deposits → "Nueva iniciativa" — same sinceDays window the other two
+  // signal types respect. listRecentInitiatives only sorts by filed_at, so filter
+  // here: keep deposits filed within the window (filedAt is a yyyy-mm-dd string;
+  // rows without one can't be dated and are skipped — otherwise a historical
+  // backfill floods the feed with up to 60 ancient "new initiative" cards).
+  const deposits = (await listRecentInitiatives(db, { limit: 60 })).filter(
+    (d) => d.filedAt !== null && d.filedAt >= fromDate,
+  );
   for (const d of deposits) {
     items.push({
       source: "feed-legislative",

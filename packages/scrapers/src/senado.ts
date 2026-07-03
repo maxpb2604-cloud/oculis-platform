@@ -5,8 +5,9 @@
  * agendas, síntesis, and approved-initiative lists through the **WPFD** (WordPress
  * File Download) plugin, reachable over plain HTTP via
  * `admin-ajax.php?action=wpfd&task=files.getFiles&id={categoryId}` — no Playwright or
- * reCAPTCHA needed for these document categories (the reCAPTCHA only guards the separate
- * "Sistema de Gestión de Expedientes Digitales" search, which we flag as a gap).
+ * reCAPTCHA needed for these document categories (the reCAPTCHA only guards the web search
+ * UI of the "Sistema de Gestión de Expedientes Digitales"; the expedientes themselves are
+ * scraped daily via the legacy SIL — see `SenadoSilAdapter`).
  */
 import { extractCodes } from "./codes.js";
 import { buildISODate, spanishMonthToNum } from "./dates.js";
@@ -155,8 +156,8 @@ export class SenadoAdapter {
   }
 
   /**
-   * Collect Senate agenda/orden-del-día activity. Plain HTTP per WPFD category;
-   * the Expedientes Digitales search portal is reCAPTCHA-gated → recorded as a gap.
+   * Collect Senate agenda/orden-del-día activity. Plain HTTP per WPFD category
+   * (per-expediente detail comes from `SenadoSilAdapter`, not this adapter).
    * With parsePdfs, each PDF is read for initiative codes + reading statuses; genuine
    * parse failures (vs. empty agendas) are counted and surfaced as gaps.
    */
@@ -196,9 +197,18 @@ export class SenadoAdapter {
           // A null date would make the meeting invisible on the date-filtered "Hoy" view.
           const weekFallback = parseSenadoDate(f.post_title) ?? f.created_time?.slice(0, 10) ?? null;
           let undatedInWeek = 0;
+          // Two distinct same-day meetings of ONE committee would share a (date, committee)
+          // key and overwrite each other — append an ordinal for the 2nd+ same-key entry in
+          // this agenda, mirroring the Diputados sibling (sil-actividad committeeOrders).
+          // Scoped per weekly file so a re-uploaded agenda still collapses onto the same rows.
+          const seenKeys = new Map<string, number>();
           for (const c of parseSenateCommitteeAgenda(text, year)) {
             if (!c.date) undatedInWeek++;
             const date = c.date ?? weekFallback;
+            // include the committee body so two committees on the fallback date don't collide
+            const baseKey = `senado-com|${date ?? "?"}|${c.committee}`;
+            const nth = (seenKeys.get(baseKey) ?? 0) + 1;
+            seenKeys.set(baseKey, nth);
             events.push({
               source: this.source,
               scope: "COMMITTEE",
@@ -209,9 +219,12 @@ export class SenadoAdapter {
               body: c.committee,
               description: c.asunto || "Reunión de comisión",
               statuses: [],
-              initiativeCodes: c.expedientes,
-              // include the committee body so two committees on the fallback date don't collide
-              dedupeKey: `senado-com|${date ?? "?"}|${c.committee}`,
+              // Only FULL initiative codes are emitted here (the asunto occasionally names
+              // one). The agenda's bare "Expediente No. NNNN" numbers can never resolve
+              // against initiatives.code, so they are NOT emitted as codes — they stay in
+              // raw.expedientes for later reconciliation once a full-code mapping exists.
+              initiativeCodes: extractCodes(c.asunto),
+              dedupeKey: nth === 1 ? baseKey : `${baseKey}#${nth}`,
               raw: { ...c, fileId: f.ID, week: f.post_title, dateInferred: !c.date },
             });
           }
@@ -273,11 +286,9 @@ export class SenadoAdapter {
     if (parsePdfs && parseFailures) {
       gaps.push(`Senado · ${parseFailures} de ${parsed} PDF(s) de Pleno no se pudieron leer (posible bloqueo/WAF).`);
     }
-    // Per-expediente detail lives behind the reCAPTCHA-gated "Sistema de Gestión de
-    // Expedientes Digitales" — not scraped in Phase 1; surface it honestly.
-    gaps.push(
-      "Senado · Iniciativas (Sistema de Gestión de Expedientes Digitales): portal con reCAPTCHA, pendiente de verificación manual.",
-    );
+    // Per-expediente detail (Sistema de Gestión de Expedientes Digitales) is covered by
+    // SenadoSilAdapter's daily deposits sync — its failures surface through its own
+    // ingestion run, so no standing gap is recorded here.
 
     return { events, gaps };
   }

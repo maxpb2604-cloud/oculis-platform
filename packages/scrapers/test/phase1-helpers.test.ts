@@ -20,6 +20,29 @@ describe("codes: extractCodes (hardened)", () => {
     expect(extractCodes(null)).toEqual([]);
     expect(extractCodes("")).toEqual([]);
   });
+  it("matches the Senate SIL expediente format (NNNNN-YYYY-PLO-SE)", () => {
+    expect(extractCodes("depositado el expediente 01693-2026-PLO-SE en el Senado")).toEqual([
+      "01693-2026-PLO-SE",
+    ]);
+  });
+  it("upper-cases PDF-mangled Senate codes and dedupes across chambers", () => {
+    expect(extractCodes("ver 01677-2026-plo-se y 01677-2026-PLO-SE y 05646-2024-2028-CD")).toEqual([
+      "01677-2026-PLO-SE",
+      "05646-2024-2028-CD",
+    ]);
+  });
+  it("does not match Senate session-document codes or bare expediente numbers", () => {
+    // session/agenda document code (different structure) — not an initiative code
+    expect(extractCodes("AGENDA ORDINARIA 00117-PLO-17-06-2026-SE")).toEqual([]);
+    // bare committee-agenda expediente reference — unresolvable, must not match
+    expect(extractCodes("Expediente No. 1677")).toEqual([]);
+  });
+  it("does not carve Senate codes out of longer digit runs", () => {
+    expect(extractCodes("101693-2026-PLO-SE")).toEqual([]);
+  });
+  it("requires the -SE tail for the Senate variant (no bare letter-group codes)", () => {
+    expect(extractCodes("01693-2026-PLO-CD y 01693-2026-PLO")).toEqual([]);
+  });
 });
 
 describe("dates: buildISODate validation", () => {

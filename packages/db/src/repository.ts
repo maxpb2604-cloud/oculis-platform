@@ -2,7 +2,7 @@
  * Persistence operations for ingestion: idempotent upsert of initiatives and
  * append-only status-event recording with change detection.
  */
-import { and, eq, ilike, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
+import { and, eq, ilike, inArray, isNotNull, isNull, ne, notInArray, or, sql } from "drizzle-orm";
 import type { Database } from "./client.js";
 import {
   activityEvents,
@@ -72,13 +72,18 @@ export async function upsertInitiative(
       status: data.status,
       type: data.type,
       sourceCategory: data.sourceCategory,
-      sponsor: data.sponsor,
-      // undefined (bulk crawl) leaves the column untouched; the deposits sync sets them.
-      sponsorRole: data.sponsorRole,
-      sponsorCount: data.sponsorCount,
-      party: data.party,
-      province: data.province,
-      committee: data.committee,
+      // Enrichment fields use COALESCE(new, current): a default (unenriched) crawl
+      // passes nulls, which must NEVER wipe previously enriched values — a plain
+      // assignment here once destroyed sponsor/party/province corpus-wide. Genuine
+      // value changes (non-null → non-null) still refresh; these fields never
+      // legitimately go non-null → null on re-crawl.
+      purpose: sql`coalesce(${data.purpose ?? null}, ${initiatives.purpose})`,
+      sponsor: sql`coalesce(${data.sponsor ?? null}, ${initiatives.sponsor})`,
+      sponsorRole: sql`coalesce(${data.sponsorRole ?? null}, ${initiatives.sponsorRole})`,
+      sponsorCount: sql`coalesce(${data.sponsorCount ?? null}, ${initiatives.sponsorCount})`,
+      party: sql`coalesce(${data.party ?? null}, ${initiatives.party})`,
+      province: sql`coalesce(${data.province ?? null}, ${initiatives.province})`,
+      committee: sql`coalesce(${data.committee ?? null}, ${initiatives.committee})`,
       filedAt: data.filedAt,
       expiresAt: data.expiresAt,
       sourceUrl: data.sourceUrl,
@@ -118,21 +123,29 @@ export async function recordStatusEvents(
 // Scoring support
 // ---------------------------------------------------------------------------
 
-/** Count a sponsor's prior approved/enacted initiatives (for track-record scoring). */
+/**
+ * Count a sponsor's prior approved/enacted initiatives (for track-record scoring).
+ *
+ * Pass `excludeId` = the initiative currently being scored so an already-approved
+ * bill can't count ITSELF as its sponsor's track record. Optional so the existing
+ * caller (apps/worker scoreInitiative) keeps compiling and can adopt it later.
+ * The sponsor match is exact (=), served by initiatives_sponsor_idx.
+ */
 export async function countApprovedBySponsor(
   db: Database,
   sponsor: string | null,
+  opts: { excludeId?: number } = {},
 ): Promise<number> {
   if (!sponsor) return 0;
+  const conds = [
+    eq(initiatives.sponsor, sponsor),
+    sql`(${initiatives.status} ilike '%aprob%' or ${initiatives.status} ilike '%promulg%')`,
+  ];
+  if (opts.excludeId != null) conds.push(ne(initiatives.id, opts.excludeId));
   const [row] = await db
     .select({ n: sql<number>`count(*)::int` })
     .from(initiatives)
-    .where(
-      and(
-        eq(initiatives.sponsor, sponsor),
-        sql`(${initiatives.status} ilike '%aprob%' or ${initiatives.status} ilike '%promulg%')`,
-      ),
-    );
+    .where(and(...conds));
   return row?.n ?? 0;
 }
 
@@ -289,7 +302,6 @@ export const countByRisk = (db: Database) => countBy(db, sql`risk_level`);
 export const countByStatus = (db: Database) => countBy(db, sql`status`);
 export const countByApprovalProbability = (db: Database) =>
   countBy(db, sql`approval_probability`);
-export const countByChamber = (db: Database) => countBy(db, sql`chamber`);
 export const countByProvince = (db: Database) => countBy(db, sql`province`);
 
 export interface LegislatorRow {
@@ -538,6 +550,21 @@ export async function upsertActivityEvent(
       .where(eq(activityEvents.id, id));
   }
 
+  // Reconcile links on the edited-agenda path: codes REMOVED from the agenda must
+  // drop their link rows too (the refresh contract above), not linger forever.
+  if (!inserted) {
+    await db
+      .delete(activityInitiatives)
+      .where(
+        a.initiativeCodes.length
+          ? and(
+              eq(activityInitiatives.activityId, id),
+              notInArray(activityInitiatives.initiativeCode, a.initiativeCodes),
+            )
+          : eq(activityInitiatives.activityId, id),
+      );
+  }
+
   if (a.initiativeCodes.length) {
     // resolve codes to initiative ids where the bill is already ingested
     const matched = await db
@@ -764,7 +791,16 @@ export async function regulationsByInstitution(db: Database): Promise<Bucket[]> 
 // Commissions, documents, health — Phase 1 segmented sources
 // ---------------------------------------------------------------------------
 
-/** Upsert a committee (by source+chamber+name); refreshes president. */
+/**
+ * Upsert a committee (by source+chamber+name); refreshes president.
+ *
+ * DATA BUG (2026-07-02 audit): this is the ONLY writer of `commissions`, and NOTHING
+ * calls it — the live table is EMPTY (0 rows) while `listCommissions` feeds both the
+ * web UI and the feed ingester's COMMISSION entity tagger, which therefore always see
+ * an empty list. Deliberately kept (not deleted as dead code) so the missing
+ * commissions scraper can wire it up; committee membership meanwhile lives in
+ * `commission_members` via upsertCommissionMember.
+ */
 export async function upsertCommission(db: Database, c: NewCommission): Promise<void> {
   await db
     .insert(commissions)
@@ -775,21 +811,29 @@ export async function upsertCommission(db: Database, c: NewCommission): Promise<
     });
 }
 
+/**
+ * Committee directory. Derived from `commission_members` (the roster ingestion
+ * populates it — 1300+ rows) because the dedicated `commissions` table has no
+ * writer yet (see upsertCommission above): deriving keeps the feed's COMMISSION
+ * entity tagger and any directory consumer working with real data. President is
+ * inferred from the member whose cargo is "Presidente/a".
+ */
 export async function listCommissions(
   db: Database,
   opts: { chamber?: string } = {},
 ): Promise<Array<{ chamber: string; name: string; president: string | null; sourceUrl: string | null }>> {
-  const where = opts.chamber ? eq(commissions.chamber, opts.chamber) : undefined;
+  const where = opts.chamber ? eq(commissionMembers.chamber, opts.chamber) : undefined;
   return db
     .select({
-      chamber: commissions.chamber,
-      name: commissions.name,
-      president: commissions.president,
-      sourceUrl: commissions.sourceUrl,
+      chamber: commissionMembers.chamber,
+      name: commissionMembers.commissionName,
+      president: sql<string | null>`max(${commissionMembers.legislatorName}) filter (where ${commissionMembers.cargo} ilike 'president%')`,
+      sourceUrl: sql<string | null>`max(${commissionMembers.sourceUrl})`,
     })
-    .from(commissions)
+    .from(commissionMembers)
     .where(where)
-    .orderBy(commissions.chamber, commissions.name);
+    .groupBy(commissionMembers.chamber, commissionMembers.commissionName)
+    .orderBy(commissionMembers.chamber, commissionMembers.commissionName);
 }
 
 /** Upsert a document (by source+source_doc_id); resolves initiativeId by code. */
@@ -841,23 +885,6 @@ export async function listDocumentsToFetch(
     .where(sql`${documents.url} is not null`)
     .orderBy(sql`${documents.id} desc`);
   return opts.limit ? q.limit(opts.limit) : q;
-}
-
-/** Documents for one initiative (by id), newest upload first. */
-export async function listDocuments(
-  db: Database,
-  initiativeId: number,
-): Promise<Array<{ docType: string | null; extension: string | null; url: string | null; uploadedAt: string | null }>> {
-  return db
-    .select({
-      docType: documents.docType,
-      extension: documents.extension,
-      url: documents.url,
-      uploadedAt: documents.uploadedAt,
-    })
-    .from(documents)
-    .where(eq(documents.initiativeId, initiativeId))
-    .orderBy(sql`${documents.uploadedAt} desc nulls last`);
 }
 
 export interface DepositItem {
@@ -1253,6 +1280,24 @@ export async function upsertFeedItem(
       .where(eq(feedItems.id, id));
   }
 
+  // Reconcile tags on re-ingest: entities NO LONGER produced for this item are removed
+  // (a re-tagged card must not keep stale chips), then the current set is upserted in
+  // ONE multi-row insert instead of a query per tag.
+  if (!inserted) {
+    await db
+      .delete(feedItemEntities)
+      .where(
+        tags.length
+          ? and(
+              eq(feedItemEntities.feedItemId, id),
+              sql`(${feedItemEntities.entityType}, ${feedItemEntities.label}) not in (${sql.join(
+                tags.map((t) => sql`(${t.entityType}, ${t.label})`),
+                sql`, `,
+              )})`,
+            )
+          : eq(feedItemEntities.feedItemId, id),
+      );
+  }
   if (tags.length) {
     const codes = tags
       .filter((t) => t.entityType === "INITIATIVE" && t.initiativeCode)
@@ -1265,24 +1310,30 @@ export async function upsertFeedItem(
         .where(inArray(initiatives.code, codes));
       for (const r of rows) if (r.code) codeToId.set(r.code, r.id);
     }
-    for (const t of tags) {
-      const initiativeId = t.initiativeCode ? codeToId.get(t.initiativeCode) ?? null : null;
-      await db
-        .insert(feedItemEntities)
-        .values({
+    // Dedupe by the conflict key so the single multi-row INSERT can't touch a row twice.
+    const byKey = new Map<string, FeedEntityTag>();
+    for (const t of tags) byKey.set(`${t.entityType} ${t.label}`, t);
+    await db
+      .insert(feedItemEntities)
+      .values(
+        [...byKey.values()].map((t) => ({
           feedItemId: id,
           entityType: t.entityType,
           initiativeCode: t.initiativeCode ?? null,
-          initiativeId,
+          initiativeId: t.initiativeCode ? codeToId.get(t.initiativeCode) ?? null : null,
           legislatorSourceId: t.legislatorSourceId ?? null,
           commissionName: t.commissionName ?? null,
           label: t.label,
-        })
-        .onConflictDoUpdate({
-          target: [feedItemEntities.feedItemId, feedItemEntities.entityType, feedItemEntities.label],
-          set: { initiativeId },
-        });
-    }
+        })),
+      )
+      // keep an already-resolved link; backfill when the bill got ingested later
+      // (mirrors the activityInitiatives idiom above).
+      .onConflictDoUpdate({
+        target: [feedItemEntities.feedItemId, feedItemEntities.entityType, feedItemEntities.label],
+        set: {
+          initiativeId: sql`coalesce(${feedItemEntities.initiativeId}, excluded.initiative_id)`,
+        },
+      });
   }
   return { id, inserted };
 }
@@ -1736,12 +1787,4 @@ export async function commissionsWithMembers(
     c.members.sort((a, b) => rank(a.cargo) - rank(b.cargo) || a.name.localeCompare(b.name));
   }
   return out;
-}
-
-/** Full roster grouped by province → { diputados, senadores }, keyed by raw province name. */
-export async function rosterByProvince(
-  db: Database,
-): Promise<Array<{ province: string | null; member: RosterMember }>> {
-  const rows = await listLegislators(db);
-  return rows.map((member) => ({ province: member.province, member }));
 }

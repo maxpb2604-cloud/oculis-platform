@@ -6,6 +6,7 @@ import { score } from "@oculis/core";
 import {
   countApprovedBySponsor,
   countInitiatives,
+  recordIngestionRun,
   recordStatusEvents,
   saveScore,
   upsertInitiative,
@@ -37,8 +38,13 @@ export interface IngestSummary {
   updated: number;
   statusChanges: number;
   categorized: number;
+  /** Records whose upsert/status persistence failed (logged, crawl continued). */
+  failed: number;
   total: number;
 }
+
+/** Health-row key for the full corpus crawl (distinct from the daily "sil-deposits"). */
+export const CORPUS_SOURCE = "sil-corpus";
 
 export async function ingestSilDiputados(
   db: Database,
@@ -64,48 +70,94 @@ export async function ingestSilDiputados(
   let updated = 0;
   let statusChanges = 0;
   let categorized = 0;
+  let failed = 0;
 
   async function processOne(base: RawInitiative): Promise<void> {
-    const raw = enrich ? await safeEnrich(adapter, base) : base;
-    const cat = await safeCategorize(categorizer, raw);
-    if (cat?.category) categorized++;
+    // Per-record isolation: one bad record (upsert/status failure) must never reject
+    // into the concurrency pool and abort the whole corpus crawl.
+    try {
+      const raw = enrich ? await safeEnrich(adapter, base) : base;
+      const cat = await safeCategorize(categorizer, raw);
+      if (cat?.category) categorized++;
 
-    const res = await upsertInitiative(db, toRow(raw, cat));
-    await scoreInitiative(db, estimator, {
-      id: res.id,
-      title: raw.title,
-      purpose: raw.purpose,
-      sponsor: raw.sponsor,
-      party: raw.party,
-      category: cat?.category ?? raw.sourceCategory,
-    });
+      const res = await upsertInitiative(db, toRow(raw, cat));
+      await scoreInitiative(db, estimator, {
+        id: res.id,
+        title: raw.title,
+        purpose: raw.purpose,
+        sponsor: raw.sponsor,
+        party: raw.party,
+        category: cat?.category ?? raw.sourceCategory,
+      });
 
-    if (raw.history.length) {
-      statusChanges += await recordStatusEvents(
-        db,
-        res.id,
-        raw.history.map((h) => ({ status: h.status, date: h.date, note: h.note })),
+      // Status-event dates arrive as "2024-08-27T00:00:00"; the column is yyyy-mm-dd.
+      let newEvents = 0;
+      if (raw.history.length) {
+        newEvents = await recordStatusEvents(
+          db,
+          res.id,
+          raw.history.map((h) => ({ status: h.status, date: isoDay(h.date), note: h.note })),
+        );
+      }
+      if (res.inserted) inserted++;
+      else {
+        updated++;
+        // Count each real change once: the history diff already contains the
+        // transition rows; `statusChanged` is only the fallback signal when the
+        // history wasn't fetched (enrich off) or came back empty.
+        statusChanges += newEvents > 0 ? newEvents : res.statusChanged ? 1 : 0;
+      }
+    } catch (err) {
+      failed++;
+      log(
+        `  ⚠ registro ${base.code ?? base.sourceId} («${base.title.slice(0, 80)}») falló: ` +
+          `${(err as Error).message}`,
       );
     }
-    if (res.inserted) inserted++;
-    else {
-      updated++;
-      if (res.statusChanged) statusChanges++;
-    }
   }
 
-  // bounded-concurrency pool over the streamed records
+  // bounded-concurrency pool over the streamed records (processOne never rejects,
+  // so the pool can only die if the record stream itself does)
   const inFlight = new Set<Promise<void>>();
-  for await (const base of adapter.list({ maxPagesPerSlice })) {
-    if (seen >= limit) break;
-    seen++;
-    const p = processOne(base).finally(() => inFlight.delete(p));
-    inFlight.add(p);
-    if (seen % 25 === 0) log(`  …${seen} dispatched`);
-    if (inFlight.size >= concurrency) await Promise.race(inFlight);
-    if (delayMs) await sleep(delayMs);
+  try {
+    for await (const base of adapter.list({ maxPagesPerSlice })) {
+      if (seen >= limit) break;
+      seen++;
+      const p = processOne(base).finally(() => inFlight.delete(p));
+      inFlight.add(p);
+      if (seen % 25 === 0) log(`  …${seen} dispatched`);
+      if (inFlight.size >= concurrency) await Promise.race(inFlight);
+      if (delayMs) await sleep(delayMs);
+    }
+    await Promise.all(inFlight);
+  } catch (err) {
+    // The stream died (page fetch, etc.) — drain the in-flight records, then leave a
+    // health row before failing so the outage is visible on "Estado de monitoreo".
+    await Promise.all(inFlight);
+    await recordIngestionRun(db, {
+      source: CORPUS_SOURCE,
+      seen,
+      inserted,
+      updated,
+      statusChanges,
+      ok: false,
+      error: (err as Error).message,
+    });
+    throw err;
   }
-  await Promise.all(inFlight);
+
+  // Health row so the corpus crawl shows up on "Estado de monitoreo".
+  await recordIngestionRun(db, {
+    source: CORPUS_SOURCE,
+    seen,
+    inserted,
+    updated,
+    statusChanges,
+    ok: true,
+    details: failed
+      ? { failed, gaps: [`${failed} registro(s) fallaron durante el crawl (ver log del worker).`] }
+      : null,
+  });
 
   return {
     seen,
@@ -113,6 +165,7 @@ export async function ingestSilDiputados(
     updated,
     statusChanges,
     categorized,
+    failed,
     total: await countInitiatives(db),
   };
 }
@@ -139,7 +192,8 @@ export async function scoreInitiative(
 ): Promise<string | null> {
   try {
     const partyStrength = derivePartyStrength(row.party);
-    const approved = await countApprovedBySponsor(db, row.sponsor);
+    // excludeId: an already-approved bill must not count ITSELF in its sponsor's record.
+    const approved = await countApprovedBySponsor(db, row.sponsor, { excludeId: row.id });
     const sponsorRecord = deriveSponsorRecord(approved);
     const estimate = await estimator.estimate({
       title: row.title,
@@ -204,10 +258,14 @@ function toRow(raw: RawInitiative, cat: CategoryResult | null): NewInitiative {
     sourceCategory: raw.sourceCategory,
     category: cat?.category ?? null,
     categoryConfidence: cat?.confidence ?? null,
-    sponsor: raw.sponsor,
-    party: raw.party,
-    province: raw.province,
-    committee: raw.committee,
+    // Enrichment fields: when the crawl has nothing (--enrich off, or the enrich
+    // sub-fetch failed/came back empty) pass `undefined`, NOT null — undefined leaves
+    // the column untouched on update, so a plain crawl can never wipe previously
+    // enriched sponsor/party/province/committee values.
+    sponsor: raw.sponsor ?? undefined,
+    party: raw.party ?? undefined,
+    province: raw.province ?? undefined,
+    committee: raw.committee ?? undefined,
     filedAt: raw.filedAt,
     expiresAt: raw.expiresAt,
     sourceUrl: raw.sourceUrl,
@@ -216,6 +274,12 @@ function toRow(raw: RawInitiative, cat: CategoryResult | null): NewInitiative {
     needsReview: true,
     raw: raw.raw as unknown,
   };
+}
+
+/** SIL dates look like "2024-08-27T00:00:00" — keep only the yyyy-mm-dd portion. */
+function isoDay(v: string | null | undefined): string | null {
+  const m = /^(\d{4}-\d{2}-\d{2})/.exec(v ?? "");
+  return m ? m[1]! : null;
 }
 
 function sleep(ms: number) {

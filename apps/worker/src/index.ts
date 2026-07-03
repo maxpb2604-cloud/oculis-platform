@@ -31,24 +31,34 @@ function arg(name: string): string | undefined {
 function flag(name: string): boolean {
   return process.argv.includes(`--${name}`);
 }
+/**
+ * Numeric CLI arg with validation: `--limit` with a missing or non-numeric value used
+ * to silently become NaN, which disabled every cap (NaN comparisons are false).
+ */
+function numArg(name: string): number | undefined {
+  if (!flag(name)) return undefined;
+  const raw = arg(name);
+  const n = Number(raw);
+  if (raw === undefined || raw.startsWith("--") || !Number.isFinite(n)) {
+    console.error(`✖ --${name} requiere un valor numérico (recibido: ${raw ?? "nada"})`);
+    process.exit(1);
+  }
+  return n;
+}
 
 async function main() {
-  const limit = arg("limit") ? Number(arg("limit")) : undefined;
-  const maxPagesPerSlice = arg("pages") ? Number(arg("pages")) : undefined;
-  const concurrency = arg("concurrency") ? Number(arg("concurrency")) : undefined;
+  const limit = numArg("limit");
+  const maxPagesPerSlice = numArg("pages");
+  const concurrency = numArg("concurrency");
   const enrich = flag("enrich");
-  const delayMs = arg("delay") ? Number(arg("delay")) : enrich ? 150 : 0;
+  const delayMs = numArg("delay") ?? (enrich ? 150 : 0);
 
   const target = process.env.DATABASE_URL
     ? "Postgres (DATABASE_URL)"
     : process.env.PGLITE_DIR
       ? `PGlite (file: ${process.env.PGLITE_DIR})`
       : "PGlite (in-memory)";
-  console.log(`▶ Oculis ingestion — source: sil-diputados → ${target}`);
-  console.log(
-    `  limit=${limit ?? "all"} pagesPerSlice=${maxPagesPerSlice ?? "all"} ` +
-      `enrich=${enrich} delay=${delayMs}ms\n`,
-  );
+  console.log(`▶ Oculis worker → ${target}`);
 
   const { db, ensureSchema, close } = createDb();
   const started = Date.now();
@@ -88,7 +98,7 @@ async function main() {
 
     if (flag("deposits")) {
       console.log("📥 Syncing recent deposits (initiatives + documents)\n");
-      const sinceDays = arg("since-days") ? Number(arg("since-days")) : undefined;
+      const sinceDays = numArg("since-days");
       const r = await ingestDeposits(db, { sinceDays, log: (m) => console.log(m) });
       const sen = await ingestSenateDeposits(db, { sinceDays, log: (m) => console.log(m) });
       const secs = ((Date.now() - started) / 1000).toFixed(1);
@@ -131,12 +141,13 @@ async function main() {
     }
 
     if (flag("activity")) {
-      console.log("📅 Ingesting committee + plenary agenda activity\n");
+      console.log("📅 Ingesting committee agenda activity\n");
       const r = await ingestActivity(db, { log: (m) => console.log(m) });
       const secs = ((Date.now() - started) / 1000).toFixed(1);
       console.log(
-        `\n✔ done in ${secs}s — seen ${r.seen} (committee ${r.committee}, plenary ${r.plenary}), ` +
-          `new ${r.inserted}, initiative links ${r.linkedCodes}`,
+        `\n✔ done in ${secs}s — ${r.seen} committee events, new ${r.inserted}, ` +
+          `initiative links ${r.linkedCodes}` +
+          (r.gaps.length ? ` · ${r.gaps.length} gap(s)` : ""),
       );
       return;
     }
@@ -193,6 +204,11 @@ async function main() {
       return;
     }
 
+    // Default path: the full corpus crawl — the only subcommand these params apply to.
+    console.log(
+      `📚 Corpus crawl — source: sil-diputados · limit=${limit ?? "all"} ` +
+        `pagesPerSlice=${maxPagesPerSlice ?? "all"} enrich=${enrich} delay=${delayMs}ms\n`,
+    );
     const summary = await ingestSilDiputados(db, {
       limit,
       maxPagesPerSlice,
@@ -205,7 +221,9 @@ async function main() {
     console.log(
       `\n✔ done in ${secs}s — seen ${summary.seen}, inserted ${summary.inserted}, ` +
         `updated ${summary.updated}, status-changes ${summary.statusChanges}, ` +
-        `categorized ${summary.categorized}, total in DB ${summary.total}`,
+        `categorized ${summary.categorized}` +
+        (summary.failed ? `, FAILED ${summary.failed}` : "") +
+        `, total in DB ${summary.total}`,
     );
   } finally {
     await close();

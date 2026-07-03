@@ -8,6 +8,7 @@
  * this same array. Lower `rank` = more influential / higher in the list.
  */
 import { listLegislators, upsertFeedAccount, type Database } from "@oculis/db";
+import { norm, tokenize } from "./text.js";
 
 type AccountKind =
   | "SENADO_OFFICIAL"
@@ -65,22 +66,7 @@ export const FEED_ACCOUNTS: SeedAccount[] = [
     kind: "INSTITUTION",
     rank: 4,
   },
-  {
-    name: "Junta Central Electoral",
-    handle: "@JCErd",
-    platform: "X",
-    url: x("JCErd"),
-    kind: "INSTITUTION",
-    rank: 5,
-  },
-  {
-    name: "Procuraduría General",
-    handle: "@PGR_RD",
-    platform: "X",
-    url: x("PGR_RD"),
-    kind: "INSTITUTION",
-    rank: 6,
-  },
+  // (JCE and PGR live in the verified Phase-2 batch below — @juntacentral, @ProcuraduriaRD.)
 
   // --- Top national political figures ---
   {
@@ -115,14 +101,7 @@ export const FEED_ACCOUNTS: SeedAccount[] = [
     kind: "INSTITUTION",
     rank: 13,
   },
-  {
-    name: "David Collado",
-    handle: "@David_Collado",
-    platform: "X",
-    url: x("David_Collado"),
-    kind: "INSTITUTION",
-    rank: 14,
-  },
+  // (David Collado lives in the verified Phase-2 batch below — @DavidColladoM.)
 
   // --- Newspapers / outlets (very public, stable handles) ---
   {
@@ -165,22 +144,8 @@ export const FEED_ACCOUNTS: SeedAccount[] = [
     kind: "NEWSPAPER",
     rank: 24,
   },
-  {
-    name: "El Caribe",
-    handle: "@elcaribe",
-    platform: "X",
-    url: x("elcaribe"),
-    kind: "NEWSPAPER",
-    rank: 25,
-  },
-  {
-    name: "Noticias SIN",
-    handle: "@NoticiasSIN",
-    platform: "X",
-    url: x("NoticiasSIN"),
-    kind: "NEWSPAPER",
-    rank: 26,
-  },
+  // (El Caribe and Noticias SIN live in the verified Phase-2 batch below —
+  //  @ElCaribeRD, @SIN24Horas.)
   { name: "CDN 37", handle: "@CDN37", platform: "X", url: x("CDN37"), kind: "NEWSPAPER", rank: 27 },
   {
     name: "El Día",
@@ -232,22 +197,8 @@ export const FEED_ACCOUNTS: SeedAccount[] = [
     kind: "JOURNALIST",
     rank: 40,
   },
-  {
-    name: "Marino Zapete",
-    handle: "@marinozapete",
-    platform: "X",
-    url: x("marinozapete"),
-    kind: "JOURNALIST",
-    rank: 41,
-  },
-  {
-    name: "Altagracia Salazar",
-    handle: "@AltagraciaSalaz",
-    platform: "X",
-    url: x("AltagraciaSalaz"),
-    kind: "JOURNALIST",
-    rank: 42,
-  },
+  // (Marino Zapete and Altagracia Salazar live in the verified Phase-2 batch
+  //  below — @mzapete, @altagraciasa.)
   {
     name: "Huchi Lora",
     handle: "@huchilora",
@@ -377,17 +328,9 @@ export const FEED_ACCOUNTS: SeedAccount[] = [
   { name: "Nelson Marmolejos", handle: "@Nelsonmarmolej6", platform: "X", url: x("Nelsonmarmolej6"), kind: "DEPUTY", chamber: "DIPUTADOS", rank: 149 },
 ];
 
-/** Accent-fold + lowercase for name → legislator matching. */
-const norm = (s: string) => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
 /** Significant name tokens (drop particles + short bits) for subset matching. */
 const STOP = new Set(["de", "del", "la", "las", "los", "y", "e", "da", "di"]);
-const tokens = (s: string) =>
-  new Set(
-    norm(s)
-      .replace(/[^a-z0-9\s]/g, " ")
-      .split(/\s+/)
-      .filter((t) => t.length > 2 && !STOP.has(t)),
-  );
+const tokens = (s: string) => new Set(tokenize(s, { minLength: 3, stopwords: STOP }));
 
 /** Upsert the registry; auto-link senator/deputy accounts to a legislator by name. */
 export async function seedFeedAccounts(

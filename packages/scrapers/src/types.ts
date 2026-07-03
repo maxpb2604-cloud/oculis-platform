@@ -56,6 +56,8 @@ export interface RawStatusEvent {
 /**
  * Common contract every source adapter implements. Adapters are pure data
  * acquisition — no DB writes; the worker orchestrates persistence.
+ * (Nothing consumes this polymorphically; it documents the minimal shape a
+ * corpus adapter must offer: identity, count, and full listing.)
  */
 export interface SourceAdapter {
   /** Unique adapter key, stored on each row's `source`. */
@@ -67,6 +69,4 @@ export interface SourceAdapter {
     sincePage?: number;
     maxPagesPerSlice?: number;
   }): AsyncIterable<RawInitiative>;
-  /** Fetch one initiative's full detail by source id. */
-  detail(sourceId: string): Promise<RawInitiative | null>;
 }

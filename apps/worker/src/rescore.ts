@@ -24,8 +24,9 @@ export async function rescoreAll(
 
   const rows = await listForScoring(db, { onlyMissing });
   const byRisk: Record<string, number> = {};
-  let scored = 0;
+  let scored = 0; // successes only — failed rows must not inflate the summary
   let failed = 0;
+  let processed = 0;
 
   // simple fixed-size worker pool over the row list
   let i = 0;
@@ -33,10 +34,15 @@ export async function rescoreAll(
     while (i < rows.length) {
       const row = rows[i++]!;
       const risk = await scoreInitiative(db, estimator, row);
-      if (risk) byRisk[risk] = (byRisk[risk] ?? 0) + 1;
-      else failed++; // scoreInitiative is best-effort; surface the count instead of silence
-      scored++;
-      if (scored % 25 === 0) log(`  …${scored}/${rows.length} scored`);
+      if (risk) {
+        byRisk[risk] = (byRisk[risk] ?? 0) + 1;
+        scored++;
+      } else {
+        failed++; // scoreInitiative is best-effort; surface the count instead of silence
+      }
+      processed++;
+      if (processed % 25 === 0)
+        log(`  …${processed}/${rows.length} processed · ${scored} scored`);
     }
   }
   await Promise.all(Array.from({ length: concurrency }, () => worker()));

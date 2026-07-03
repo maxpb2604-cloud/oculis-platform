@@ -7,7 +7,16 @@
  * backend can be dropped in later behind the same interface without touching callers.
  */
 import { mkdir, writeFile, stat } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+/**
+ * Monorepo root (the `app/` directory), resolved from THIS file's location
+ * (apps/worker/src → three levels up) instead of process.cwd(). A cwd-relative
+ * default silently split the archive between app/.data/docs and
+ * apps/worker/.data/docs depending on where the worker was launched from.
+ */
+const MONOREPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
 
 export interface DocStorage {
   readonly kind: string;
@@ -20,7 +29,7 @@ export interface DocStorage {
 /** Local-filesystem backend (default). Files land in <dir>/{code}.{ext}. */
 export class LocalDocStorage implements DocStorage {
   readonly kind = "local";
-  constructor(private readonly dir: string = resolve(process.cwd(), ".data/docs")) {}
+  constructor(private readonly dir: string = join(MONOREPO_ROOT, ".data", "docs")) {}
 
   private path(code: string, ext: string): string {
     const safe = code.replace(/[^A-Za-z0-9._-]/g, "_");

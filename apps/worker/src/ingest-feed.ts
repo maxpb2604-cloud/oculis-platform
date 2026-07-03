@@ -27,6 +27,7 @@ import {
 } from "@oculis/scrapers";
 import { createCategorizer } from "./categorize.js";
 import { buildLegislativeSignals } from "./feed-signals.js";
+import { norm, tokenize } from "./text.js";
 
 export interface FeedSummary {
   source: string;
@@ -35,9 +36,6 @@ export interface FeedSummary {
   inserted: number;
   error?: string;
 }
-
-/** Accent-fold + lowercase for matching names against free text. */
-const norm = (s: string) => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
 
 /** Stopwords dropped when building significant title bigrams — includes generic geographic
  *  / institutional terms so common bigrams ("república dominicana") don't false-match. */
@@ -49,10 +47,7 @@ const STOP = new Set(
   ).split(" "),
 );
 function sigTokens(s: string): string[] {
-  return norm(s)
-    .replace(/[^a-z0-9\s]/g, " ")
-    .split(/\s+/)
-    .filter((t) => t.length >= 4 && !STOP.has(t));
+  return tokenize(s, { minLength: 4, stopwords: STOP });
 }
 /** Adjacent significant-token pairs — distinctive enough to link a news item to a bill. */
 function bigrams(s: string): string[] {

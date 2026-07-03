@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { parseExpedientesList, SENADO_PORTAL_INICIATIVAS } from "../src/senado-sil.js";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { parseExpedientesList, SenadoSilAdapter, SENADO_PORTAL_INICIATIVAS } from "../src/senado-sil.js";
 
 // Real row shapes from lista_expedientes.aspx?coleccion=53 (trimmed).
 const SAMPLE_HTML = `
@@ -46,5 +46,114 @@ describe("senado-sil: parseExpedientesList", () => {
       filedAt: "2026-05-29",
       status: "Enviada a Comisión",
     });
+  });
+});
+
+// --- HTTP-level guards (mocked fetch): login verification + error-page detection ---
+
+const LOGIN_FORM = `<html><body><form action="login.aspx">
+  <input type="hidden" id="__VIEWSTATE" value="vs" />
+  <input type="hidden" id="__VIEWSTATEGENERATOR" value="gen" />
+  <input type="hidden" id="__EVENTVALIDATION" value="ev" />
+  <input type="image" name="imgBtnIngresoAlternativo" id="imgBtnIngresoAlternativo" />
+</form></body></html>`;
+
+const COLECCIONES_PAGE = `<html><body><h1>Colecciones</h1>
+  <a href="lista_expedientes.aspx?coleccion=53">Colección 2024-2028</a></body></html>`;
+
+const ASPNET_ERROR_PAGE = `<html><body><h1>Error de servidor en la aplicación '/wfilemaster'.</h1>
+  <h2>Referencia a objeto no establecida como instancia de un objeto.</h2></body></html>`;
+
+type Route = (url: string, method: string) => Response | undefined;
+
+/** Route-based fetch stub; unmatched requests fail the test loudly. */
+function stubFetch(route: Route): void {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (url: unknown, init?: { method?: string }) => {
+      const res = route(String(url), init?.method ?? "GET");
+      if (!res) throw new Error(`unexpected fetch: ${init?.method ?? "GET"} ${url}`);
+      return res;
+    }),
+  );
+}
+
+const page = (body: string, status = 200, headers: Record<string, string> = {}) =>
+  new Response(body, { status, headers: { "content-type": "text/html", ...headers } });
+
+/** Happy-path login: GET form → POST → 302 → colecciones.aspx (with session cookie). */
+const loginRoutes: Route = (url, method) => {
+  if (url.endsWith("/login.aspx") && method === "GET") {
+    return page(LOGIN_FORM, 200, { "set-cookie": "ASP.NET_SessionId=abc; path=/" });
+  }
+  if (url.endsWith("/login.aspx") && method === "POST") {
+    return page("", 302, { location: "colecciones.aspx" });
+  }
+  if (url.includes("colecciones.aspx")) return page(COLECCIONES_PAGE);
+  return undefined;
+};
+
+afterEach(() => vi.unstubAllGlobals());
+
+describe("senado-sil: loginPublic guard", () => {
+  it("returns the session jar when the redirect chain lands on colecciones.aspx", async () => {
+    stubFetch(loginRoutes);
+    const jar = await new SenadoSilAdapter().loginPublic();
+    expect(jar.get("ASP.NET_SessionId")).toBe("abc");
+  });
+
+  it("throws when the POST is answered with the login form again — even with a session cookie", async () => {
+    // ASP.NET issues ASP.NET_SessionId on ANY request, so the cookie is not proof of login.
+    stubFetch((url, _method) => {
+      if (url.endsWith("/login.aspx")) {
+        return page(LOGIN_FORM, 200, { "set-cookie": "ASP.NET_SessionId=anon; path=/" });
+      }
+      return undefined;
+    });
+    await expect(new SenadoSilAdapter().loginPublic()).rejects.toThrow(/login público/i);
+  });
+
+  it("throws on a non-2xx login page instead of parsing it", async () => {
+    stubFetch(() => page(ASPNET_ERROR_PAGE, 500));
+    await expect(new SenadoSilAdapter().loginPublic()).rejects.toThrow(/HTTP 500/);
+  });
+});
+
+describe("senado-sil: listDeposits HTTP guards", () => {
+  it("throws (instead of recording 0 deposits) when lista_expedientes returns a server error", async () => {
+    stubFetch((url, method) => {
+      if (url.includes("lista_expedientes.aspx")) return page(ASPNET_ERROR_PAGE, 500);
+      return loginRoutes(url, method);
+    });
+    await expect(new SenadoSilAdapter().listDeposits()).rejects.toThrow(/HTTP 500/);
+  });
+
+  it("throws when an ASP.NET error page is served with HTTP 200", async () => {
+    stubFetch((url, method) => {
+      if (url.includes("lista_expedientes.aspx")) return page(ASPNET_ERROR_PAGE, 200);
+      return loginRoutes(url, method);
+    });
+    await expect(new SenadoSilAdapter().listDeposits()).rejects.toThrow(/página de error/i);
+  });
+});
+
+describe("senado-sil: fetchFicha error-page detection", () => {
+  it("throws so the web proxy 502s instead of serving upstream error HTML as a ficha", async () => {
+    stubFetch((url, method) => {
+      if (url.includes("lista_expedientes.aspx")) return page(SAMPLE_HTML);
+      if (url.includes("Ficha.aspx")) return page(ASPNET_ERROR_PAGE, 200);
+      return loginRoutes(url, method);
+    });
+    await expect(new SenadoSilAdapter().fetchFicha(39660)).rejects.toThrow(/página de error/i);
+  });
+
+  it("returns the ficha HTML when the upstream responds normally", async () => {
+    const FICHA = "<html><body><h1>Ficha del Expediente 01677-2026-PLO-SE</h1></body></html>";
+    stubFetch((url, method) => {
+      if (url.includes("lista_expedientes.aspx")) return page(SAMPLE_HTML);
+      if (url.includes("Ficha.aspx")) return page(FICHA);
+      return loginRoutes(url, method);
+    });
+    await expect(new SenadoSilAdapter().fetchFicha(39660)).resolves.toBe(FICHA);
   });
 });

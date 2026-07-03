@@ -104,6 +104,18 @@ const DDL: string[] = [
   `CREATE INDEX IF NOT EXISTS initiatives_risk_idx ON initiatives (risk_level)`,
   `CREATE INDEX IF NOT EXISTS initiatives_chamber_idx ON initiatives (chamber)`,
   `CREATE INDEX IF NOT EXISTS initiatives_filed_at_idx ON initiatives (filed_at)`,
+  // serves countApprovedBySponsor's exact sponsor = ? match (one query per scored row)
+  `CREATE INDEX IF NOT EXISTS initiatives_sponsor_idx ON initiatives (sponsor)`,
+  // pg_trgm GIN indexes for searchInitiatives' leading-wildcard ILIKE typeahead.
+  // Wrapped in a failure-tolerant DO block: if the cluster can't provide pg_trgm
+  // (e.g. PGlite without the extension bundled), the app must still boot — the
+  // search then simply seq-scans as before.
+  `DO $$ BEGIN
+     CREATE EXTENSION IF NOT EXISTS pg_trgm;
+     CREATE INDEX IF NOT EXISTS initiatives_title_trgm_idx ON initiatives USING gin (title gin_trgm_ops);
+     CREATE INDEX IF NOT EXISTS initiatives_code_trgm_idx ON initiatives USING gin (code gin_trgm_ops);
+   EXCEPTION WHEN others THEN NULL;
+   END $$`,
   `ALTER TABLE initiatives ADD COLUMN IF NOT EXISTS sponsor_role text`,
   `ALTER TABLE initiatives ADD COLUMN IF NOT EXISTS sponsor_count integer`,
   `
@@ -115,7 +127,30 @@ const DDL: string[] = [
       note text,
       created_at timestamp NOT NULL DEFAULT now()
     )`,
-  `CREATE UNIQUE INDEX IF NOT EXISTS status_events_uq ON status_events (initiative_id, status, event_date)`,
+  // NULLS NOT DISTINCT (PG15+): date-less events must dedupe too — a plain UNIQUE
+  // index treats each NULL event_date as distinct, so such rows re-insert on every
+  // re-scrape.
+  `CREATE UNIQUE INDEX IF NOT EXISTS status_events_uq ON status_events (initiative_id, status, event_date) NULLS NOT DISTINCT`,
+  // Upgrade path for DBs that already have the old (nulls-distinct) index: dedupe the
+  // null-date duplicates it allowed (keep the lowest id), then swap the index. Guarded
+  // by pg_index.indnullsnotdistinct so it runs once; failure-tolerant so a weird
+  // cluster can never brick app startup (the old index just stays in place).
+  `DO $$ BEGIN
+     IF EXISTS (
+       SELECT 1 FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
+       WHERE c.relname = 'status_events_uq' AND NOT i.indnullsnotdistinct
+     ) THEN
+       DELETE FROM status_events a
+         USING status_events b
+         WHERE a.initiative_id = b.initiative_id
+           AND a.status = b.status
+           AND a.event_date IS NULL AND b.event_date IS NULL
+           AND a.id > b.id;
+       DROP INDEX status_events_uq;
+       CREATE UNIQUE INDEX status_events_uq ON status_events (initiative_id, status, event_date) NULLS NOT DISTINCT;
+     END IF;
+   EXCEPTION WHEN others THEN NULL;
+   END $$`,
   `CREATE INDEX IF NOT EXISTS status_events_initiative_idx ON status_events (initiative_id)`,
   `
     CREATE TABLE IF NOT EXISTS score_inputs (
@@ -310,6 +345,9 @@ const DDL: string[] = [
     )`,
   `CREATE UNIQUE INDEX IF NOT EXISTS feed_items_source_uq ON feed_items (source, source_id)`,
   `CREATE INDEX IF NOT EXISTS feed_items_published_idx ON feed_items (published_at DESC)`,
+  // expression index serving listFeedItems' keyset ordering
+  // (coalesce(published_at, first_seen_at) desc, id desc)
+  `CREATE INDEX IF NOT EXISTS feed_items_sort_idx ON feed_items ((coalesce(published_at, first_seen_at)) DESC, id DESC)`,
   `CREATE INDEX IF NOT EXISTS feed_items_kind_idx ON feed_items (kind)`,
   `CREATE INDEX IF NOT EXISTS feed_items_category_idx ON feed_items (category)`,
   `CREATE INDEX IF NOT EXISTS feed_items_initiative_idx ON feed_items (initiative_id)`,

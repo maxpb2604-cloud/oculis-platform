@@ -118,19 +118,26 @@ export class ClaudeScoreEstimator implements ScoreEstimator {
 
     const text = res.content.find((b) => b.type === "text");
     if (!text || text.type !== "text") return new HeuristicScoreEstimator().estimate(input);
-    const p = JSON.parse(text.text) as {
+    let p: {
       executiveSupport: YesNo;
       stakeholderSupport: YesNo;
       socialPressureCount: number;
       rationale: string;
       confidence: number;
     };
+    try {
+      p = JSON.parse(text.text) as typeof p;
+    } catch {
+      // Malformed/truncated model JSON — same per-item fallback as a missing text
+      // block. Deliberately NOT thrown: one bad response must not degrade the run.
+      return new HeuristicScoreEstimator().estimate(input);
+    }
     return {
       executiveSupport: p.executiveSupport === "SI" ? "SI" : "NO",
       stakeholderSupport: p.stakeholderSupport === "SI" ? "SI" : "NO",
       socialPressureCount: clamp(p.socialPressureCount ?? 0, 0, 20),
       rationale: p.rationale ?? "",
-      confidence: p.confidence ?? 0,
+      confidence: clamp01(p.confidence ?? 0),
       by: "claude",
     };
   }
@@ -140,9 +147,43 @@ function clamp(n: number, lo: number, hi: number) {
   return Math.max(lo, Math.min(hi, Math.round(n)));
 }
 
+/** Clamp a model-returned confidence to [0,1] without rounding (8 or -0.3 must not persist). */
+function clamp01(n: number) {
+  return Math.max(0, Math.min(1, n));
+}
+
+/**
+ * Wraps the Claude estimator with the offline heuristic as a fallback — mirrors
+ * FallbackCategorizer in categorize.ts. On the FIRST primary failure (e.g. "credit
+ * balance too low", bad key, or rate limit) it warns once and switches to the
+ * heuristic for the rest of the run, so an API outage degrades scores gracefully
+ * instead of silently leaving every initiative unscored. Malformed model JSON is
+ * handled per-item inside ClaudeScoreEstimator and never reaches this wrapper.
+ */
+export class FallbackScoreEstimator implements ScoreEstimator {
+  readonly kind = "claude" as const;
+  private readonly fallback = new HeuristicScoreEstimator();
+  private degraded = false;
+  constructor(private readonly primary: ScoreEstimator) {}
+
+  async estimate(input: ScoreEstimateInput): Promise<ScoreEstimate> {
+    if (this.degraded) return this.fallback.estimate(input);
+    try {
+      return await this.primary.estimate(input);
+    } catch (err) {
+      this.degraded = true;
+      console.warn(
+        `⚠️  Estimador de riesgo Claude no disponible (${(err as Error).message}). ` +
+          `Usando heurística offline para el resto de esta corrida.`,
+      );
+      return this.fallback.estimate(input);
+    }
+  }
+}
+
 export function createScoreEstimator(): ScoreEstimator {
   if (process.env.OCULIS_USE_CLAUDE === "1" && process.env.ANTHROPIC_API_KEY) {
-    return new ClaudeScoreEstimator(new Anthropic());
+    return new FallbackScoreEstimator(new ClaudeScoreEstimator(new Anthropic()));
   }
   return new HeuristicScoreEstimator();
 }
