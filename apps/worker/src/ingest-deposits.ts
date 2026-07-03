@@ -182,7 +182,14 @@ export async function ingestSenateDeposits(
 ): Promise<DepositsSummary> {
   const log = opts.log ?? (() => {});
   const today = opts.today ?? new Date().toISOString().slice(0, 10);
-  const since = shiftISO(today, -(opts.sinceDays ?? 21));
+  // The Senate SIL list is NOT paginated — it returns only the ~50 newest expedientes of
+  // colección 53 in one request, which we filter client-side. A short window would drop
+  // any of those 50 older than N days for no benefit, so default to the full cuatrienio
+  // (~1000 days): capture every exposed row each run. Since we upsert-and-never-delete,
+  // Senate coverage then ACCUMULATES forward over time (unlike Diputados, the Senate has
+  // no corpus crawl — this deposits pass is its only source, so it can't backfill history
+  // before we started capturing).
+  const since = shiftISO(today, -(opts.sinceDays ?? 1000));
   const adapter = new SenadoSilAdapter();
 
   log(`\n▶ ${SENADO_DEPOSITS_SOURCE} — Senate deposits since ${since}`);
