@@ -167,8 +167,8 @@ export function ProvinceBubbleMap({
                 className="rounded-md px-1.5 text-white/60 hover:text-white" style={{ background: "rgba(255,255,255,0.08)" }}>✕</button>
             </div>
 
-            <LegGroup title={t(lang, "senators")} legs={sel.senadores} empty={t(lang, "noSenator")} />
-            <LegGroup title={t(lang, "deputies")} legs={sel.diputados} empty={t(lang, "noDeputies")} />
+            <LegGroup title={t(lang, "senators")} legs={sel.senadores} empty={t(lang, "noSenator")} chamber="SENADO" lang={lang} />
+            <LegGroup title={t(lang, "deputies")} legs={sel.diputados} empty={t(lang, "noDeputies")} chamber="DIPUTADOS" lang={lang} />
           </div>
 
           {/* Sticky close button at the bottom */}
@@ -185,7 +185,20 @@ export function ProvinceBubbleMap({
   );
 }
 
-function LegGroup({ title, legs, empty }: { title: string; legs: Legislator[]; empty: string }) {
+function LegGroup({
+  title,
+  legs,
+  empty,
+  chamber,
+  lang,
+}: {
+  title: string;
+  legs: Legislator[];
+  empty: string;
+  chamber: "SENADO" | "DIPUTADOS";
+  lang: Lang;
+}) {
+  const es = lang === "es";
   return (
     <div className="mt-3">
       <div className="text-[10px] font-semibold uppercase tracking-wider text-white/45">
@@ -194,13 +207,26 @@ function LegGroup({ title, legs, empty }: { title: string; legs: Legislator[]; e
       {legs.length === 0 ? (
         <p className="mt-1 text-[11px] leading-snug text-white/40">{empty}</p>
       ) : (
-        <ul className="mt-1.5 space-y-1.5">
+        <ul className="mt-1.5 space-y-0.5">
           {legs.map((l, i) => (
-            <li key={`${l.name}-${i}`} className="leading-tight">
-              <div className="text-[12.5px] font-medium">{l.name}</div>
-              <div className="text-[10.5px] text-white/50">
-                {[l.role, l.party].filter(Boolean).join(" · ")}
-              </div>
+            <li key={`${l.name}-${i}`}>
+              {/* Click a legislator → their profile bubble (global LegislatorModalHost
+                  resolves the name to the roster; chamber narrows the match). */}
+              <button
+                type="button"
+                data-legislator-name={l.name}
+                data-legislator-chamber={chamber}
+                title={es ? "Ver perfil" : "View profile"}
+                className="-mx-1.5 block w-full rounded-md px-1.5 py-1 text-left leading-tight transition-colors hover:bg-white/10"
+                style={{ cursor: "pointer" }}
+              >
+                <span className="block text-[12.5px] font-medium underline-offset-2 hover:underline">
+                  {l.name}
+                </span>
+                <span className="block text-[10.5px] text-white/50">
+                  {[l.role, l.party].filter(Boolean).join(" · ")}
+                </span>
+              </button>
             </li>
           ))}
         </ul>
