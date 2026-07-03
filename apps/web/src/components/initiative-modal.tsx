@@ -60,6 +60,14 @@ const NEWS_SRC: Record<string, string> = {
 /** What was clicked: an initiative id (from tables/deposits) or an official code (from agendas). */
 type Trigger = { kind: "id"; value: number } | { kind: "code"; value: string };
 
+const OPEN_EVENT = "oculis:initiative-open";
+
+/** Open the initiative bubble from anywhere (e.g. the search overlay), by id or code. */
+export function openInitiativeBubble(v: { id?: number; code?: string }) {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent(OPEN_EVENT, { detail: v }));
+}
+
 export function InitiativeModalHost({ lang }: { lang: "es" | "en" }) {
   const es = lang === "es";
   const [trigger, setTrigger] = useState<Trigger | null>(null);
@@ -105,11 +113,19 @@ export function InitiativeModalHost({ lang }: { lang: "es" | "en" }) {
       e.preventDefault();
       setTrigger(v);
     };
+    // Programmatic opener (search overlay etc.): open by id or code directly.
+    const onOpen = (e: Event) => {
+      const d = (e as CustomEvent).detail as { id?: number; code?: string } | undefined;
+      if (d?.id != null && Number.isFinite(d.id)) setTrigger({ kind: "id", value: d.id });
+      else if (d?.code) setTrigger({ kind: "code", value: d.code });
+    };
     document.addEventListener("click", onClick);
     document.addEventListener("keydown", onKeyDown);
+    window.addEventListener(OPEN_EVENT, onOpen);
     return () => {
       document.removeEventListener("click", onClick);
       document.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener(OPEN_EVENT, onOpen);
     };
   }, []);
 

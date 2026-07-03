@@ -3,6 +3,7 @@ import { browseInitiatives } from "@/lib/data";
 import { dict, type Lang } from "@/lib/i18n";
 import { AppShell } from "@/components/app-shell";
 import { Filters } from "@/components/filters";
+import { InitiativeSearch } from "@/components/initiative-search";
 import { InitiativesTable } from "@/components/initiatives-table";
 
 export const dynamic = "force-dynamic";
@@ -58,6 +59,8 @@ export default async function Page({ searchParams }: { searchParams: Promise<SP>
       title={lang === "es" ? "Iniciativas" : "Initiatives"}
       subtitle={`${t.legislative} · ${t.source}`}
     >
+      <InitiativeSearch lang={lang} />
+
       <Filters lang={lang} facets={result.facets} />
 
       <div className="mb-3 flex items-center justify-between text-xs" style={{ color: "var(--text-muted)" }}>

@@ -59,6 +59,10 @@ const tooltipStyle = {
   fontSize: 12,
   boxShadow: "0 8px 24px -16px rgba(0,0,0,.4)",
 };
+// Recharts colors the tooltip's label + item text on its OWN inline spans (default a
+// dark ink / the series color), so contentStyle's color alone leaves them unreadable on
+// the dark surface. Force theme text color on both so the tooltip reads in dark mode.
+const tooltipTextStyle = { color: "var(--text)" };
 
 function BarPanel({
   data,
@@ -84,7 +88,7 @@ function BarPanel({
           tickLine={false}
           axisLine={false}
         />
-        <Tooltip contentStyle={tooltipStyle} cursor={{ fill: "var(--surface-2)" }} />
+        <Tooltip contentStyle={tooltipStyle} itemStyle={tooltipTextStyle} labelStyle={tooltipTextStyle} cursor={{ fill: "var(--surface-2)" }} />
         <Bar
           dataKey="count"
           radius={[0, 3, 3, 0]}
@@ -171,7 +175,7 @@ export function StatusDonut({ data, lang }: { data: Bucket[]; lang: Lang }) {
               <Cell key={i} fill={DONUT_COLORS[i % DONUT_COLORS.length]} cursor={d.key === "N/D" ? "default" : "pointer"} />
             ))}
           </Pie>
-          <Tooltip contentStyle={tooltipStyle} />
+          <Tooltip contentStyle={tooltipStyle} itemStyle={tooltipTextStyle} labelStyle={tooltipTextStyle} />
         </PieChart>
       </ResponsiveContainer>
       <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
