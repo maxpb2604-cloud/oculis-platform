@@ -10,11 +10,9 @@ import { normProvince, resolveProvince } from "./provinces";
 export { normProvince, resolveProvince } from "./provinces";
 import {
   createDb,
-  activityCountsByDate,
   countByApprovalProbability,
   countByCategory,
   countByProvince,
-  countByRisk,
   countByStatus,
   legislatorsByProvince,
   listLegislators,
@@ -27,7 +25,6 @@ import {
   getInitiativeById,
   latestRunsBySource,
   listActivity,
-  listCommissions,
   listDeposits,
   listInitiatives,
   listRecentInitiatives,
@@ -71,9 +68,8 @@ async function db() {
 
 export async function getDashboardData() {
   const d = await db();
-  const [kpis, byRisk, byApproval, byCategory, byStatusRaw, recent] = await Promise.all([
+  const [kpis, byApproval, byCategory, byStatusRaw, recent] = await Promise.all([
     dashboardKpis(d),
-    countByRisk(d),
     countByApprovalProbability(d),
     countByCategory(d),
     countByStatus(d),
@@ -90,7 +86,7 @@ export async function getDashboardData() {
   const byStatus = [...folded]
     .map(([key, count]) => ({ key, count }))
     .sort((a, b) => b.count - a.count);
-  return { kpis, byRisk, byApproval, byCategory, byStatus, recent };
+  return { kpis, byApproval, byCategory, byStatus, recent };
 }
 
 export type DashboardData = Awaited<ReturnType<typeof getDashboardData>>;
@@ -270,7 +266,7 @@ export function todayISO(): string {
 }
 
 /** Shift an ISO date by N days (negative = earlier). */
-function shiftISO(iso: string, days: number): string {
+export function shiftISO(iso: string, days: number): string {
   const [y, m, d] = iso.split("-").map(Number);
   const dt = new Date(Date.UTC(y!, m! - 1, d!));
   dt.setUTCDate(dt.getUTCDate() + days);
@@ -328,18 +324,6 @@ export async function getChamberActivity(chamber: string, limit = 120) {
   return listActivity(d, { chamber, limit });
 }
 
-/** Per-day committee/plenary counts for the activity sparkline/calendar. */
-export async function getActivityCalendar(since?: string) {
-  const d = await db();
-  return activityCountsByDate(d, { since });
-}
-
-/** Health of every source for the "Estado de monitoreo" page. */
-export async function getMonitoringHealth() {
-  const d = await db();
-  return latestRunsBySource(d);
-}
-
 /**
  * Freshness of the feed sources for the "última actualización" indicator: the
  * most-recent successful run time overall, plus a per-source breakdown (name,
@@ -376,11 +360,6 @@ export async function getFeedFreshness() {
   return { updatedAt, sources };
 }
 
-export async function getCommissions(chamber?: string) {
-  const d = await db();
-  return listCommissions(d, { chamber });
-}
-
 /** Committees with full membership (president/VP/secretary/members) for a chamber.
  *  Cached 5 min — composition changes weekly with the roster ingestion. */
 export const getCommissionsWithMembers = unstable_cache(
@@ -408,11 +387,6 @@ export async function getRegulatoryOverview() {
 export async function getConsultas() {
   const d = await db();
   return listRegulations(d, { consultaOnly: true, limit: 100 });
-}
-
-export async function getRegulations(opts: { institution?: string; intervention?: string } = {}) {
-  const d = await db();
-  return listRegulations(d, { ...opts, limit: 200 });
 }
 
 // --- Feed (news / official / social / legislative signals) ---

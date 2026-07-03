@@ -61,6 +61,10 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       "cache-control": "private, max-age=120",
       // Allow the legacy http assets to load when our app is served over http (dev).
       "referrer-policy": "no-referrer",
+      // The ficha is third-party HTML fetched over plain http and served on our
+      // origin: sandbox it so its (or a MITM's) scripts can never run as us.
+      // The page is static content; the IE-era scripts we already neuter above.
+      "content-security-policy": "sandbox; default-src * data:; style-src * 'unsafe-inline'; img-src * data:; script-src 'none'",
     },
   });
 }

@@ -3,20 +3,14 @@ export type Lang = "es" | "en";
 
 export const dict: Record<Lang, Record<string, string>> = {
   es: {
-    appName: "Oculis Auribus",
     tagline: "Seguimiento Experto de Legislación y Regulaciones",
     legislative: "Monitoreo Legislativo",
-    regulatory: "Monitoreo Regulatorio",
     totalBills: "Iniciativas Totales",
     highRisk: "Riesgo Alto",
     highApproval: "Prob. de Aprobación ALTA",
-    needsReview: "Por Revisar",
-    published: "Publicadas",
-    byRisk: "Iniciativas por Nivel de Riesgo",
     byApproval: "Probabilidad de Aprobación",
     byCategory: "Iniciativas por Categoría",
     byStatus: "Iniciativas por Estado",
-    byProvince: "Iniciativas por Provincia",
     recent: "Iniciativas Recientes",
     code: "Código",
     title: "Iniciativa",
@@ -71,9 +65,6 @@ export const dict: Record<Lang, Record<string, string>> = {
     // Charts
     total: "Total",
 
-    // Approval tag
-    approvalTag: "Prob. aprobación",
-
     // Risk / approval pill values (raw DB enums → display)
     riskALTO: "ALTO",
     riskMEDIO: "MEDIO",
@@ -83,20 +74,14 @@ export const dict: Record<Lang, Record<string, string>> = {
     approvalBAJA: "BAJA",
   },
   en: {
-    appName: "Oculis Auribus",
     tagline: "Expert Monitoring of Legislation & Regulations",
     legislative: "Legislative Monitoring",
-    regulatory: "Regulatory Monitoring",
     totalBills: "Total Initiatives",
     highRisk: "High Risk",
     highApproval: "HIGH Approval Probability",
-    needsReview: "Needs Review",
-    published: "Published",
-    byRisk: "Initiatives by Business Risk",
     byApproval: "Probability of Approval",
     byCategory: "Initiatives by Category",
     byStatus: "Initiatives by Status",
-    byProvince: "Initiatives by Province",
     recent: "Recent Initiatives",
     code: "Code",
     title: "Initiative",
@@ -150,9 +135,6 @@ export const dict: Record<Lang, Record<string, string>> = {
 
     // Charts
     total: "Total",
-
-    // Approval tag
-    approvalTag: "Approval prob.",
 
     // Risk / approval pill values (raw DB enums → display)
     riskALTO: "HIGH",

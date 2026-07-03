@@ -7,7 +7,9 @@ export const dynamic = "force-dynamic";
 /** GET /api/initiatives?limit=&category=&risk= — initiative records as JSON. */
 export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams;
-  const limit = Math.min(Number(sp.get("limit") ?? 50) || 50, 500);
+  // Clamp to a sane positive integer — negative/fractional values reached SQL LIMIT (500).
+  const rawLimit = Number(sp.get("limit") ?? 50);
+  const limit = Number.isInteger(rawLimit) && rawLimit > 0 ? Math.min(rawLimit, 500) : 50;
   const category = sp.get("category") ?? undefined;
   const risk = sp.get("risk") ?? undefined;
   const data = await getInitiatives({ limit, category, risk });
