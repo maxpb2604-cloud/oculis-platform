@@ -8,6 +8,7 @@
  * heuristic categorizer (`createCategorizer`).
  */
 import {
+  listAllFeedItems,
   listCommissions,
   listFeedAccounts,
   listLegislators,
@@ -19,6 +20,7 @@ import {
   type NewFeedItem,
 } from "@oculis/db";
 import {
+  extractCodes,
   feedAdapters,
   isCongressRelevant,
   XSocialAdapter,
@@ -57,6 +59,30 @@ function bigrams(s: string): string[] {
   return out;
 }
 
+/**
+ * Generic TOPIC bigrams: phrases that are a bill's SUBJECT, not its identity. They
+ * recur in ordinary world/national news ("inteligencia artificial", "libertad
+ * expresion", "estados unidos"), so a news item sharing ONE of these with a bill is
+ * about the same topic, NOT about that specific bill — it must never be the sole basis
+ * for a news→initiative link. A topic bigram can only support a link alongside a
+ * distinctive (non-topic) bigram. (See topicInitiativeLinks below.)
+ */
+const GENERIC_BIGRAMS = new Set(
+  [
+    "inteligencia artificial", "libertad expresion", "libertad prensa", "derechos humanos",
+    "seguridad social", "seguridad ciudadana", "seguridad nacional", "seguridad publica",
+    "medio ambiente", "cambio climatico", "desarrollo sostenible", "energia renovable",
+    "energia electrica", "codigo penal", "codigo trabajo", "codigo civil", "salud publica",
+    "salud mental", "poder ejecutivo", "poder judicial", "sector publico", "sector privado",
+    "banco central", "casa blanca", "estados unidos", "america latina", "union europea",
+    "naciones unidas", "consejo seguridad", "presupuesto general", "gasto publico",
+    "deuda publica", "servicio militar", "fuerzas armadas", "policia nacional",
+    "ministerio publico", "junta central", "tribunal constitucional", "corte suprema",
+    "relaciones exteriores", "politica exterior", "libre expresion", "opinion publica",
+    "redes sociales", "primera dama", "poder legislativo",
+  ].map((s) => s), // already accent-folded/lowercase
+);
+
 interface InitRef {
   code: string;
   id: number;
@@ -92,13 +118,70 @@ async function buildEntityIndex(db: Database): Promise<EntityIndex> {
   };
 }
 
+/** Legislators and committees named in the text (accent-folded substring match). For
+ *  NEWS, a committee whose name is a generic TOPIC ("Inteligencia Artificial") links
+ *  only when the text also says "comision/comité" — proof the news is about the
+ *  committee, not merely the subject. Official/legislative/social items keep the plain
+ *  name match (their committee context is already established by the source). */
+function nameEntities(
+  rawText: string,
+  kind: string,
+  idx: EntityIndex,
+): { tags: FeedEntityTag[]; primaryLeg: string | null; primaryComm: string | null } {
+  const text = norm(rawText);
+  const mentionsCommittee = /\bcomision\b|\bcomite\b|\bcomisiones\b/.test(text);
+  const tags: FeedEntityTag[] = [];
+  let primaryLeg: string | null = null;
+  let primaryComm: string | null = null;
+  for (const l of idx.legislators) {
+    if (l.key.length >= 8 && text.includes(l.key)) {
+      tags.push({ entityType: "LEGISLATOR", legislatorSourceId: l.sourceId, label: l.name });
+      primaryLeg ??= l.sourceId;
+    }
+  }
+  for (const c of idx.commissions) {
+    if (c.key.length < 10 || !text.includes(c.key)) continue;
+    // A committee whose whole name is a generic topic needs committee-context in NEWS.
+    if (kind === "NEWS" && GENERIC_BIGRAMS.has(c.key) && !mentionsCommittee) continue;
+    tags.push({ entityType: "COMMISSION", commissionName: c.name, label: c.name });
+    primaryComm ??= c.name;
+  }
+  return { tags, primaryLeg, primaryComm };
+}
+
+/**
+ * Bills a news item genuinely concerns, by distinctive title overlap. Precision rule:
+ * link only when the text shares ≥2 DISTINCT distinctive title bigrams with the bill AND
+ * at least one of them is NOT a generic topic phrase. This is what separates "about this
+ * specific bill" from "mentions the same subject" — a single shared phrase like
+ * "inteligencia artificial" (a passing mention in world news) no longer links.
+ */
+function topicInitiativeLinks(rawText: string, idx: EntityIndex): InitRef[] {
+  const perBill = new Map<string, { ref: InitRef; shared: Set<string>; hasSpecific: boolean }>();
+  for (const bg of new Set(bigrams(rawText))) {
+    const refs = idx.bigrams.get(bg);
+    if (!refs || refs.length > 2) continue; // non-distinctive across the bill corpus
+    const generic = GENERIC_BIGRAMS.has(bg);
+    for (const ref of refs) {
+      const e = perBill.get(ref.code) ?? { ref, shared: new Set<string>(), hasSpecific: false };
+      e.shared.add(bg);
+      if (!generic) e.hasSpecific = true;
+      perBill.set(ref.code, e);
+    }
+  }
+  return [...perBill.values()]
+    .filter((e) => e.shared.size >= 2 && e.hasSpecific)
+    .sort((a, b) => b.shared.size - a.shared.size)
+    .slice(0, 2)
+    .map((e) => e.ref);
+}
+
 async function resolveEntities(
   item: RawFeedItem,
   idx: EntityIndex,
   categorizer: ReturnType<typeof createCategorizer>,
 ): Promise<{ keep: boolean; record?: NewFeedItem; tags: FeedEntityTag[] }> {
   const rawText = `${item.title} ${item.summary ?? ""}`;
-  const text = norm(rawText);
   const tags: FeedEntityTag[] = [];
 
   // 1) Initiatives by exact official code.
@@ -107,21 +190,11 @@ async function resolveEntities(
     tags.push({ entityType: "INITIATIVE", initiativeCode: code, label: code });
   }
 
-  // 2) Legislators and committees by name.
-  let primaryLeg: string | null = null;
-  for (const l of idx.legislators) {
-    if (l.key.length >= 8 && text.includes(l.key)) {
-      tags.push({ entityType: "LEGISLATOR", legislatorSourceId: l.sourceId, label: l.name });
-      primaryLeg ??= l.sourceId;
-    }
-  }
-  let primaryComm: string | null = null;
-  for (const c of idx.commissions) {
-    if (c.key.length >= 10 && text.includes(c.key)) {
-      tags.push({ entityType: "COMMISSION", commissionName: c.name, label: c.name });
-      primaryComm ??= c.name;
-    }
-  }
+  // 2) Legislators and committees by name (topic-committee guard for NEWS).
+  const named = nameEntities(rawText, item.kind, idx);
+  tags.push(...named.tags);
+  const primaryLeg = named.primaryLeg;
+  const primaryComm = named.primaryComm;
 
   // Relevance (STRICT — fuzzy topic matches must NOT rescue irrelevant news). NEWS is kept
   // only with a hard Congress signal: a Congress/cabinet-change phrase, an exact bill code,
@@ -134,28 +207,14 @@ async function resolveEntities(
     isCongressRelevant(rawText);
   if (!relevant) return { keep: false, tags: [] };
 
-  // 3) Topic enrichment — only on items we KEEP: link to a bill via distinctive title
-  // bigrams (generic geographic bigrams are stopworded out; needs ≥2 points to link).
+  // 3) Topic enrichment — only on kept items, only when no exact code: link to a bill
+  // via distinctive title overlap (≥2 distinct bigrams, ≥1 non-generic — see above).
   if (!primaryCode) {
-    const scored = new Map<string, { ref: InitRef; pts: number }>();
-    for (const bg of new Set(bigrams(rawText))) {
-      const refs = idx.bigrams.get(bg);
-      if (!refs || refs.length > 2) continue; // non-distinctive → ignore
-      const w = refs.length === 1 ? 2 : 1; // a unique bigram is the stronger signal
-      for (const ref of refs) {
-        const cur = scored.get(ref.code) ?? { ref, pts: 0 };
-        cur.pts += w;
-        scored.set(ref.code, cur);
-      }
+    const links = topicInitiativeLinks(rawText, idx);
+    for (const ref of links) {
+      tags.push({ entityType: "INITIATIVE", initiativeCode: ref.code, label: ref.code });
     }
-    const best = [...scored.values()]
-      .filter((s) => s.pts >= 2)
-      .sort((a, b) => b.pts - a.pts)
-      .slice(0, 2);
-    for (const s of best) {
-      tags.push({ entityType: "INITIATIVE", initiativeCode: s.ref.code, label: s.ref.code });
-    }
-    if (best[0]) primaryCode = best[0].ref.code;
+    if (links[0]) primaryCode = links[0].code;
   }
 
   let category = item.category;
@@ -262,4 +321,67 @@ export async function ingestFeed(
   }));
 
   return out;
+}
+
+/**
+ * Recompute every STORED feed item's entity links (bills / legislators / committees)
+ * with the current (stricter) matching rules and reconcile the tags — so items ingested
+ * under looser rules stop showing spurious links (e.g. a Trump-tariffs story tagged to a
+ * DR AI bill because both said "inteligencia artificial" once). Idempotent; no scraping.
+ */
+export async function relinkFeedItems(
+  db: Database,
+  opts: { log?: (m: string) => void } = {},
+): Promise<{ processed: number; changed: number; linksRemoved: number }> {
+  const log = opts.log ?? (() => {});
+  const idx = await buildEntityIndex(db);
+  const items = await listAllFeedItems(db);
+  log(`  re-linking ${items.length} stored feed items with the current rules…`);
+
+  let processed = 0;
+  let changed = 0;
+  let linksRemoved = 0;
+
+  for (const it of items) {
+    const rawText = `${it.title} ${it.summary ?? ""}`;
+    const tags: FeedEntityTag[] = [];
+
+    // Initiatives by exact code (re-extracted from the stored text).
+    const codes = extractCodes(rawText);
+    let primaryCode = codes[0] ?? null;
+    for (const code of codes) tags.push({ entityType: "INITIATIVE", initiativeCode: code, label: code });
+
+    // Legislators + committees (topic-committee guard for NEWS).
+    const named = nameEntities(rawText, it.kind, idx);
+    tags.push(...named.tags);
+
+    // Strict topic links only when no exact code.
+    if (!primaryCode) {
+      const links = topicInitiativeLinks(rawText, idx);
+      for (const ref of links) tags.push({ entityType: "INITIATIVE", initiativeCode: ref.code, label: ref.code });
+      if (links[0]) primaryCode = links[0].code;
+    }
+
+    const oldInitiativeLinks = it.initiativeCode ? 1 : 0; // primary before
+    const record: NewFeedItem = {
+      ...it,
+      initiativeId: null, // upsertFeedItem re-resolves code→id
+      initiativeCode: primaryCode,
+      legislatorSourceId: named.primaryLeg,
+      commissionName: named.primaryComm,
+    };
+    await upsertFeedItem(db, record, tags);
+    processed++;
+
+    const before = it.initiativeCode ?? "";
+    const after = primaryCode ?? "";
+    if (before !== after || (it.commissionName ?? "") !== (named.primaryComm ?? "")) {
+      changed++;
+      if (before && !after) linksRemoved += oldInitiativeLinks;
+    }
+    if (processed % 50 === 0) log(`  …${processed}/${items.length}`);
+  }
+
+  log(`  ✔ ${changed} items relinked (${linksRemoved} spurious primary-bill links cleared)`);
+  return { processed, changed, linksRemoved };
 }

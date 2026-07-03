@@ -19,7 +19,7 @@ import { runDaily } from "./daily.js";
 import { ingestRoster } from "./ingest-roster.js";
 import { recategorizeAll } from "./recategorize.js";
 import { rescoreAll } from "./rescore.js";
-import { ingestFeed } from "./ingest-feed.js";
+import { ingestFeed, relinkFeedItems } from "./ingest-feed.js";
 import { seedFeedAccounts } from "./feed-accounts.seed.js";
 import { reindexSearch } from "./reindex-search.js";
 
@@ -194,6 +194,16 @@ async function main() {
       const total = r.reduce((n, s) => n + s.count, 0);
       const inserted = r.reduce((n, s) => n + s.inserted, 0);
       console.log(`\n✔ done in ${secs}s — sources ok ${ok}/${r.length}, items ${total} (${inserted} new)`);
+      return;
+    }
+
+    if (flag("relink-feed")) {
+      console.log("🔗 Re-linking stored feed items (recompute bill/legislator/committee tags)\n");
+      const r = await relinkFeedItems(db, { log: (m) => console.log(m) });
+      const secs = ((Date.now() - started) / 1000).toFixed(1);
+      console.log(
+        `\n✔ done in ${secs}s — ${r.processed} items, ${r.changed} relinked, ${r.linksRemoved} spurious bill links cleared`,
+      );
       return;
     }
 

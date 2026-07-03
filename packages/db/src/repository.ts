@@ -1523,6 +1523,35 @@ export interface FeedCursor {
  * id desc) — feeds grow at the head, so keyset avoids the dupes/skips of offset paging.
  * Each item carries its full entity-tag set (fetched in a second query, merged in memory).
  */
+/** Every stored feed item as a full NewFeedItem-shaped row — for the entity re-link
+ *  backfill (recompute which bills/legislators/committees each item is tagged to). */
+export async function listAllFeedItems(db: Database): Promise<
+  Array<NewFeedItem & { id: number }>
+> {
+  const rows = await db.select().from(feedItems);
+  return rows.map((r) => ({
+    id: r.id,
+    source: r.source,
+    sourceId: r.sourceId,
+    kind: r.kind,
+    title: r.title,
+    summary: r.summary,
+    imageUrl: r.imageUrl,
+    url: r.url,
+    author: r.author,
+    handle: r.handle,
+    platform: r.platform,
+    category: r.category,
+    publishedAt: r.publishedAt,
+    initiativeId: r.initiativeId,
+    initiativeCode: r.initiativeCode,
+    legislatorSourceId: r.legislatorSourceId,
+    commissionName: r.commissionName,
+    chamber: r.chamber,
+    raw: r.raw as object | null,
+  }));
+}
+
 export async function listFeedItems(
   db: Database,
   f: FeedFilters = {},
