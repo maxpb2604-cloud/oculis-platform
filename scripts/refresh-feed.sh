@@ -54,4 +54,9 @@ npm run daily      >>"$LOG" 2>&1 && echo "[$(ts)] ✔ daily ok"      >>"$LOG" ||
 npm run regulatory >>"$LOG" 2>&1 && echo "[$(ts)] ✔ regulatory ok" >>"$LOG" || echo "[$(ts)] ✖ regulatory failed" >>"$LOG"
 npm run feed       >>"$LOG" 2>&1 && echo "[$(ts)] ✔ feed ok"       >>"$LOG" || echo "[$(ts)] ✖ feed failed"       >>"$LOG"
 
+# Keyword-search index: the deposits/daily paths don't set search_text per-row, so
+# reindex after ingestion keeps newly-deposited bills findable by keyword/synonym.
+# Offline (thesaurus only, no API) and cheap (~1000 rows recomputed in seconds).
+npm run reindex-search >>"$LOG" 2>&1 && echo "[$(ts)] ✔ reindex-search ok" >>"$LOG" || echo "[$(ts)] ✖ reindex-search failed" >>"$LOG"
+
 echo "[$(ts)] ◼ refresh done" >>"$LOG"
