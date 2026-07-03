@@ -1523,6 +1523,12 @@ export interface FeedCursor {
  * id desc) — feeds grow at the head, so keyset avoids the dupes/skips of offset paging.
  * Each item carries its full entity-tag set (fetched in a second query, merged in memory).
  */
+/** Delete one feed item (its entity tags cascade via the FK). Used by the relink
+ *  pass to drop items that are no longer Congress-relevant under stricter rules. */
+export async function deleteFeedItem(db: Database, id: number): Promise<void> {
+  await db.delete(feedItems).where(eq(feedItems.id, id));
+}
+
 /** Every stored feed item as a full NewFeedItem-shaped row — for the entity re-link
  *  backfill (recompute which bills/legislators/committees each item is tagged to). */
 export async function listAllFeedItems(db: Database): Promise<

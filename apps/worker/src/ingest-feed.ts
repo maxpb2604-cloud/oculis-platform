@@ -8,6 +8,7 @@
  * heuristic categorizer (`createCategorizer`).
  */
 import {
+  deleteFeedItem,
   listAllFeedItems,
   listCommissions,
   listFeedAccounts,
@@ -176,6 +177,33 @@ function topicInitiativeLinks(rawText: string, idx: EntityIndex): InitRef[] {
     .map((e) => e.ref);
 }
 
+/**
+ * True when a press URL sits in a section that is never about the DR Congress —
+ * world news, sports, entertainment, lifestyle, etc. Outlets file articles by
+ * section in the first path segment(s) (e.g. diariolibre.com/mundo/europa/…), so
+ * this is a precise structural signal. Google-News items wrap the real URL in a
+ * news.google.com redirect (no readable section) and are already keyword-filtered
+ * by the Google query, so they simply don't match here.
+ */
+const OFF_TOPIC_SECTIONS = new Set([
+  "mundo", "internacional", "europa", "eeuu", "usa", "planeta", "america", "latinoamerica",
+  "deportes", "deporte", "deportivo",
+  "entretenimiento", "espectaculos", "espectáculos", "gente", "famosos", "farandula",
+  "farándula", "revista", "estilos", "estilo", "vida", "cine", "musica", "música",
+  "tecnologia", "tecnología", "salud-y-bienestar", "viajes", "autos", "motores",
+]);
+function isOffTopicSection(url: string | null | undefined): boolean {
+  if (!url) return false;
+  try {
+    const path = new URL(url).pathname.toLowerCase();
+    const segs = path.split("/").filter(Boolean);
+    // Check the first two path segments (outlets nest e.g. /mundo/europa/).
+    return segs.slice(0, 2).some((s) => OFF_TOPIC_SECTIONS.has(s));
+  } catch {
+    return false;
+  }
+}
+
 async function resolveEntities(
   item: RawFeedItem,
   idx: EntityIndex,
@@ -195,6 +223,13 @@ async function resolveEntities(
   tags.push(...named.tags);
   const primaryLeg = named.primaryLeg;
   const primaryComm = named.primaryComm;
+
+  // NEWS in a clearly off-topic section (world/sports/entertainment) is never Congress —
+  // drop it structurally by URL section, regardless of any fuzzy text match, UNLESS it
+  // cites an exact DR bill code. Catches e.g. .../mundo/europa/... foreign politics.
+  if (item.kind === "NEWS" && item.initiativeCodes.length === 0 && isOffTopicSection(item.url)) {
+    return { keep: false, tags: [] };
+  }
 
   // Relevance (STRICT — fuzzy topic matches must NOT rescue irrelevant news). NEWS is kept
   // only with a hard Congress signal: a Congress/cabinet-change phrase, an exact bill code,
@@ -332,15 +367,16 @@ export async function ingestFeed(
 export async function relinkFeedItems(
   db: Database,
   opts: { log?: (m: string) => void } = {},
-): Promise<{ processed: number; changed: number; linksRemoved: number }> {
+): Promise<{ processed: number; changed: number; linksRemoved: number; dropped: number }> {
   const log = opts.log ?? (() => {});
   const idx = await buildEntityIndex(db);
   const items = await listAllFeedItems(db);
-  log(`  re-linking ${items.length} stored feed items with the current rules…`);
+  log(`  re-evaluating ${items.length} stored feed items with the current rules…`);
 
   let processed = 0;
   let changed = 0;
   let linksRemoved = 0;
+  let dropped = 0;
 
   for (const it of items) {
     const rawText = `${it.title} ${it.summary ?? ""}`;
@@ -353,6 +389,22 @@ export async function relinkFeedItems(
 
     // Legislators + committees (topic-committee guard for NEWS).
     const named = nameEntities(rawText, it.kind, idx);
+
+    // Re-apply the relevance rule to stored NEWS: drop items that no longer qualify
+    // (off-topic section, or no Congress signal and no hard entity match). Non-NEWS
+    // (official/legislative/social) is always kept.
+    const stillRelevant =
+      it.kind !== "NEWS" ||
+      codes.length > 0 ||
+      (!isOffTopicSection(it.url) &&
+        (named.primaryLeg !== null || named.primaryComm !== null || isCongressRelevant(rawText)));
+    if (!stillRelevant) {
+      await deleteFeedItem(db, it.id);
+      dropped++;
+      processed++;
+      continue;
+    }
+
     tags.push(...named.tags);
 
     // Strict topic links only when no exact code.
@@ -382,6 +434,9 @@ export async function relinkFeedItems(
     if (processed % 50 === 0) log(`  …${processed}/${items.length}`);
   }
 
-  log(`  ✔ ${changed} items relinked (${linksRemoved} spurious primary-bill links cleared)`);
-  return { processed, changed, linksRemoved };
+  log(
+    `  ✔ ${changed} items relinked (${linksRemoved} spurious primary-bill links cleared), ` +
+      `${dropped} off-topic items dropped`,
+  );
+  return { processed, changed, linksRemoved, dropped };
 }

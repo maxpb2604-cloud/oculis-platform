@@ -223,9 +223,22 @@ export const CONGRESS_RE =
 export const CABINET_RE =
   /\bgabinete\b|\b(?:juramenta\w*|juramentaci[óo]n|destituy\w*|destituci[óo]n|design[aó]\w*|designaci[óo]n|nombr[aó]\w*|nombramiento|renunci[aó]\w*|sustituy\w*|relev[aó]\w*|ratific\w*|posesion\w*|toma\s+de\s+posesi[óo]n)\b[^.;]{0,45}\b(ministr[oa]s?|gabinete|c[óo]nsul|embajador(?:a)?|director(?:a)?\s+general|superintendent\w*|procurador\w*|viceministr\w*|senador(?:es|a)?|diputad[oa]s?)\b/i;
 
+/**
+ * Clearly-FOREIGN markers. The Dominican Republic is a presidential republic with NO
+ * "primer ministro" / "canciller" / "parlamento", so those (and world-body names) signal
+ * an international story. Used to veto the WEAK cabinet-change signal — e.g. "renuncia
+ * como primer ministro de Moldavia" must not be treated as a DR cabinet change. It never
+ * vetoes the STRONG Congress signal (a story genuinely about the Congreso Nacional that
+ * merely mentions a foreign leader still qualifies).
+ */
+export const FOREIGN_RE =
+  /\bprimer[ao]?\s+ministr[oa]s?\b|\bcanciller\b|\bcasa\s+blanca\b|\bkremlin\b|\bdowning\s+street\b|\b(?:uni[óo]n|parlamento|comisi[óo]n|banco\s+central)\s+europe[oa]\b|\bconsejo\s+de\s+seguridad\b|\bonu\b|\botan\b/i;
+
 /** Whether a piece of text concerns Congress, legislation, or a cabinet/congressist change. */
 export function isCongressRelevant(text: string): boolean {
-  return CONGRESS_RE.test(text) || CABINET_RE.test(text);
+  // Strong Congress signal always qualifies. The weaker cabinet-change signal is
+  // vetoed when the text is clearly about a foreign government.
+  return CONGRESS_RE.test(text) || (CABINET_RE.test(text) && !FOREIGN_RE.test(text));
 }
 
 /**

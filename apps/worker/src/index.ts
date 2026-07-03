@@ -202,7 +202,8 @@ async function main() {
       const r = await relinkFeedItems(db, { log: (m) => console.log(m) });
       const secs = ((Date.now() - started) / 1000).toFixed(1);
       console.log(
-        `\n✔ done in ${secs}s — ${r.processed} items, ${r.changed} relinked, ${r.linksRemoved} spurious bill links cleared`,
+        `\n✔ done in ${secs}s — ${r.processed} items, ${r.changed} relinked, ` +
+          `${r.linksRemoved} spurious bill links cleared, ${r.dropped} off-topic dropped`,
       );
       return;
     }
