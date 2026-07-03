@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { CATEGORY_LABELS, type Category } from "@oculis/core";
 import { type Lang } from "@/lib/i18n";
-import { shortBillName } from "@/lib/format";
+import { shortBillName, safeHref } from "@/lib/format";
 import type { FeedListItem, FeedTag, FeedFilters } from "@/lib/data";
 
 /** Chip text: bill NAME for initiatives (more identifiable than the code), else the label. */
@@ -156,8 +156,8 @@ export function FeedCard({
             )}
           </div>
 
-          {item.url ? (
-            <a href={item.url} target="_blank" rel="noreferrer" className="block">
+          {safeHref(item.url) ? (
+            <a href={safeHref(item.url)} target="_blank" rel="noopener noreferrer" className="block">
               <h3 className="serif text-[15.5px] font-semibold leading-snug hover:underline">
                 {item.title}
               </h3>

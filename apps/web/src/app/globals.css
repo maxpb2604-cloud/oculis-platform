@@ -8,10 +8,12 @@
  * Editorial serif display (Source Serif 4) + clean grotesque (Inter) for data.
  * Restrained ink/paper palette, FHC-blue accent, muted semantic risk tones.
  */
-@theme {
-  --font-serif: "Source Serif 4", Georgia, "Times New Roman", serif;
-  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+/* Fonts are self-hosted through next/font (layout.tsx), which exposes them as
+   the --font-inter/--font-source-serif/--font-plex-mono variables mapped here. */
+@theme inline {
+  --font-serif: var(--font-source-serif, Georgia, "Times New Roman", serif);
+  --font-sans: var(--font-inter, ui-sans-serif, system-ui, sans-serif);
+  --font-mono: var(--font-plex-mono, ui-monospace, monospace);
 }
 
 :root {

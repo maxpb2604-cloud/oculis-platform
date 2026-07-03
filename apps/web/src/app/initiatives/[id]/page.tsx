@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { CATEGORY_LABELS, type Category } from "@oculis/core";
 import { getInitiative } from "@/lib/data";
 import { dict, langQuery, type Lang } from "@/lib/i18n";
-import { formatISODate } from "@/lib/format";
+import { formatISODate, safeHref } from "@/lib/format";
 import { AppShell } from "@/components/app-shell";
 import { Panel, SectionHeading } from "@/components/ui/panel";
 import { RiskPill } from "@/components/initiatives-table";
@@ -139,8 +139,8 @@ export default async function Page({
               {ini.relatedNews.map((n) => (
                 <li key={n.id} className="px-5 py-3">
                   <div className="flex items-baseline justify-between gap-3">
-                    {n.url ? (
-                      <a href={n.url} target="_blank" rel="noopener noreferrer" className="text-sm font-medium hover:underline" style={{ cursor: "pointer" }}>
+                    {safeHref(n.url) ? (
+                      <a href={safeHref(n.url)} target="_blank" rel="noopener noreferrer" className="text-sm font-medium hover:underline" style={{ cursor: "pointer" }}>
                         {n.title} ↗
                       </a>
                     ) : (

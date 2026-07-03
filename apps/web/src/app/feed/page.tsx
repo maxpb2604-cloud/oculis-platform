@@ -39,12 +39,13 @@ export default async function FeedPage({ searchParams }: { searchParams: Promise
   // The explicit directory view never renders the timeline — skip the feed query.
   const directoryView = sp.view === "directory";
   const emptyPage: Awaited<ReturnType<typeof getFeed>> = { items: [], nextCursor: null };
-  const [page, facets, trending, accounts, freshness] = await Promise.all([
+  const [page, facets, trending, accounts, freshness, activeBill] = await Promise.all([
     directoryView ? Promise.resolve(emptyPage) : getFeed(filters, { limit: 25 }),
     getFeedFacets(),
     getFeedTrending(windowDays),
     getSuggestedAccounts(),
     getFeedFreshness(),
+    filters.initiativeCode ? getInitiativeByCode(filters.initiativeCode) : Promise.resolve(null),
   ]);
 
   // Fall back to the accounts directory ONLY when "Redes" (SOCIAL) is the sole
@@ -62,11 +63,9 @@ export default async function FeedPage({ searchParams }: { searchParams: Promise
   const showDirectory = directoryView || (socialOnly && page.items.length === 0);
 
   // Resolve the active bill filter to a readable name (instead of the code).
-  let activeLabel: string | undefined;
-  if (filters.initiativeCode) {
-    const bill = await getInitiativeByCode(filters.initiativeCode);
-    activeLabel = shortBillName(bill?.title, filters.initiativeCode);
-  }
+  const activeLabel = filters.initiativeCode
+    ? shortBillName(activeBill?.title, filters.initiativeCode)
+    : undefined;
 
   return (
     <AppShell

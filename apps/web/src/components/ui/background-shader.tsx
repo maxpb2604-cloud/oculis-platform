@@ -30,6 +30,7 @@ const NIGHT_COLORS = [
 export function MeshBackground() {
   const [dark, setDark] = useState(false);
   const [reduce, setReduce] = useState(false);
+  const [hidden, setHidden] = useState(false);
 
   useEffect(() => {
     const el = document.documentElement;
@@ -38,7 +39,15 @@ export function MeshBackground() {
     const obs = new MutationObserver(sync);
     obs.observe(el, { attributes: true, attributeFilter: ["class"] });
     setReduce(window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false);
-    return () => obs.disconnect();
+    // Pause the WebGL animation when the tab is hidden — a background dashboard
+    // tab must not keep the GPU busy.
+    const onVis = () => setHidden(document.hidden);
+    onVis();
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      obs.disconnect();
+      document.removeEventListener("visibilitychange", onVis);
+    };
   }, []);
 
   return (
@@ -51,7 +60,7 @@ export function MeshBackground() {
         offsetY={0}
         scale={1}
         rotation={0}
-        speed={reduce ? 0 : 0.6}
+        speed={reduce || hidden ? 0 : 0.25}
         colors={dark ? NIGHT_COLORS : DAY_COLORS}
       />
     </div>

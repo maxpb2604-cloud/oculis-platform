@@ -38,5 +38,7 @@ if [ "${1:-}" = "--build" ] || [ ! -f .next/BUILD_ID ]; then
   echo "[$(ts)] ✔ build ok" >>"$LOG"
 fi
 
-echo "[$(ts)] ▶ next start :3000" >>"$LOG"
-exec npm run start >>"$LOG" 2>&1
+# Bind loopback only: next start's default (all interfaces) would expose the
+# unauthenticated dashboard and the Senate-proxy API to the whole LAN.
+echo "[$(ts)] ▶ next start 127.0.0.1:3000" >>"$LOG"
+exec npm run start -- --hostname 127.0.0.1 >>"$LOG" 2>&1

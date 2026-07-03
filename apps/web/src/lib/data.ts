@@ -58,15 +58,28 @@ export type {
 } from "@oculis/db";
 
 let handle: DbHandle | null = null;
+let schemaReady: Promise<void> | null = null;
 async function db() {
+  // Assign synchronously so concurrent first requests share ONE handle and all
+  // await the same ensureSchema run (instead of racing the ~70 DDL statements).
   if (!handle) {
     handle = createDb();
-    await handle.ensureSchema(); // safe no-op if tables already exist
+    schemaReady = handle.ensureSchema(); // safe no-op if tables already exist
   }
+  await schemaReady;
   return handle.db;
 }
 
-export async function getDashboardData() {
+/**
+ * Dashboard aggregates change only when the worker ingests (6×/day schedule),
+ * so serving them from a 2-minute cache removes ~5 aggregate queries per
+ * request without any visible staleness.
+ */
+export const getDashboardData = unstable_cache(_getDashboardData, ["dashboard-data"], {
+  revalidate: 120,
+});
+
+async function _getDashboardData() {
   const d = await db();
   const [kpis, byApproval, byCategory, byStatusRaw, recent] = await Promise.all([
     dashboardKpis(d),
@@ -247,10 +260,15 @@ export async function browseInitiatives(f: InitiativeFilters) {
 
 export async function getInitiative(id: number) {
   const d = await db();
-  const ini = await getInitiativeById(d, id);
+  const [ini, relatedNews] = await Promise.all([
+    getInitiativeById(d, id),
+    listFeedForInitiative(d, id, 10),
+  ]);
   if (!ini) return null;
-  const relatedNews = await listFeedForInitiative(d, id, 10);
-  return { ...ini, relatedNews };
+  // Neither the detail page nor the modal renders the raw scrape payload —
+  // shipping it doubled the /api/initiatives/:id response for nothing.
+  const { raw: _raw, ...rest } = ini as typeof ini & { raw?: unknown };
+  return { ...rest, relatedNews };
 }
 
 // --- Phase 1: daily activity monitoring (both chambers) ---
@@ -329,8 +347,15 @@ export async function getChamberActivity(chamber: string, limit = 120) {
  * most-recent successful run time overall, plus a per-source breakdown (name,
  * ok, when, item count). Reads `ingestion_runs` (the same data the monitoring
  * page uses), filtered to `feed-*` sources.
+ *
+ * Cached 60s — the underlying runs land 6×/day; the percentile CTE it triggers
+ * was running on every /feed render.
  */
-export async function getFeedFreshness() {
+export const getFeedFreshness = unstable_cache(_getFeedFreshness, ["feed-freshness"], {
+  revalidate: 60,
+});
+
+async function _getFeedFreshness() {
   const d = await db();
   const all = await latestRunsBySource(d);
   const LABELS: Record<string, string> = {
@@ -400,11 +425,16 @@ export async function getFeed(
   return listFeedItems(d, filters, opts);
 }
 
-/** Distinct categories + kinds present in the feed (left-panel dropdowns). */
-export async function getFeedFacets() {
-  const d = await db();
-  return feedFacets(d);
-}
+/** Distinct categories present in the feed (left-panel dropdowns). Cached 5 min —
+ *  two full-table group-bys that only change when the worker ingests. */
+export const getFeedFacets = unstable_cache(
+  async () => {
+    const d = await db();
+    return feedFacets(d);
+  },
+  ["feed-facets"],
+  { revalidate: 300 },
+);
 
 /** Resolve a bill code → title for the feed's active-filter chip. */
 export async function getInitiativeByCode(code: string) {
