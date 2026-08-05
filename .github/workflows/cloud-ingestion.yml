@@ -1,0 +1,68 @@
+name: Cloud data ingestion
+
+on:
+  schedule:
+    # 06:15, 14:15 and 22:15 in Santo Domingo (UTC-4).
+    # Three short runs per day keep usage inside GitHub Free's monthly allowance.
+    - cron: "15 2,10,18 * * *"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Ingestion mode"
+        required: true
+        default: "daily"
+        type: choice
+        options:
+          - daily
+          - bootstrap
+
+permissions:
+  contents: read
+
+concurrency:
+  group: oculis-cloud-ingestion
+  cancel-in-progress: false
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      OCULIS_USE_CLAUDE: "0"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify database configuration
+        run: test -n "$DATABASE_URL"
+
+      - name: Run scheduled monitoring
+        if: github.event_name == 'schedule' || inputs.mode == 'daily'
+        run: npm run daily -w @oculis/worker
+
+      - name: Bootstrap initiatives
+        if: github.event_name == 'workflow_dispatch' && inputs.mode == 'bootstrap'
+        run: npm run ingest -w @oculis/worker
+
+      - name: Bootstrap roster
+        if: github.event_name == 'workflow_dispatch' && inputs.mode == 'bootstrap'
+        run: npm run roster -w @oculis/worker
+
+      - name: Bootstrap regulatory sources
+        if: github.event_name == 'workflow_dispatch' && inputs.mode == 'bootstrap'
+        run: npm run ingest -w @oculis/worker -- --regulatory
+
+      - name: Finish bootstrap with current activity and feed
+        if: github.event_name == 'workflow_dispatch' && inputs.mode == 'bootstrap'
+        run: npm run daily -w @oculis/worker
