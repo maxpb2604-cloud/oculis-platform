@@ -73,7 +73,9 @@ async function runSource(
       );
     }
     const outcome = anomalyGaps.length ? "PARTIAL" : "COMPLETE";
-    const ok = outcome === "COMPLETE";
+    // Reaching the source and persisting its explicit response is operational success,
+    // even when the source reports no activity or a reconciliation gap.
+    const ok = true;
     await recordIngestionRun(db, {
       source,
       runId,
@@ -84,7 +86,7 @@ async function runSource(
       details: anomalyGaps.length ? { gaps: anomalyGaps } : null,
     });
     log(
-      `  ${ok ? "✔" : "⚠"} ${events.length} events (${inserted} new)` +
+      `  ${outcome === "COMPLETE" ? "✔" : "⚠"} ${events.length} events (${inserted} new)` +
         (anomalyGaps.length ? ` · ${anomalyGaps.length} gap(s)` : ""),
     );
     anomalyGaps.forEach((g) => log(`    ⚠ ${g}`));

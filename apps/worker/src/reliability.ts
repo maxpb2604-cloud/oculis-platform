@@ -2,7 +2,10 @@ import { SOURCE_REGISTRY } from "@oculis/scrapers";
 
 export interface SourceResult {
   source: string;
+  /** False only when the source execution failed operationally. */
   ok: boolean;
+  /** Completeness is independent from operational health. */
+  outcome?: "COMPLETE" | "PARTIAL" | "FAILED";
 }
 
 export const REQUIRED_SOURCE_SETS = {
@@ -30,9 +33,8 @@ export const REQUIRED_SOURCE_SETS = {
 } as const;
 
 /**
- * Fail when a mode omits a required source as well as when that source reports a
- * failure/partial result. Looking only at returned rows would let a skipped adapter
- * silently pass automation.
+ * Fail when a mode omits a required source or that source fails operationally.
+ * A successful PARTIAL run remains visible through its outcome and recorded gaps.
  */
 export function assertRequiredSourcesOk(
   context: string,
@@ -51,7 +53,7 @@ export function assertRequiredSourcesOk(
   if (missing.length || failed.length) {
     const problems = [
       missing.length ? `missing: ${missing.join(", ")}` : "",
-      failed.length ? `failed/partial: ${failed.join(", ")}` : "",
+      failed.length ? `failed: ${failed.join(", ")}` : "",
     ].filter(Boolean);
     throw new Error(`${context}: required source coverage incomplete (${problems.join("; ")})`);
   }

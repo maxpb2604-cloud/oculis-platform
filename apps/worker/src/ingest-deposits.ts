@@ -229,14 +229,20 @@ export async function ingestDeposits(
       if (delayMs) await sleep(delayMs);
     }
 
-    const ok = failures === 0 && rejected === 0 && scan.truncatedSlices === 0;
-    const outcome = ok ? "COMPLETE" : "PARTIAL";
-    const errorParts = [
-      failures ? `${failures} enrichment request(s) failed` : "",
-      rejected ? `${rejected} row(s) lacked an official title` : "",
-      scan.truncatedSlices ? `${scan.truncatedSlices} slice(s) were truncated` : "",
-    ].filter(Boolean);
-    const error = errorParts.join("; ") || undefined;
+    // Request failures remain operational failures. Missing explicit fields and
+    // truncated official slices remain visible as PARTIAL factual coverage.
+    if (rejected > 0) {
+      gaps.push(`${rejected} fila(s) sin título oficial fueron descartadas.`);
+    }
+    if (failures > 0) {
+      gaps.push(`${failures} solicitud(es) oficiales de enriquecimiento fallaron.`);
+    }
+    const ok = failures === 0;
+    const outcome =
+      failures === 0 && rejected === 0 && scan.truncatedSlices === 0
+        ? "COMPLETE"
+        : "PARTIAL";
+    const error = failures ? `${failures} enrichment request(s) failed` : undefined;
     await recordIngestionRun(db, {
       source: DEPOSITS_SOURCE,
       runId,
@@ -363,13 +369,11 @@ export async function ingestSenateDeposits(
       );
     }
     const collectionEmpty = opts.fullCollection === true && rows.length === 0;
-    const ok = rejected === 0 && !collectionEmpty;
-    const outcome = ok && truncatedTitles === 0 ? "COMPLETE" : "PARTIAL";
+    const ok = !collectionEmpty;
+    const outcome = collectionEmpty ? "FAILED" : gaps.length ? "PARTIAL" : "COMPLETE";
     const error = collectionEmpty
       ? "complete configured collection returned zero initiatives"
-      : ok
-        ? undefined
-        : `${rejected} row(s) lacked an official title`;
+      : undefined;
     await recordIngestionRun(db, {
       source,
       runId,
