@@ -1,24 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { buildISODate, MONTHS_ES, spanishMonthToNum } from "../src/dates.js";
+import { parseSpanishDate, SilActividadAdapter } from "../src/sil-actividad.js";
 
 /**
  * The plenary order-of-the-day parser in sil-actividad.ts pulls the session date out of
- * free text like "...MIÉRCOLES 24 DE JUNIO DE 2026..." via an internal `parseSpanishDate`
- * helper. That helper is NOT exported, so we exercise the exported building blocks it is
- * composed of — `spanishMonthToNum` + `buildISODate` (from dates.ts) — which reproduce the
- * exact "24 DE JUNIO DE 2026" -> "2026-06-24" behavior end to end. We also drive the public
- * Spanish-date regex inline so the whole-string path is covered.
+ * free text like "...MIÉRCOLES 24 DE JUNIO DE 2026...". These tests exercise that public
+ * parser directly as well as the shared validated date helpers it uses.
  */
-
-// Mirror of the regex used by sil-actividad's parseSpanishDate (case-insensitive).
-const SPANISH_DATE_RE = /(\d{1,2})\s+de\s+([a-záéíóúñ]+)\s+de\s+(\d{4})/i;
-
-function parseSpanishDate(text: string): string | null {
-  const m = SPANISH_DATE_RE.exec(text);
-  if (!m) return null;
-  const mm = spanishMonthToNum(m[2]);
-  return mm ? buildISODate(m[1]!, mm, m[3]!) : null;
-}
 
 describe("dates: spanishMonthToNum", () => {
   it("resolves full month names", () => {
@@ -82,5 +70,36 @@ describe("sil-actividad plenary date parsing (via exported dates helpers)", () =
 
   it("returns null when no Spanish date is present", () => {
     expect(parseSpanishDate("ORDEN DEL DÍA - sin fecha")).toBeNull();
+  });
+
+  it("does not substitute an upload timestamp for an absent session date", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({
+          page: 1,
+          pageSize: 10,
+          total: 1,
+          results: [
+            {
+              id: 99,
+              documento: "ORDEN DEL DÍA SIN FECHA DE SESIÓN",
+              descripcion: "Agenda publicada",
+              cargado: "2026-08-05T18:30:00",
+              tipoAgenda: 1,
+            },
+          ],
+        }),
+      ),
+    );
+    try {
+      const result = await new SilActividadAdapter("https://official.test/api").plenaryOrders();
+      expect(result.events[0]?.date).toBeNull();
+      expect(
+        (result.events[0]?.raw as { provenance?: { dateEvidence?: unknown } }).provenance,
+      ).toHaveProperty("dateEvidence", null);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

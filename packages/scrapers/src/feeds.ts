@@ -3,7 +3,7 @@
  *
  * Three kinds of source feed the Congress timeline, all link-back-able and verifiable:
  *  - OFFICIAL: Senado + Cámara de Diputados news (their WordPress RSS).
- *  - NEWS: respected DR papers' RSS (the worker filters to Congress/cabinet relevance).
+ *  - NEWS: source-scoped DR press feeds and an explicit Congress search feed.
  *  - SOCIAL: X / Instagram via a CREDENTIAL-GATED adapter driven by the curated
  *    account registry (`feed_accounts`). With no API token it returns nothing (the
  *    accounts remain a browsable directory); with a token it pulls recent posts.
@@ -34,7 +34,7 @@ export interface RawFeedItem {
   author: string | null;
   handle: string | null; // @handle for social
   platform: FeedPlatform;
-  category: string | null; // tagged later by the worker
+  category: string | null; // source-reported only; worker leaves its taxonomy null
   publishedAt: string | null; // ISO datetime
   chamber: string | null; // SENADO | DIPUTADOS | null
   initiativeCodes: string[]; // official codes mentioned (resolved to ids in the worker)
@@ -143,12 +143,14 @@ function enclosureImage(block: string): string | null {
     block.match(/<enclosure\b[^>]*url=["']([^"']+)["'][^>]*type=["']image/i);
   return m ? m[1]! : null;
 }
-function rssDateToIso(d: string | null): string | null {
+export function rssDateToIso(d: string | null): string | null {
   if (!d) return null;
+  const hasExplicitTime = /(?:T|\s)\d{1,2}:\d{2}(?::\d{2}(?:\.\d+)?)?/i.test(d);
+  const hasExplicitZone = /(?:Z|[+-]\d{2}:?\d{2}|\b(?:GMT|UTC)\b)\s*$/i.test(d);
+  if (!hasExplicitTime || !hasExplicitZone) return null;
   const ms = Date.parse(d);
   if (!Number.isNaN(ms)) return new Date(ms).toISOString();
-  const iso = d.match(/(\d{4}-\d{2}-\d{2})/);
-  return iso ? `${iso[1]}T00:00:00.000Z` : null;
+  return null;
 }
 
 export interface RichRssItem {
@@ -158,6 +160,8 @@ export interface RichRssItem {
   summary: string | null;
   imageUrl: string | null;
   author: string | null;
+  /** Literal RSS/Atom <source> label, when the feed supplies one. */
+  feedSource: string | null;
   guid: string | null;
 }
 
@@ -169,6 +173,11 @@ export async function readRichRss(url: string): Promise<RichRssItem[]> {
       Accept: "application/rss+xml, application/atom+xml, application/xml, text/xml, */*",
     },
   });
+  return parseRichRssXml(xml);
+}
+
+/** Pure RSS parser used by adapters and factual-integrity tests. */
+export function parseRichRssXml(xml: string): RichRssItem[] {
   const blocks = [
     ...[...xml.matchAll(/<item\b[\s\S]*?<\/item>/gi)].map((m) => m[0]),
     ...[...xml.matchAll(/<entry\b[\s\S]*?<\/entry>/gi)].map((m) => m[0]),
@@ -182,10 +191,9 @@ export async function readRichRss(url: string): Promise<RichRssItem[]> {
       enclosureImage(b) ??
       firstImg(content);
     const link = tagText(b, "link") || tagAttr(b, "link", "href");
-    const summary =
-      tagText(b, "description") ??
-      tagText(b, "summary") ??
-      (content ? strip(content).slice(0, 400) : null);
+    // Description/summary are explicit source fields. Full article content is not
+    // repackaged or truncated into a synthetic summary when those fields are absent.
+    const summary = tagText(b, "description") ?? tagText(b, "summary");
     return {
       title: tagText(b, "title") ?? "",
       link,
@@ -198,36 +206,16 @@ export async function readRichRss(url: string): Promise<RichRssItem[]> {
       summary,
       imageUrl: image,
       author: tagText(b, "dc:creator") ?? tagText(b, "author"),
+      feedSource: tagText(b, "source"),
       guid: tagText(b, "guid") ?? link,
     };
   });
 }
 
 /**
- * Precise Congress/legislation signal. Deliberately specific — it does NOT match bare
- * "ley" / "comisión" / "resolución" (which appear in crime/judicial stories: "comisión
- * de un delito", "ley seca"), only legislative contexts.
- */
-export const CONGRESS_RE =
-  /\b(congreso\s+nacional|congreso|senado|senador(?:es|a)?|diputad[oa]s?|c[áa]mara\s+de\s+diputad|c[áa]mara\s+baja|c[áa]mara\s+alta|legislaci[óo]n|legislativ[oa]s?|legislador(?:es|a)?|proyecto\s+de\s+ley|proyecto\s+de\s+resoluci[óo]n|ley\s+(?:de|org[áa]nica|general|n[úu]m|que|sobre)|pieza\s+legislativa|bicameral|hemiciclo|curul|pleno\s+(?:del?\s+)?(?:senado|congreso|c[áa]mara))\b/i;
-
-/**
- * Cabinet / congressist CHANGES (the user wants these too): a change verb (juramenta,
- * destituye, designa, nombra, renuncia, sustituye, releva, ratifica, toma posesión) near
- * an official role (ministro, gabinete, cónsul, embajador, director, senador, diputado…),
- * or a bare "gabinete" mention.
- */
-export const CABINET_RE =
-  /\bgabinete\b|\b(?:juramenta\w*|juramentaci[óo]n|destituy\w*|destituci[óo]n|design[aó]\w*|designaci[óo]n|nombr[aó]\w*|nombramiento|renunci[aó]\w*|sustituy\w*|relev[aó]\w*|ratific\w*|posesion\w*|toma\s+de\s+posesi[óo]n)\b[^.;]{0,45}\b(ministr[oa]s?|gabinete|c[óo]nsul|embajador(?:a)?|director(?:a)?\s+general|superintendent\w*|procurador\w*|viceministr\w*|senador(?:es|a)?|diputad[oa]s?)\b/i;
-
-/** Whether a piece of text concerns Congress, legislation, or a cabinet/congressist change. */
-export function isCongressRelevant(text: string): boolean {
-  return CONGRESS_RE.test(text) || CABINET_RE.test(text);
-}
-
-/**
- * Stable dedup key from an article URL: lowercases the host and drops the query
- * string, fragment, and any trailing slash. Used instead of the RSS `<guid>`
+ * Stable dedup key from an article URL: lowercases the host and drops only the
+ * client-side fragment. Query parameters remain part of source identity because
+ * distinct official URLs must not be collapsed. Used instead of the RSS `<guid>`
  * because some sources rotate their guid across publish cycles (e.g. Diario
  * Libre emits a fresh UUID guid for the same article over time), which defeated
  * the `(source, sourceId)` uniqueness and re-inserted every article each run.
@@ -237,9 +225,11 @@ export function canonicalLink(link: string | null): string | null {
   if (!link) return null;
   try {
     const u = new URL(link);
-    return `${u.protocol}//${u.host.toLowerCase()}${u.pathname.replace(/\/+$/, "")}`;
+    u.hostname = u.hostname.toLowerCase();
+    u.hash = "";
+    return u.toString();
   } catch {
-    return link.split(/[?#]/)[0] || link;
+    return link;
   }
 }
 
@@ -249,7 +239,6 @@ export interface RssAdapterOpts {
   feeds: string[];
   chamber?: string | null;
   category?: string | null;
-  keywordFilter?: RegExp | null; // null = keep all (used for official sources)
 }
 
 /** Generic RSS-backed feed adapter; one instance per outlet (may read several feeds). */
@@ -265,19 +254,18 @@ export class RssFeedAdapter implements FeedAdapter {
     const items: RawFeedItem[] = [];
     const gaps: string[] = [];
     const seen = new Set<string>();
+    let successfulFeeds = 0;
     for (const feed of this.opts.feeds) {
       try {
         const rss = await readRichRss(feed);
-        let kept = 0;
+        successfulFeeds++;
         for (const r of rss) {
           if (!r.title) continue;
           const text = `${r.title} ${r.summary ?? ""}`;
-          if (this.opts.keywordFilter && !this.opts.keywordFilter.test(text)) continue;
           // Key on the canonical URL (stable) before the guid (some sources rotate it).
           const sourceId = canonicalLink(r.link) ?? r.guid ?? r.title;
           if (seen.has(sourceId)) continue;
           seen.add(sourceId);
-          kept++;
           items.push({
             source: this.source,
             sourceId,
@@ -293,49 +281,28 @@ export class RssFeedAdapter implements FeedAdapter {
             publishedAt: r.publishedAt,
             chamber: this.opts.chamber ?? null,
             initiativeCodes: extractCodes(text),
-            raw: r,
+            raw: { payload: r, provenance: { feedUrl: feed } },
           });
         }
         if (rss.length === 0) {
           gaps.push(`${this.source} · ${feed}: 0 ítems (verificar la URL del feed RSS).`);
-        } else if (this.opts.keywordFilter && kept === 0) {
-          gaps.push(`${this.source} · ${feed}: ${rss.length} ítems, ninguno sobre el Congreso.`);
         }
       } catch (err) {
         gaps.push(`${this.source} · ${feed}: ${(err as Error).message}`);
       }
     }
+    if (successfulFeeds === 0) {
+      throw new Error(gaps.join(" | ") || `${this.source}: no feed could be read`);
+    }
     return { items, gaps };
   }
-}
-
-/** Clean a Google-News source label ("El Nacional — La voz…", "elcaribe.com.do") → name. */
-function cleanOutlet(s: string | null): string | null {
-  if (!s) return null;
-  const o = s.split(/[—|–]/)[0]!.trim();
-  const map: Record<string, string> = {
-    "elcaribe.com.do": "El Caribe",
-    "listindiario.com": "Listín Diario",
-    "acento.com.do": "Acento",
-    "hoy.com.do": "Hoy",
-    "elnacional.com.do": "El Nacional",
-    "diariolibre.com": "Diario Libre",
-    "n.com.do": "N Digital",
-    "eldia.com.do": "El Día",
-    "elnuevodiario.com.do": "El Nuevo Diario",
-    "almomento.net": "Al Momento",
-    "cdn.com.do": "CDN",
-    "z101digital.com": "Z101 Digital",
-    "proceso.com.do": "Proceso",
-  };
-  return map[o.toLowerCase()] ?? o;
 }
 
 /**
  * Google News RSS adapter — the reliable path for outlets whose own RSS is dead/redirected
  * (Listín, Acento, El Nacional, Hoy, El Caribe). Queries Google News restricted to DR sites
  * + Congress terms, so results are recent, DR-specific, and source-attributed. The item's
- * outlet is parsed from the "Headline - Outlet" title and stored as `author` (shown on the
+ * outlet comes from the RSS `<source>` element and is stored as `author` (shown on the
  * card). Items older than ~5 weeks are dropped (Google sometimes mixes in stale results).
  */
 export class GoogleNewsAdapter implements FeedAdapter {
@@ -356,9 +323,8 @@ export class GoogleNewsAdapter implements FeedAdapter {
       for (const r of rss) {
         if (!r.title) continue;
         if (r.publishedAt && Date.parse(r.publishedAt) < cutoff) continue; // drop stale
-        const idx = r.title.lastIndexOf(" - ");
-        const outlet = cleanOutlet(idx > 0 ? r.title.slice(idx + 3) : null);
-        const title = idx > 0 ? r.title.slice(0, idx).trim() : r.title;
+        const outlet = r.feedSource;
+        const title = r.title;
         const sourceId = canonicalLink(r.link) ?? r.guid ?? title;
         if (seen.has(sourceId)) continue;
         seen.add(sourceId);
@@ -377,12 +343,12 @@ export class GoogleNewsAdapter implements FeedAdapter {
           publishedAt: r.publishedAt,
           chamber: null,
           initiativeCodes: extractCodes(title),
-          raw: r,
+          raw: { payload: r, provenance: { feedUrl: url, query: this.opts.query } },
         });
       }
       if (rss.length === 0) gaps.push(`${this.source}: 0 ítems de Google News.`);
     } catch (err) {
-      gaps.push(`${this.source}: ${(err as Error).message}`);
+      throw new Error(`${this.source}: ${(err as Error).message}`);
     }
     return { items, gaps };
   }
@@ -413,7 +379,7 @@ export function officialFeedAdapters(): FeedAdapter[] {
  * Respected DR press. Diario Libre's own RSS still works (direct article links); the other
  * outlets (Listín, Acento, El Nacional, Hoy, El Caribe…) killed/redirected their feeds, so
  * a single Google-News adapter — restricted to those DR sites + Congress terms — supplies
- * recent, source-attributed Congress news from them. The worker still applies relevance.
+ * recent, source-attributed Congress news from them. The worker persists the query output as-is.
  */
 export function pressFeedAdapters(): FeedAdapter[] {
   const sites = [
@@ -441,12 +407,9 @@ export function pressFeedAdapters(): FeedAdapter[] {
     new RssFeedAdapter({
       source: "feed-diariolibre",
       kind: "NEWS",
-      feeds: [
-        "https://www.diariolibre.com/rss/portada.xml",
-        "https://www.diariolibre.com/rss/actualidad.xml",
-        "https://www.diariolibre.com/rss/politica.xml",
-        "https://www.diariolibre.com/rss/economia.xml",
-      ],
+      // This source labels the section itself; persist it as-is without a worker
+      // topic decision over article text.
+      feeds: ["https://www.diariolibre.com/rss/politica.xml"],
     }),
     // 30-day window (matches the adapter's 35-day staleness cutoff) for more depth.
     new GoogleNewsAdapter({ source: "feed-prensa", query: `(${sites}) ${terms} when:30d` }),
@@ -480,6 +443,12 @@ export class XSocialAdapter {
   constructor(private readonly token = process.env.X_BEARER_TOKEN) {}
 
   async collect(accounts: SocialAccount[]): Promise<{ items: RawFeedItem[]; gaps: string[] }> {
+    if (accounts.length === 0) {
+      return {
+        items: [],
+        gaps: ["feed-x · no hay cuentas activas con evidencia de verificación."],
+      };
+    }
     if (!this.token) {
       return {
         items: [],
@@ -509,15 +478,14 @@ export class XSocialAdapter {
             }
             for (const t of (tw?.data ?? []) as any[]) {
               const text = String(t.text ?? "");
-              // Only relevant tweets: about Congress / legislation / a cabinet change.
-              if (!isCongressRelevant(text)) continue;
+              if (!text.trim()) continue;
               const key = t.attachments?.media_keys?.[0];
               items.push({
                 source: this.source,
                 sourceId: `x:${t.id}`,
                 kind: "SOCIAL",
-                title: text.split("\n")[0]!.slice(0, 160) || `Publicación de ${u.name}`,
-                summary: text,
+                title: text,
+                summary: null,
                 imageUrl: key ? (media.get(key) ?? null) : null,
                 url: `https://x.com/${u.username}/status/${t.id}`,
                 author: u.name,
@@ -527,7 +495,10 @@ export class XSocialAdapter {
                 publishedAt: t.created_at ?? null,
                 chamber: acct?.chamber ?? null,
                 initiativeCodes: extractCodes(text),
-                raw: t,
+                raw: {
+                  payload: t,
+                  provenance: { api: "X API v2", account: `@${u.username}` },
+                },
               });
             }
           } catch (err) {

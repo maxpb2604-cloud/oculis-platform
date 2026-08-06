@@ -11,18 +11,25 @@
  *     out and can run on the DR-side machine without blocking metadata ingestion.
  */
 import {
+  beginIngestionRun,
   listInitiativesForDocuments,
   listDocumentsToFetch,
+  recordIngestionRun,
   upsertDocument,
   type Database,
 } from "@oculis/db";
-import { SilDiputadosAdapter, fetchBytes } from "@oculis/scrapers";
+import { extractLeadingISODate, SilDiputadosAdapter, fetchBytes } from "@oculis/scrapers";
 import { createStorage } from "./storage.js";
 
 export interface DocIngestSummary {
+  source: "sil-documents";
+  ok: boolean;
+  outcome: "COMPLETE" | "PARTIAL" | "FAILED";
   initiatives: number;
   documents: number;
   newDocuments: number;
+  failures: number;
+  error?: string;
 }
 
 /** Phase 1: populate document metadata + official URLs for every initiative. */
@@ -33,16 +40,23 @@ export async function ingestDocuments(
   const { limit, delayMs = 60, log = () => {} } = opts;
   const adapter = new SilDiputadosAdapter();
   const rows = await listInitiativesForDocuments(db, { source: "sil-diputados", limit });
+  const runId = await beginIngestionRun(db, "sil-documents", { requestedLimit: limit ?? null });
   log(`  scanning documents for ${rows.length} initiatives`);
 
   let documents = 0;
   let newDocuments = 0;
+  let failures = 0;
+  const failureExamples: string[] = [];
   for (const [i, row] of rows.entries()) {
     let docs;
     try {
       docs = await adapter.documentos(row.sourceId);
-    } catch {
-      continue; // best-effort; a single initiative's doc failure shouldn't stop the sweep
+    } catch (error) {
+      failures++;
+      if (failureExamples.length < 10) {
+        failureExamples.push(`${row.sourceId}: ${(error as Error).message}`);
+      }
+      continue;
     }
     for (const d of docs) {
       documents++;
@@ -51,9 +65,9 @@ export async function ingestDocuments(
         initiativeId: row.id,
         initiativeCode: row.code ?? d.documento ?? null,
         docType: (d.descripcion ?? "").trim() || null,
-        extension: d.extension ?? "pdf",
+        extension: d.extension?.trim() || null,
         url: adapter.documentUrl(d.id),
-        uploadedAt: (d.cargado ?? "").slice(0, 10) || null,
+        uploadedAt: extractLeadingISODate(d.cargado),
         sourceDocId: String(d.id),
       });
       if (inserted) newDocuments++;
@@ -61,7 +75,29 @@ export async function ingestDocuments(
     if ((i + 1) % 50 === 0) log(`  …${i + 1}/${rows.length} (${documents} docs)`);
     if (delayMs) await sleep(delayMs);
   }
-  return { initiatives: rows.length, documents, newDocuments };
+  const ok = failures === 0;
+  const outcome = ok ? "COMPLETE" : "PARTIAL";
+  const error = ok ? undefined : `${failures} official document-list request(s) failed`;
+  await recordIngestionRun(db, {
+    source: "sil-documents",
+    runId,
+    seen: rows.length,
+    inserted: newDocuments,
+    ok,
+    outcome,
+    error,
+    details: { documents, failures, failureExamples },
+  });
+  return {
+    source: "sil-documents",
+    ok,
+    outcome,
+    initiatives: rows.length,
+    documents,
+    newDocuments,
+    failures,
+    ...(error ? { error } : {}),
+  };
 }
 
 export interface DocFetchSummary {
@@ -92,7 +128,8 @@ export async function fetchDocumentFiles(
   for (const d of docs) {
     if (!d.url || !d.initiativeCode) continue;
     attempted++;
-    if (await storage.has(d.initiativeCode, "pdf")) {
+    const storageKey = `${d.initiativeCode}__${d.sourceDocId ?? d.id}`;
+    if (await storage.has(storageKey, "pdf")) {
       skipped++;
       continue;
     }
@@ -103,7 +140,7 @@ export async function fetchDocumentFiles(
         failed++;
         continue;
       }
-      await storage.put(d.initiativeCode, "pdf", bytes);
+      await storage.put(storageKey, "pdf", bytes);
       stored++;
     } catch {
       failed++;

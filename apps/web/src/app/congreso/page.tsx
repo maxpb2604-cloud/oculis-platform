@@ -2,6 +2,7 @@ import { getCongreso } from "@/lib/data";
 import type { Lang } from "@/lib/i18n";
 import { AppShell } from "@/components/app-shell";
 import { CongressRoster } from "@/components/congress-roster";
+import { EmptyState } from "@/components/ui/empty-state";
 
 export const dynamic = "force-dynamic";
 
@@ -21,11 +22,15 @@ export default async function CongresoPage({ searchParams }: { searchParams: Pro
       }
     >
       {legislators.length === 0 ? (
-        <div className="card p-6 text-[13px]" style={{ color: "var(--text-muted)" }}>
-          {es
-            ? "Aún no se ha cargado el roster. Ejecuta la ingesta: npm run roster -w @oculis/worker"
-            : "Roster not loaded yet. Run the ingestion: npm run roster -w @oculis/worker"}
-        </div>
+        <EmptyState
+          lang={lang}
+          title={es ? "El directorio legislativo aún no está disponible" : "The legislative directory is not available yet"}
+          description={
+            es
+              ? "La composición del Congreso aparecerá aquí cuando termine una sincronización exitosa del roster. Los datos existentes no se eliminan si una fuente falla."
+              : "Congress membership will appear here after a successful roster sync completes. Existing data is preserved when a source fails."
+          }
+        />
       ) : (
         <CongressRoster
           legislators={legislators}

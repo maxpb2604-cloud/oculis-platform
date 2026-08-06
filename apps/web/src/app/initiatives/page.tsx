@@ -4,6 +4,7 @@ import { dict, type Lang } from "@/lib/i18n";
 import { AppShell } from "@/components/app-shell";
 import { Filters } from "@/components/filters";
 import { InitiativesTable } from "@/components/initiatives-table";
+import { boundedInteger, optionalText } from "@/lib/input";
 
 export const dynamic = "force-dynamic";
 
@@ -13,16 +14,13 @@ export default async function Page({ searchParams }: { searchParams: Promise<SP>
   const sp = await searchParams;
   const lang: Lang = sp.lang === "en" ? "en" : "es";
   const t = dict[lang];
-  const page = Math.max(1, Number(sp.page ?? 1) || 1);
+  const page = boundedInteger(sp.page, { fallback: 1, min: 1, max: 10_000 });
   const pageSize = 50;
 
   const result = await browseInitiatives({
-    search: sp.search,
-    category: sp.category,
-    risk: sp.risk,
-    approval: sp.approval,
-    party: sp.party,
-    status: sp.status,
+    search: optionalText(sp.search, 160),
+    party: optionalText(sp.party, 64),
+    status: optionalText(sp.status, 120),
     page,
     pageSize,
   });
@@ -33,7 +31,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<SP>
 
   const hrefForPage = (p: number) => {
     const params = new URLSearchParams();
-    for (const k of ["lang", "search", "category", "risk", "approval", "party", "status"] as const) {
+    for (const k of ["lang", "search", "party", "status"] as const) {
       if (sp[k]) params.set(k, sp[k]!);
     }
     if (p > 1) params.set("page", String(p));

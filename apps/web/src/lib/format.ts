@@ -5,17 +5,30 @@ import type { Lang } from "@/lib/i18n";
  * Replaces the manual `iso.slice(...)` formatting scattered across components so dates
  * read naturally in both Spanish (es-DO) and English (en-US).
  *
- * Returns "—" for null/empty input. Anchored at noon to avoid timezone day-shift.
+ * Returns an explicit "No informado"/"Not reported" label for missing input.
+ * Anchored at noon to avoid timezone day-shift.
  */
 export function formatISODate(
   iso: string | null | undefined,
   lang: Lang,
   opts: Intl.DateTimeFormatOptions = { day: "2-digit", month: "2-digit", year: "numeric" },
 ): string {
-  if (!iso) return "—";
-  const day = iso.slice(0, 10);
-  const d = new Date(`${day}T12:00:00`);
-  if (Number.isNaN(d.getTime())) return iso;
+  const missing = lang === "es" ? "No informado" : "Not reported";
+  if (!iso) return missing;
+  const match = iso.match(/^(\d{4})-(\d{2})-(\d{2})(?:$|T|\s)/);
+  if (!match) return missing;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const date = Number(match[3]);
+  const calendarCheck = new Date(Date.UTC(year, month - 1, date));
+  if (
+    calendarCheck.getUTCFullYear() !== year ||
+    calendarCheck.getUTCMonth() !== month - 1 ||
+    calendarCheck.getUTCDate() !== date
+  ) {
+    return missing;
+  }
+  const d = new Date(year, month - 1, date, 12, 0, 0);
   return new Intl.DateTimeFormat(lang === "es" ? "es-DO" : "en-US", opts).format(d);
 }
 
@@ -23,25 +36,4 @@ export function formatISODate(
 export function formatISODayMonth(iso: string | null | undefined, lang: Lang): string {
   if (!iso) return "";
   return formatISODate(iso, lang, { day: "2-digit", month: "2-digit" });
-}
-
-/**
- * Readable short name for a bill, shown instead of its code on the feed. Strips the
- * legalistic "Proyecto de ley/resolución … que/mediante la cual …" boilerplate to get
- * to the substance, capitalizes, and trims to a chip-friendly length. Falls back to the
- * given code when there's no title.
- */
-export function shortBillName(title: string | null | undefined, code?: string | null): string {
-  const fallback = code ?? "Proyecto";
-  if (!title) return fallback;
-  let t = title.replace(/\s+/g, " ").trim();
-  t = t.replace(
-    /^proyecto\s+de\s+(ley|resoluci[óo]n)(\s+org[áa]nica)?\s+(de\s+la\s+c[áa]mara\s+de\s+diputados\s+|del\s+senado\s+(de\s+la\s+rep[úu]blica\s+)?)?(mediante\s+la\s+cual|por\s+la\s+cual|mediante\s+el\s+cual|que|para|sobre)?\s*/i,
-    "",
-  );
-  t = t.trim();
-  if (t.length < 4) t = title.replace(/\s+/g, " ").trim();
-  if (!t) return fallback;
-  t = t.charAt(0).toUpperCase() + t.slice(1);
-  return t.length > 68 ? `${t.slice(0, 65).trimEnd()}…` : t;
 }

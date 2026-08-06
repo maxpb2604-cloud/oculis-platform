@@ -11,10 +11,9 @@ import { AppShell } from "@/components/app-shell";
 import { HoyChambers } from "@/components/hoy-chambers";
 import { LiveClock } from "@/components/live-clock";
 import { RangePicker } from "@/components/range-picker";
+import { dateSpanDays, isISODate } from "@/lib/input";
 
 export const dynamic = "force-dynamic";
-
-const ISO_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 function shift(iso: string, days: number): string {
   const [y, m, d] = iso.split("-").map(Number);
@@ -35,9 +34,14 @@ export default async function HoyPage({
 
   const from = sp.from;
   const to = sp.to;
-  const isRange = !!(from && to && ISO_RE.test(from) && ISO_RE.test(to) && from <= to);
+  const isRange = !!(
+    isISODate(from) &&
+    isISODate(to) &&
+    from <= to &&
+    dateSpanDays(from, to) <= 366
+  );
 
-  const date = sp.date && ISO_RE.test(sp.date) ? sp.date : todayISO();
+  const date = isISODate(sp.date) ? sp.date : todayISO();
   const isToday = !isRange && date === todayISO();
   const dlink = (iso: string) => `/hoy?date=${iso}${q}`;
 
@@ -50,27 +54,12 @@ export default async function HoyPage({
   const { dip, sen } = activity;
   const isCommittee = (i: { scope: string }) => i.scope === "COMMITTEE";
   const isPlenary = (i: { scope: string }) => i.scope === "PLENARY" || i.scope === "ASAMBLEA";
-  // Defense-in-depth de-dup: collapse rows that are the same session/meeting (same date +
-  // body + description) even if they slipped in under different dedupe keys (e.g. a Senate
-  // orden del día re-uploaded under a new WPFD file ID). Keeps the page honest without a
-  // DB backfill.
-  const dedupeActivity = <
-    T extends { eventDate: string | null; body: string | null; description: string },
-  >(
-    items: T[],
-  ): T[] => {
-    const seen = new Set<string>();
-    return items.filter((i) => {
-      const k = `${i.eventDate ?? ""}|${(i.body ?? "").trim()}|${i.description.replace(/\s+/g, " ").trim().slice(0, 140)}`;
-      if (seen.has(k)) return false;
-      seen.add(k);
-      return true;
-    });
-  };
-  const dipCommittee = dedupeActivity(dip.filter(isCommittee));
-  const senCommittee = dedupeActivity(sen.filter(isCommittee));
-  const dipPlenary = dedupeActivity(dip.filter(isPlenary));
-  const senPlenary = dedupeActivity(sen.filter(isPlenary));
+  // Every persisted source record remains visible. Exact source identifiers provide
+  // idempotency; the UI does not collapse rows because their content looks similar.
+  const dipCommittee = dip.filter(isCommittee);
+  const senCommittee = sen.filter(isCommittee);
+  const dipPlenary = dip.filter(isPlenary);
+  const senPlenary = sen.filter(isPlenary);
 
   const fmt = (iso: string) =>
     new Intl.DateTimeFormat(es ? "es-DO" : "en-US", {
@@ -112,7 +101,7 @@ export default async function HoyPage({
           : "Chamber of Deputies & Senate · daily monitoring"
       }
     >
-      {/* Live "situation-room" clock (date seeded server-side to avoid a hydration flash) */}
+      {/* Dominican Republic clock for the daily view (date seeded server-side). */}
       <LiveClock
         lang={lang}
         initialDate={new Intl.DateTimeFormat(es ? "es-DO" : "en-US", {
@@ -153,10 +142,10 @@ export default async function HoyPage({
             <span className="eyebrow mr-1">{es ? "Mostrando" : "Showing"}</span>
             <Link
               href={dlink(shift(date, -1))}
-              className="card px-2.5 py-1 text-sm"
+              className="card px-2.5 py-1 text-xs font-medium"
               aria-label={es ? "Día anterior" : "Previous day"}
             >
-              ←
+              {es ? "Anterior" : "Previous"}
             </Link>
             <span
               className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold"
@@ -171,10 +160,10 @@ export default async function HoyPage({
             </span>
             <Link
               href={dlink(shift(date, 1))}
-              className="card px-2.5 py-1 text-sm"
+              className="card px-2.5 py-1 text-xs font-medium"
               aria-label={es ? "Día siguiente" : "Next day"}
             >
-              →
+              {es ? "Siguiente" : "Next"}
             </Link>
             {!isToday && (
               <Link
@@ -212,8 +201,8 @@ export default async function HoyPage({
 
       <p className="mt-4 text-[11px]" style={{ color: "var(--text-muted)" }}>
         {es
-          ? 'Iniciativas depositadas: Cámara de Diputados (SIL). Cada ficha enlaza a la página oficial de la iniciativa, donde aparece su documento; "Documento pendiente" indica que el PDF aún no ha sido cargado por la Cámara.'
-          : 'Deposited initiatives: Chamber of Deputies (SIL). Each card links to the official initiative page where its document appears; "Document pending" means the PDF has not been uploaded yet.'}
+          ? "Iniciativas depositadas: Cámara de Diputados (SIL). Cada ficha enlaza a la fuente oficial; “Con documento oficial” se muestra solo cuando existe un documento registrado y, en caso contrario, figura “No informado”."
+          : "Deposited initiatives: Chamber of Deputies (SIL). Each card links to the official source; “With official document” appears only when a document is recorded, otherwise it shows “Not reported”."}
       </p>
     </AppShell>
   );

@@ -3,7 +3,7 @@ import type { Chamber, InitiativeKind } from "@oculis/core";
 /**
  * Canonical, source-agnostic representation of one initiative as produced by a
  * scraper adapter. Each adapter maps its source payload into this shape; the
- * ingestion worker then dedupes/upserts and runs categorization + scoring.
+ * ingestion worker then dedupes and upserts without predictions or classifications.
  */
 export interface RawInitiative {
   /** Stable source identifier (e.g. SIL initiative id), unique within `source`. */
@@ -20,7 +20,7 @@ export interface RawInitiative {
   purpose: string | null;
   /** Source-reported type (e.g. "Proyecto de Ley", "Resolución"). */
   type: string | null;
-  /** Source-reported status label (mapped to our vocabulary downstream). */
+  /** Source-reported status label, preserved without lifecycle remapping. */
   status: string | null;
   /** Chamber of origin, if legislative. */
   chamber: Chamber | null;
@@ -51,6 +51,8 @@ export interface RawStatusEvent {
   /** ISO 8601 date of the event. */
   date: string | null;
   note: string | null;
+  /** Untouched source history row used as evidence. */
+  raw?: unknown;
 }
 
 /**
@@ -63,10 +65,7 @@ export interface SourceAdapter {
   /** Total count of records available at the source (for progress/health). */
   count(): Promise<number>;
   /** Async iterator over all initiatives, paginated internally. */
-  list(options?: {
-    sincePage?: number;
-    maxPagesPerSlice?: number;
-  }): AsyncIterable<RawInitiative>;
+  list(options?: { sincePage?: number; maxPagesPerSlice?: number }): AsyncIterable<RawInitiative>;
   /** Fetch one initiative's full detail by source id. */
   detail(sourceId: string): Promise<RawInitiative | null>;
 }

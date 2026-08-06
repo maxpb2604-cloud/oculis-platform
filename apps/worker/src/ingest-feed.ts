@@ -1,17 +1,16 @@
 /**
- * Ingest feed items (news / official / social / legislative-signal) into `feed_items`,
- * auto-tagging each to the bills / legislators / committees it mentions. Mirrors
- * `ingest-regulatory.ts`: per-source isolation + a health row in `ingestion_runs`.
+ * Persist source-selected feed items and attach only exact, auditable entity mentions.
  *
- * Entity resolution reuses existing utilities: initiative codes (`extractCodes` in the
- * adapter), legislator/commission name matching against the DB roster, and the free
- * heuristic categorizer (`createCategorizer`).
+ * There is no topic classifier, relevance heuristic, or title-similarity linking here.
+ * Press coverage is scoped by the upstream feed/query; entity tags require an official
+ * initiative code or an explicit full-name mention in the item text.
  */
 import {
+  beginIngestionRun,
   listCommissions,
   listFeedAccounts,
   listLegislators,
-  listRecentInitiatives,
+  legislatorCommittees,
   recordIngestionRun,
   upsertFeedItem,
   type Database,
@@ -20,211 +19,214 @@ import {
 } from "@oculis/db";
 import {
   feedAdapters,
-  isCongressRelevant,
   XSocialAdapter,
   type RawFeedItem,
   type SocialAccount,
 } from "@oculis/scrapers";
-import { createCategorizer } from "./categorize.js";
 import { buildLegislativeSignals } from "./feed-signals.js";
 
 export interface FeedSummary {
   source: string;
   ok: boolean;
+  outcome: "COMPLETE" | "PARTIAL" | "FAILED";
+  seen: number;
   count: number;
   inserted: number;
+  gaps: string[];
   error?: string;
 }
 
-/** Accent-fold + lowercase for matching names against free text. */
-const norm = (s: string) => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+const norm = (value: string): string =>
+  value
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
 
-/** Stopwords dropped when building significant title bigrams — includes generic geographic
- *  / institutional terms so common bigrams ("república dominicana") don't false-match. */
-const STOP = new Set(
-  (
-    "de la el los las un una y a o e en que del al con para por su sus se lo le no es ley sobre ante este esta como mas " +
-    "republica dominicana dominicano dominicanos nacional pais gobierno estado santo domingo distrito millones pesos " +
-    "ano anos dia dias hoy segun tras presidente proyecto"
-  ).split(" "),
-);
-function sigTokens(s: string): string[] {
-  return norm(s)
-    .replace(/[^a-z0-9\s]/g, " ")
-    .split(/\s+/)
-    .filter((t) => t.length >= 4 && !STOP.has(t));
-}
-/** Adjacent significant-token pairs — distinctive enough to link a news item to a bill. */
-function bigrams(s: string): string[] {
-  const toks = sigTokens(s);
-  const out: string[] = [];
-  for (let i = 0; i + 1 < toks.length; i++) out.push(`${toks[i]} ${toks[i + 1]}`);
-  return out;
-}
-
-interface InitRef {
-  code: string;
-  id: number;
-}
 interface EntityIndex {
-  legislators: Array<{ sourceId: string; key: string; name: string }>;
-  commissions: Array<{ key: string; name: string }>;
-  bigrams: Map<string, InitRef[]>; // distinctive title bigram → initiative(s)
+  legislators: Array<{ sourceId: string; key: string; name: string; chamber: string }>;
+  commissions: Array<{ key: string; name: string; chamber: string }>;
 }
 
 async function buildEntityIndex(db: Database): Promise<EntityIndex> {
-  const [legs, coms, recent] = await Promise.all([
+  const [legs, registeredCommissions, committeeSeats] = await Promise.all([
     listLegislators(db),
     listCommissions(db),
-    listRecentInitiatives(db, { limit: 400 }),
+    legislatorCommittees(db),
   ]);
-  const bigramMap = new Map<string, InitRef[]>();
-  for (const ini of recent) {
-    if (!ini.code) continue;
-    const ref: InitRef = { code: ini.code, id: ini.id };
-    for (const bg of new Set(bigrams(ini.title))) {
-      const arr = bigramMap.get(bg) ?? [];
-      arr.push(ref);
-      bigramMap.set(bg, arr);
-    }
+  const commissionRows = new Map<string, { key: string; name: string; chamber: string }>();
+  for (const commission of registeredCommissions) {
+    const key = norm(commission.name);
+    commissionRows.set(`${commission.chamber}\u0000${key}\u0000${commission.name}`, {
+      key,
+      name: commission.name,
+      chamber: commission.chamber,
+    });
+  }
+  // Roster ingestion persists membership rows even when the separate commissions table
+  // is empty. These are still explicit official commission names, so index them exactly.
+  for (const seat of committeeSeats) {
+    const key = norm(seat.commissionName);
+    commissionRows.set(`${seat.chamber}\u0000${key}\u0000${seat.commissionName}`, {
+      key,
+      name: seat.commissionName,
+      chamber: seat.chamber,
+    });
   }
   return {
     legislators: legs
-      .filter((l) => l.sourceId && l.fullName)
-      .map((l) => ({ sourceId: l.sourceId, key: norm(l.fullName), name: l.fullName })),
-    commissions: coms.map((c) => ({ key: norm(c.name), name: c.name })),
-    bigrams: bigramMap,
+      .filter((legislator) => legislator.sourceId && legislator.fullName)
+      .map((legislator) => ({
+        sourceId: legislator.sourceId,
+        key: norm(legislator.fullName),
+        name: legislator.fullName,
+        chamber: legislator.chamber,
+      })),
+    commissions: [...commissionRows.values()],
   };
 }
 
-async function resolveEntities(
+function explicitMention(text: string, key: string): boolean {
+  return key.length >= 8 && ` ${text} `.includes(` ${key} `);
+}
+
+/** Persist only a complete, timezone-qualified timestamp supplied by the source. */
+function sourceTimestamp(value: string | null): Date | null {
+  if (!value || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/.test(value)) return null;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+export function resolveExplicitEntities(
   item: RawFeedItem,
   idx: EntityIndex,
-  categorizer: ReturnType<typeof createCategorizer>,
-): Promise<{ keep: boolean; record?: NewFeedItem; tags: FeedEntityTag[] }> {
-  const rawText = `${item.title} ${item.summary ?? ""}`;
-  const text = norm(rawText);
+): { record: NewFeedItem; tags: FeedEntityTag[] } {
+  const text = norm(`${item.title} ${item.summary ?? ""}`);
   const tags: FeedEntityTag[] = [];
 
-  // 1) Initiatives by exact official code.
-  let primaryCode = item.initiativeCodes[0] ?? null;
-  for (const code of item.initiativeCodes) {
+  const codes = [...new Set(item.initiativeCodes.filter(Boolean))];
+  const primaryCode = codes.length === 1 ? codes[0]! : null;
+  for (const code of codes) {
     tags.push({ entityType: "INITIATIVE", initiativeCode: code, label: code });
   }
 
-  // 2) Legislators and committees by name.
-  let primaryLeg: string | null = null;
-  for (const l of idx.legislators) {
-    if (l.key.length >= 8 && text.includes(l.key)) {
-      tags.push({ entityType: "LEGISLATOR", legislatorSourceId: l.sourceId, label: l.name });
-      primaryLeg ??= l.sourceId;
-    }
+  const legislatorsByName = new Map<string, EntityIndex["legislators"]>();
+  for (const legislator of idx.legislators) {
+    const candidates = legislatorsByName.get(legislator.key) ?? [];
+    candidates.push(legislator);
+    legislatorsByName.set(legislator.key, candidates);
   }
-  let primaryComm: string | null = null;
-  for (const c of idx.commissions) {
-    if (c.key.length >= 10 && text.includes(c.key)) {
-      tags.push({ entityType: "COMMISSION", commissionName: c.name, label: c.name });
-      primaryComm ??= c.name;
-    }
-  }
-
-  // Relevance (STRICT — fuzzy topic matches must NOT rescue irrelevant news). NEWS is kept
-  // only with a hard Congress signal: a Congress/cabinet-change phrase, an exact bill code,
-  // or a named legislator/committee. Official / legislative / social are always kept.
-  const relevant =
-    item.kind !== "NEWS" ||
-    item.initiativeCodes.length > 0 ||
-    primaryLeg !== null ||
-    primaryComm !== null ||
-    isCongressRelevant(rawText);
-  if (!relevant) return { keep: false, tags: [] };
-
-  // 3) Topic enrichment — only on items we KEEP: link to a bill via distinctive title
-  // bigrams (generic geographic bigrams are stopworded out; needs ≥2 points to link).
-  if (!primaryCode) {
-    const scored = new Map<string, { ref: InitRef; pts: number }>();
-    for (const bg of new Set(bigrams(rawText))) {
-      const refs = idx.bigrams.get(bg);
-      if (!refs || refs.length > 2) continue; // non-distinctive → ignore
-      const w = refs.length === 1 ? 2 : 1; // a unique bigram is the stronger signal
-      for (const ref of refs) {
-        const cur = scored.get(ref.code) ?? { ref, pts: 0 };
-        cur.pts += w;
-        scored.set(ref.code, cur);
-      }
-    }
-    const best = [...scored.values()]
-      .filter((s) => s.pts >= 2)
-      .sort((a, b) => b.pts - a.pts)
-      .slice(0, 2);
-    for (const s of best) {
-      tags.push({ entityType: "INITIATIVE", initiativeCode: s.ref.code, label: s.ref.code });
-    }
-    if (best[0]) primaryCode = best[0].ref.code;
-  }
-
-  let category = item.category;
-  if (!category) {
-    const res = await categorizer.categorize({
-      title: item.title,
-      sourceCategory: null,
-      purpose: item.summary,
+  const matchedLegislators: EntityIndex["legislators"] = [];
+  for (const [key, candidates] of legislatorsByName) {
+    if (!explicitMention(text, key)) continue;
+    const inScope = candidates.filter(
+      (candidate) => !item.chamber || candidate.chamber === item.chamber,
+    );
+    if (inScope.length !== 1) continue;
+    const [legislator] = inScope;
+    matchedLegislators.push(legislator!);
+    tags.push({
+      entityType: "LEGISLATOR",
+      legislatorSourceId: legislator!.sourceId,
+      label: legislator!.name,
     });
-    category = res.category;
   }
+  const primaryLegislator =
+    matchedLegislators.length === 1 ? matchedLegislators[0]!.sourceId : null;
 
-  const record: NewFeedItem = {
-    source: item.source,
-    sourceId: item.sourceId,
-    kind: item.kind,
-    title: item.title,
-    summary: item.summary,
-    imageUrl: item.imageUrl,
-    url: item.url,
-    author: item.author,
-    handle: item.handle,
-    platform: item.platform,
-    category,
-    publishedAt: item.publishedAt ? new Date(item.publishedAt) : null,
-    initiativeCode: primaryCode,
-    legislatorSourceId: primaryLeg,
-    commissionName: primaryComm,
-    chamber: item.chamber,
-    raw: item.raw as object,
+  const commissionsByName = new Map<string, EntityIndex["commissions"]>();
+  for (const commission of idx.commissions) {
+    const candidates = commissionsByName.get(commission.key) ?? [];
+    candidates.push(commission);
+    commissionsByName.set(commission.key, candidates);
+  }
+  const matchedCommissions: EntityIndex["commissions"] = [];
+  for (const [key, candidates] of commissionsByName) {
+    if (!explicitMention(text, key)) continue;
+    const inScope = candidates.filter(
+      (candidate) => !item.chamber || candidate.chamber === item.chamber,
+    );
+    const names = [...new Set(inScope.map((candidate) => candidate.name))];
+    if (names.length !== 1) continue;
+    const commission = inScope.find((candidate) => candidate.name === names[0])!;
+    matchedCommissions.push(commission);
+    tags.push({
+      entityType: "COMMISSION",
+      commissionName: commission.name,
+      label: commission.name,
+    });
+  }
+  const primaryCommission = matchedCommissions.length === 1 ? matchedCommissions[0]!.name : null;
+
+  return {
+    record: {
+      source: item.source,
+      sourceId: item.sourceId,
+      kind: item.kind,
+      title: item.title,
+      summary: item.summary,
+      imageUrl: item.imageUrl,
+      url: item.url,
+      author: item.author,
+      handle: item.handle,
+      platform: item.platform,
+      category: null,
+      publishedAt: sourceTimestamp(item.publishedAt),
+      initiativeCode: primaryCode,
+      legislatorSourceId: primaryLegislator,
+      commissionName: primaryCommission,
+      chamber: item.chamber,
+      raw: item.raw as object,
+    },
+    tags,
   };
-  return { keep: true, record, tags };
 }
 
 export async function ingestFeed(
   db: Database,
-  opts: { log?: (m: string) => void } = {},
+  opts: { log?: (message: string) => void } = {},
 ): Promise<FeedSummary[]> {
   const log = opts.log ?? (() => {});
   const out: FeedSummary[] = [];
   const idx = await buildEntityIndex(db);
-  const categorizer = createCategorizer();
 
-  async function ingestItems(source: string, items: RawFeedItem[], gaps: string[]) {
+  async function ingestItems(runId: number, source: string, items: RawFeedItem[], gaps: string[]) {
     let inserted = 0;
-    let kept = 0;
     for (const item of items) {
-      const { keep, record, tags } = await resolveEntities(item, idx, categorizer);
-      if (!keep || !record) continue;
-      kept++;
-      const res = await upsertFeedItem(db, record, tags);
-      if (res.inserted) inserted++;
+      const { record, tags } = resolveExplicitEntities(item, idx);
+      const result = await upsertFeedItem(db, record, tags);
+      if (result.inserted) inserted++;
     }
+    const outcome = gaps.length ? "PARTIAL" : "COMPLETE";
+    const ok = outcome === "COMPLETE";
     await recordIngestionRun(db, {
       source,
+      runId,
       seen: items.length,
       inserted,
-      ok: true,
-      details: gaps.length ? { gaps } : null,
+      ok,
+      outcome,
+      details: {
+        selection: "UPSTREAM_SOURCE_OR_QUERY",
+        entityResolution: "EXACT_CODE_OR_FULL_NAME",
+        gaps,
+      },
     });
     log(
-      `  ✔ ${kept}/${items.length} relevantes · ${inserted} nuevos${gaps.length ? ` · ${gaps.length} avisos` : ""}`,
+      `  ${ok ? "✔" : "⚠"} ${items.length} source item(s) persisted · ${inserted} new` +
+        (gaps.length ? ` · ${gaps.length} notice(s)` : ""),
     );
-    out.push({ source, ok: true, count: kept, inserted });
+    gaps.forEach((gap) => log(`    ⚠ ${gap}`));
+    out.push({
+      source,
+      ok,
+      outcome,
+      seen: items.length,
+      count: items.length,
+      inserted,
+      gaps,
+    });
   }
 
   async function runSource(
@@ -232,35 +234,42 @@ export async function ingestFeed(
     collect: () => Promise<{ items: RawFeedItem[]; gaps: string[] }>,
   ) {
     log(`\n▶ ${source}`);
+    const runId = await beginIngestionRun(db, source);
     try {
       const { items, gaps } = await collect();
-      await ingestItems(source, items, gaps);
-    } catch (err) {
-      const error = (err as Error).message;
-      await recordIngestionRun(db, { source, ok: false, error });
-      log(`  ✖ FALLÓ: ${error}`);
-      out.push({ source, ok: false, count: 0, inserted: 0, error });
+      await ingestItems(runId, source, items, gaps);
+    } catch (error) {
+      const message = (error as Error).message;
+      await recordIngestionRun(db, { runId, source, ok: false, error: message });
+      log(`  ✖ FAILED: ${message}`);
+      out.push({
+        source,
+        ok: false,
+        outcome: "FAILED",
+        seen: 0,
+        count: 0,
+        inserted: 0,
+        gaps: [],
+        error: message,
+      });
     }
   }
 
-  // 1. RSS / official adapters
   for (const adapter of feedAdapters()) {
     await runSource(adapter.source, () => adapter.collect());
   }
 
-  // 2. Social (credential-gated; reads the registry)
   await runSource("feed-x", async () => {
     const accounts = await listFeedAccounts(db, { platform: "X", activeOnly: true });
-    const social: SocialAccount[] = accounts.map((a) => ({
-      handle: a.handle,
-      name: a.name,
-      legislatorSourceId: a.legislatorSourceId,
-      chamber: a.chamber,
+    const social: SocialAccount[] = accounts.map((account) => ({
+      handle: account.handle,
+      name: account.name,
+      legislatorSourceId: account.legislatorSourceId,
+      chamber: account.chamber,
     }));
     return new XSocialAdapter().collect(social);
   });
 
-  // 3. Our own legislative signals (the "before the news" cards)
   await runSource("feed-legislative", async () => ({
     items: await buildLegislativeSignals(db),
     gaps: [],

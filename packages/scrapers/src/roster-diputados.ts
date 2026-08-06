@@ -12,7 +12,7 @@
  * Route segments are case-sensitive and `pageSize` is fixed at 10 by the API.
  */
 import { browserHeaders, fetchJson } from "./http.js";
-import { normalizeCargo, type RawCommissionMembership, type RawLegislator, type RosterResult } from "./roster.js";
+import type { RawCommissionMembership, RawLegislator, RosterResult } from "./roster.js";
 
 const BASE = "https://www.diputadosrd.gob.do/sil/api";
 const H = browserHeaders({ Referer: "https://www.diputadosrd.gob.do/sil/" });
@@ -72,6 +72,9 @@ async function fetchAllPages<T>(url: (page: number) => string): Promise<T[]> {
   // Hard cap so a misbehaving total can't loop forever.
   for (let guard = 0; guard < 200; guard++) {
     const env = await fetchJson<ApiPage<T>>(url(page), { headers: H });
+    if (!env || !Array.isArray(env.results) || !Number.isFinite(Number(env.total))) {
+      throw new Error(`roster-diputados: invalid page envelope at page ${page}`);
+    }
     out.push(...(env.results ?? []));
     if (page * PAGE_SIZE >= (env.total ?? 0) || (env.results ?? []).length === 0) break;
     page++;
@@ -116,14 +119,18 @@ export class DiputadosRosterAdapter {
           `${BASE}/legislador/legislador/${r.legisladorId}`,
           { headers: H },
         );
-      } catch {
-        // non-fatal: keep the list-level fields
+      } catch (error) {
+        gaps.push(
+          `roster-diputados: ficha ${r.legisladorId} no disponible (${(error as Error).message}).`,
+        );
       }
       list.push(this.toLegislator(r, detail));
     }
     // 190 elected deputies for 2024-2028; warn if we're materially short.
     if (list.length < 170) {
-      gaps.push(`roster-diputados: solo ${list.length} diputados (se esperan ~190) — revisar la API.`);
+      gaps.push(
+        `roster-diputados: ${list.length} diputados; referencia institucional esperada: 190.`,
+      );
     }
     return list;
   }
@@ -135,11 +142,15 @@ export class DiputadosRosterAdapter {
       chamber: "DIPUTADOS",
       fullName: r.nombreCompleto.trim(),
       province: r.provincia?.trim() || null,
-      circumscription: detail?.representacion?.circunscripcion?.trim() || r.circunscripcion?.trim() || null,
+      circumscription:
+        detail?.representacion?.circunscripcion?.trim() || r.circunscripcion?.trim() || null,
       party: r.partido?.nombre?.trim() || null,
       partyShort: r.partido?.siglas?.trim() || null,
-      role: null,
-      representationLevel: detail?.representacion?.nivelRepresentacion?.trim() || r.nivelRepresentacion?.trim() || null,
+      role: r.funcion?.trim() || null,
+      representationLevel:
+        detail?.representacion?.nivelRepresentacion?.trim() ||
+        r.nivelRepresentacion?.trim() ||
+        null,
       period: detail?.representacion?.periodo?.trim() || r.periodo?.trim() || null,
       photoUrl: `${BASE}/legislador/getfoto/${r.legisladorId}`,
       email: detail?.correoInstitucional?.trim() || r.correoInstitucional?.trim() || null,
@@ -147,7 +158,13 @@ export class DiputadosRosterAdapter {
       profession: detail?.profesion?.trim() || r.profesion?.trim() || null,
       // Angular route from the SIL bundle: path "legislador/:id" under base href "/sil/".
       sourceUrl: `https://www.diputadosrd.gob.do/sil/legislador/${r.legisladorId}`,
-      raw: r,
+      raw: {
+        payload: { list: r, detail },
+        provenance: {
+          sourceUrl: `https://www.diputadosrd.gob.do/sil/legislador/${r.legisladorId}`,
+          endpoints: ["legislador/legisladores", `legislador/legislador/${r.legisladorId}`],
+        },
+      },
     };
   }
 
@@ -163,7 +180,9 @@ export class DiputadosRosterAdapter {
           (p) => `${BASE}/comision/miembros/?page=${p}&id=${c.id}`,
         );
       } catch (e) {
-        gaps.push(`roster-diputados: no se pudo leer miembros de "${c.comision}" (${(e as Error).message}).`);
+        gaps.push(
+          `roster-diputados: no se pudo leer miembros de "${c.comision}" (${(e as Error).message}).`,
+        );
         continue;
       }
       for (const m of miembros) {
@@ -175,7 +194,7 @@ export class DiputadosRosterAdapter {
           commissionSourceId: String(c.id),
           legislatorName: m.legislador.nombreCompleto.trim(),
           legislatorSourceId: String(m.legislador.legisladorId),
-          cargo: normalizeCargo(m.cargo),
+          cargo: m.cargo?.trim() || null,
           party: m.partido?.siglas?.trim() || m.partido?.nombre?.trim() || null,
           sourceUrl: `https://www.diputadosrd.gob.do/sil/comision/${c.id}`,
         });

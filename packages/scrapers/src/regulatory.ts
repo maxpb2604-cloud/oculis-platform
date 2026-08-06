@@ -6,15 +6,15 @@
  * intervene). Adapters map each source into a canonical `RawRegulation`.
  *
  * Phase-1 adapters (the two easiest, both reachable over plain HTTP):
- *  - MispasAdapter        — MISPAS (Salud) DSpace RSS feed of technical regulations.
+ *  - MispasAdapter        — MISPAS (Salud) DSpace RSS feed with an official HTML fallback.
  *  - ProconsumidorAdapter — PROCONSUMIDOR public-consultations page (static HTML).
  *  - IndotelAdapter       — INDOTEL (telecom) WordPress JSON Feed: resoluciones + consulta pública.
  *  - IndocalAdapter       — INDOCAL (calidad/NORDOM) WPFD admin-ajax JSON: norms in consultation + resoluciones.
  *  - MicmAdapter          — MICM (industria/comercio) Joomla-ZOO category crawl: consultas abiertas + resoluciones.
- *  - IntrantAdapter       — INTRANT (transporte) headless-WP GraphQL: resoluciones + normativas.
+ *  - IntrantAdapter       — INTRANT (transporte) official transparency pages.
  */
 import { fetchJson, fetchText } from "./http.js";
-import { buildISODate, spanishMonthToNum } from "./dates.js";
+import { buildISODate, extractLeadingISODate, spanishMonthToNum } from "./dates.js";
 
 export interface RawRegulation {
   source: string; // adapter key, e.g. "reg-mispas"
@@ -23,9 +23,8 @@ export interface RawRegulation {
   regType: string | null; // Reglamento | Resolución | Norma | NORDOM | …
   title: string;
   status: string | null;
-  /** HIGH (draft/consulta — influenceable) … LOW (published — too late). */
-  interventionLevel: "HIGH" | "INTERMEDIATE" | "LOW" | null;
-  category: string | null;
+  /** Source-reported category only; null when the item payload has none. */
+  sourceCategory: string | null;
   isConsulta: boolean;
   publishedAt: string | null; // ISO date
   deadline: string | null;
@@ -33,8 +32,8 @@ export interface RawRegulation {
   raw: unknown;
 }
 
-/** Infer the regulation type from a title. */
-export function inferRegType(title: string): string | null {
+/** Extract a regulation type only when the title literally names it. */
+export function explicitRegTypeFromTitle(title: string): string | null {
   const t = title.toLowerCase();
   if (/nordom/.test(t)) return "NORDOM";
   if (/reglamento/.test(t)) return "Reglamento";
@@ -46,15 +45,6 @@ export function inferRegType(title: string): string | null {
   return null;
 }
 
-/** Map a regulatory status/consulta flag → possibility-of-intervention level. */
-export function interventionFor(status: string | null, isConsulta: boolean): RawRegulation["interventionLevel"] {
-  const s = (status ?? "").toLowerCase();
-  if (isConsulta || /borrador|consulta|draft|anteproyecto/.test(s)) return "HIGH";
-  if (/revisi[oó]n|interna|observaci/.test(s)) return "INTERMEDIATE";
-  if (/publicad|vigente|promulgad/.test(s)) return "LOW";
-  return isConsulta ? "HIGH" : "LOW";
-}
-
 // --- tiny RSS reader (no XML dep) ---
 export interface RssItem {
   title: string;
@@ -63,7 +53,47 @@ export interface RssItem {
   description: string | null;
 }
 
-const strip = (s: string) => s.replace(/<!\[CDATA\[|\]\]>/g, "").replace(/<[^>]+>/g, "").trim();
+const HTML_ENTITIES: Readonly<Record<string, string>> = {
+  amp: "&",
+  apos: "'",
+  quot: '"',
+  nbsp: " ",
+  aacute: "á",
+  eacute: "é",
+  iacute: "í",
+  oacute: "ó",
+  uacute: "ú",
+  ntilde: "ñ",
+  Aacute: "Á",
+  Eacute: "É",
+  Iacute: "Í",
+  Oacute: "Ó",
+  Uacute: "Ú",
+  Ntilde: "Ñ",
+};
+
+function decodeHtmlEntities(value: string): string {
+  return value.replace(/&(#x?[0-9a-f]+|[a-z]+);/gi, (match, entity: string) => {
+    if (entity.startsWith("#")) {
+      const hexadecimal = entity[1]?.toLowerCase() === "x";
+      const codePoint = Number.parseInt(entity.slice(hexadecimal ? 2 : 1), hexadecimal ? 16 : 10);
+      if (Number.isInteger(codePoint)) {
+        try {
+          return String.fromCodePoint(codePoint);
+        } catch {
+          return match;
+        }
+      }
+      return match;
+    }
+    return HTML_ENTITIES[entity] ?? match;
+  });
+}
+
+const strip = (s: string) =>
+  decodeHtmlEntities(s.replace(/<!\[CDATA\[|\]\]>/g, "").replace(/<[^>]+>/g, ""))
+    .replace(/\s+/g, " ")
+    .trim();
 function tag(block: string, name: string): string | null {
   const m = block.match(new RegExp(`<${name}[^>]*>([\\s\\S]*?)</${name}>`, "i"));
   return m ? strip(m[1]!) : null;
@@ -71,7 +101,20 @@ function tag(block: string, name: string): string | null {
 function isoFromRss(d: string | null): string | null {
   if (!d) return null;
   const m = d.match(/(\d{1,2})\s+(\w{3})\s+(\d{4})/); // "01 Nov 2025"
-  const months: Record<string, string> = { jan: "01", feb: "02", mar: "03", apr: "04", may: "05", jun: "06", jul: "07", aug: "08", sep: "09", oct: "10", nov: "11", dec: "12" };
+  const months: Record<string, string> = {
+    jan: "01",
+    feb: "02",
+    mar: "03",
+    apr: "04",
+    may: "05",
+    jun: "06",
+    jul: "07",
+    aug: "08",
+    sep: "09",
+    oct: "10",
+    nov: "11",
+    dec: "12",
+  };
   if (m) {
     const mm = months[m[2]!.slice(0, 3).toLowerCase()];
     if (mm) return `${m[3]}-${mm}-${m[1]!.padStart(2, "0")}`;
@@ -81,7 +124,10 @@ function isoFromRss(d: string | null): string | null {
 }
 
 export async function readRss(url: string): Promise<RssItem[]> {
-  const xml = await fetchText(url, { timeoutMs: 20_000, headers: { Accept: "application/rss+xml, application/xml, text/xml, */*" } });
+  const xml = await fetchText(url, {
+    timeoutMs: 20_000,
+    headers: { Accept: "application/rss+xml, application/xml, text/xml, */*" },
+  });
   return [...xml.matchAll(/<item>([\s\S]*?)<\/item>/gi)].map((m) => {
     const b = m[1]!;
     return {
@@ -93,35 +139,135 @@ export async function readRss(url: string): Promise<RssItem[]> {
   });
 }
 
+interface MispasCollectionItem {
+  title: string;
+  url: string;
+  /** Exact source text. DSpace often exposes only YYYY-MM in this fallback. */
+  dateText: string | null;
+}
+
+/** Parse the official DSpace collection page used when its RSS route is unavailable. */
+export function parseMispasCollectionPage(
+  html: string,
+  host = "https://repositorio.msp.gob.do",
+): MispasCollectionItem[] {
+  const items: MispasCollectionItem[] = [];
+  const blocks = html.split(/<li\b[^>]*class=["'][^"']*\bds-artifact-item\b[^"']*["'][^>]*>/gi);
+  for (const block of blocks.slice(1)) {
+    const titleMatch = block.match(
+      /<h4\b[^>]*class=["'][^"']*\bartifact-title\b[^"']*["'][^>]*>[\s\S]*?<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/i,
+    );
+    if (!titleMatch) continue;
+    const title = strip(titleMatch[2]!);
+    if (!title) continue;
+    const href = decodeHtmlEntities(titleMatch[1]!);
+    let url: string;
+    try {
+      url = new URL(href, host).toString();
+    } catch {
+      continue;
+    }
+    const dateMatch = block.match(
+      /<span\b[^>]*class=["'][^"']*\bdate\b[^"']*["'][^>]*>([\s\S]*?)<\/span>/i,
+    );
+    items.push({ title, url, dateText: dateMatch ? strip(dateMatch[1]!) || null : null });
+  }
+  return items;
+}
+
 /** MISPAS (Ministerio de Salud Pública) — DSpace RSS of technical regulations. */
 export class MispasAdapter {
   readonly source = "reg-mispas";
   readonly institution = "MISPAS";
-  constructor(private readonly feed = "https://repositorio.msp.gob.do/feed/rss_2.0/123456789/13") {}
+  constructor(
+    private readonly feed = "https://repositorio.msp.gob.do/feed/rss_2.0/123456789/13",
+    private readonly collectionPage = "https://repositorio.msp.gob.do/handle/123456789/13",
+  ) {}
 
   async collect(): Promise<{ regulations: RawRegulation[]; gaps: string[] }> {
-    const items = await readRss(this.feed);
-    const regulations = items
-      .filter((i) => i.title)
-      .map((i): RawRegulation => {
-        const status = "Norma/Reglamento Publicado";
-        return {
-          source: this.source,
-          sourceId: i.link ?? i.title,
-          institution: this.institution,
-          regType: inferRegType(i.title),
-          title: i.title,
-          status,
-          interventionLevel: interventionFor(status, false),
-          category: "SALUD",
-          isConsulta: false,
-          publishedAt: i.date,
-          deadline: null,
-          url: i.link,
-          raw: i,
-        };
-      });
-    return { regulations, gaps: [] };
+    const gaps: string[] = [];
+    try {
+      const items = await readRss(this.feed);
+      const regulations = items
+        .filter((item) => item.title)
+        .map(
+          (item): RawRegulation => ({
+            source: this.source,
+            sourceId: item.link ?? item.title,
+            institution: this.institution,
+            regType: explicitRegTypeFromTitle(item.title),
+            title: item.title,
+            status: null,
+            sourceCategory: null,
+            isConsulta: false,
+            publishedAt: item.date,
+            deadline: null,
+            url: item.link,
+            raw: {
+              payload: item,
+              provenance: { sourceUrl: this.feed, officialSection: "Reglamentos técnicos" },
+            },
+          }),
+        );
+      if (items.length > regulations.length) {
+        gaps.push(
+          `MISPAS RSS: ${items.length - regulations.length} ítem(s) sin título explícito fueron descartados.`,
+        );
+      }
+      if (regulations.length > 0) return { regulations, gaps };
+      gaps.push("MISPAS RSS: la fuente devolvió 0 ítems con título explícito.");
+    } catch (error) {
+      const message = (error as Error).message;
+      gaps.push(`MISPAS RSS · ${message}`);
+      // RSS and HTML live on the same TLS origin. A certificate-validation failure
+      // affects both routes, so a second request cannot provide a secure fallback.
+      if (
+        /CERT_HAS_EXPIRED|ERR_TLS_CERT_ALTNAME_INVALID|UNABLE_TO_(?:GET_ISSUER_CERT|VERIFY_LEAF_SIGNATURE)/.test(
+          message,
+        )
+      ) {
+        throw new Error(gaps.join(" | "));
+      }
+    }
+
+    try {
+      const html = await fetchText(this.collectionPage, { timeoutMs: 25_000 });
+      const items = parseMispasCollectionPage(html, this.collectionPage);
+      if (items.length === 0) {
+        throw new Error("la página de colección devolvió 0 ítems con título explícito");
+      }
+      return {
+        regulations: items.map(
+          (item): RawRegulation => ({
+            source: this.source,
+            sourceId: item.url,
+            institution: this.institution,
+            regType: explicitRegTypeFromTitle(item.title),
+            title: item.title,
+            status: null,
+            sourceCategory: null,
+            isConsulta: false,
+            // The HTML fallback exposes YYYY-MM for some records. Preserve that exact
+            // text in raw instead of inventing a day.
+            publishedAt: extractLeadingISODate(item.dateText),
+            deadline: null,
+            url: item.url,
+            raw: {
+              payload: item,
+              provenance: {
+                sourceUrl: this.collectionPage,
+                officialSection: "Reglamentos técnicos",
+                fallbackFor: this.feed,
+              },
+            },
+          }),
+        ),
+        gaps,
+      };
+    } catch (error) {
+      gaps.push(`MISPAS colección HTML · ${(error as Error).message}`);
+      throw new Error(gaps.join(" | "));
+    }
   }
 }
 
@@ -138,37 +284,54 @@ export class ProconsumidorAdapter {
       .map((m) => ({ href: m[1]!, text: strip(m[2]!) }))
       .filter((l) => !/formulario/i.test(l.href));
     const base = "https://proconsumidor.gob.do";
-    const regulations = links.map((l): RawRegulation => {
-      const url = l.href.startsWith("http") ? l.href : base + (l.href.startsWith("/") ? l.href : "/" + l.href);
-      const title = (l.text || l.href.split("/").pop() || "").replace(/[_-]+/g, " ").replace(/\.pdf$/i, "").trim();
-      const status = "Consulta Pública";
-      return {
+    const regulations: RawRegulation[] = [];
+    let missingTitles = 0;
+    for (const l of links) {
+      const url = l.href.startsWith("http")
+        ? l.href
+        : base + (l.href.startsWith("/") ? l.href : "/" + l.href);
+      const title = (l.text || l.href.split("/").pop() || "")
+        .replace(/[_-]+/g, " ")
+        .replace(/\.pdf$/i, "")
+        .trim();
+      if (!title) {
+        missingTitles++;
+        continue;
+      }
+      regulations.push({
         source: this.source,
         sourceId: url,
         institution: this.institution,
-        regType: inferRegType(title) ?? "Resolución",
-        title: title || "Consulta pública",
-        status,
-        interventionLevel: interventionFor(status, true),
-        category: null,
+        regType: explicitRegTypeFromTitle(title),
+        title,
+        status: null,
+        sourceCategory: null,
         isConsulta: true,
         publishedAt: null,
         deadline: null,
         url,
-        raw: l,
-      };
-    });
-    return { regulations, gaps: regulations.length ? [] : ["PROCONSUMIDOR · no se hallaron consultas (revisar selector)."] };
+        raw: {
+          payload: l,
+          provenance: { sourceUrl: this.page, officialSection: "Consultas públicas" },
+        },
+      });
+    }
+    const gaps: string[] = [];
+    if (regulations.length === 0) {
+      gaps.push("PROCONSUMIDOR · la página devolvió 0 documentos PDF de consulta.");
+    }
+    if (missingTitles) {
+      gaps.push(
+        `PROCONSUMIDOR · ${missingTitles} enlace(s) sin título explícito fueron descartados.`,
+      );
+    }
+    return { regulations, gaps };
   }
 }
 
 // --- shared helpers for the structured adapters below ---
 const cleanTitle = (t: string) => strip(t).replace(/\s+/g, " ").trim();
-const isoDate = (s?: string | null): string | null => {
-  const m = (s ?? "").match(/\d{4}-\d{2}-\d{2}/);
-  return m ? m[0] : null;
-};
-const uniq = <T,>(a: T[]): T[] => [...new Set(a)];
+const uniq = <T>(a: T[]): T[] => [...new Set(a)];
 
 /** "Martes, 28 Junio 2026" → "2026-06-28" (Joomla/ZOO "Fecha de subida"). */
 function parseSpanishLongDate(s: string): string | null {
@@ -190,7 +353,11 @@ function latestCategory(html: string, re: RegExp): string | null {
   return best?.path ?? null;
 }
 
-interface ZooArticle { title: string; url: string | null; date: string | null; }
+interface ZooArticle {
+  title: string;
+  url: string | null;
+  date: string | null;
+}
 /** Parse `<article class="uk-article">` items from a ZOO leaf page (title in
  *  <strong>, document in the first .pdf link, optional "Fecha de subida"). */
 function parseZooArticles(html: string, host: string): ZooArticle[] {
@@ -210,7 +377,12 @@ function parseZooArticles(html: string, host: string): ZooArticle[] {
 }
 
 // --- INDOTEL (telecomunicaciones) ---
-interface JsonFeedItem { id?: string; url?: string; title?: string; date_published?: string }
+interface JsonFeedItem {
+  id?: string;
+  url?: string;
+  title?: string;
+  date_published?: string;
+}
 async function readJsonFeed(url: string): Promise<JsonFeedItem[]> {
   const d = await fetchJson<{ items?: JsonFeedItem[] }>(url, {
     timeoutMs: 20_000,
@@ -237,42 +409,55 @@ export class IndotelAdapter {
       { url: this.feeds.consultas, isConsulta: true, label: "consultas" },
       { url: this.feeds.resoluciones, isConsulta: false, label: "resoluciones" },
     ];
+    let successfulFeeds = 0;
     for (const g of groups) {
       let items: JsonFeedItem[] = [];
       try {
         items = await readJsonFeed(g.url);
+        successfulFeeds++;
       } catch (err) {
         gaps.push(`INDOTEL ${g.label} · ${(err as Error).message}`);
         continue;
       }
       for (const it of items) {
         if (!it.title) continue;
-        const status = g.isConsulta ? "Consulta Pública" : "Resolución publicada";
         regulations.push({
           source: this.source,
           sourceId: it.id ?? it.url ?? it.title,
           institution: this.institution,
-          regType: inferRegType(it.title) ?? (g.isConsulta ? "Consulta" : "Resolución"),
+          regType: explicitRegTypeFromTitle(it.title),
           title: cleanTitle(it.title),
-          status,
-          interventionLevel: interventionFor(status, g.isConsulta),
-          category: "TELECOMUNICACIONES",
+          status: null,
+          sourceCategory: null,
           isConsulta: g.isConsulta,
-          publishedAt: isoDate(it.date_published),
+          publishedAt: extractLeadingISODate(it.date_published),
           deadline: null,
           url: it.url ?? null,
-          raw: it,
+          raw: {
+            payload: it,
+            provenance: {
+              sourceUrl: g.url,
+              officialSection: g.isConsulta ? "Consulta pública" : "Resoluciones",
+            },
+          },
         });
       }
     }
+    if (successfulFeeds === 0) throw new Error(gaps.join(" | ") || "INDOTEL feeds unavailable");
     return { regulations, gaps };
   }
 }
 
 // --- INDOCAL (calidad / NORDOM) ---
 interface WpfdFile {
-  ID: number; post_title?: string; post_name?: string; ext?: string;
-  created_time?: string; catname?: string; catid?: string; seouri?: string;
+  ID: number;
+  post_title?: string;
+  post_name?: string;
+  ext?: string;
+  created_time?: string;
+  catname?: string;
+  catid?: string;
+  seouri?: string;
 }
 /** INDOCAL — WPFD (WordPress File Download) admin-ajax JSON: NORDOM en consulta + resoluciones.
  *  Consultation rounds roll over to new category ids (3948 = "2da 2026"); a 0-file
@@ -283,8 +468,8 @@ export class IndocalAdapter {
   constructor(
     private readonly host = "https://indocal.gob.do",
     private readonly categories = [
-      { id: 3948, isConsulta: true, category: "NORMAS EN CONSULTA" },
-      { id: 2047, isConsulta: false, category: "RESOLUCIONES" },
+      { id: 3948, isConsulta: true, officialSection: "Normas en consulta" },
+      { id: 2047, isConsulta: false, officialSection: "Resoluciones" },
     ],
   ) {}
 
@@ -295,19 +480,20 @@ export class IndocalAdapter {
   async collect(): Promise<{ regulations: RawRegulation[]; gaps: string[] }> {
     const gaps: string[] = [];
     const regulations: RawRegulation[] = [];
+    let successfulCategories = 0;
     for (const c of this.categories) {
       let files: WpfdFile[] = [];
       try {
         const d = await fetchJson<{ files?: WpfdFile[] }>(this.ajax(c.id), { timeoutMs: 25_000 });
         files = d.files ?? [];
+        successfulCategories++;
       } catch (err) {
         gaps.push(`INDOCAL cat ${c.id} · ${(err as Error).message}`);
         continue;
       }
-      if (!files.length) gaps.push(`INDOCAL cat ${c.id} sin archivos (¿cambió el id de la ronda de consulta?).`);
+      if (!files.length) gaps.push(`INDOCAL cat ${c.id}: la fuente devolvió 0 archivos.`);
       for (const f of files) {
         if (!f.post_title) continue;
-        const status = c.isConsulta ? "Consulta Pública" : "Resolución/Norma publicada";
         const url =
           f.catid && f.catname && f.post_name
             ? `${this.host}/${f.seouri ?? "download"}/${f.catid}/${f.catname}/${f.ID}/${f.post_name}.${f.ext ?? "pdf"}`
@@ -316,18 +502,26 @@ export class IndocalAdapter {
           source: this.source,
           sourceId: String(f.ID),
           institution: this.institution,
-          regType: inferRegType(f.post_title) ?? (c.isConsulta ? "NORDOM" : "Resolución"),
+          regType: explicitRegTypeFromTitle(f.post_title),
           title: cleanTitle(f.post_title),
-          status,
-          interventionLevel: interventionFor(status, c.isConsulta),
-          category: c.category,
+          status: null,
+          sourceCategory: null,
           isConsulta: c.isConsulta,
-          publishedAt: isoDate(f.created_time),
+          publishedAt: extractLeadingISODate(f.created_time),
           deadline: null,
           url,
-          raw: f,
+          raw: {
+            payload: f,
+            provenance: {
+              sourceUrl: this.ajax(c.id),
+              officialSection: f.catname ?? c.officialSection,
+            },
+          },
         });
       }
+    }
+    if (successfulCategories === 0) {
+      throw new Error(gaps.join(" | ") || "INDOCAL categories unavailable");
     }
     return { regulations, gaps };
   }
@@ -348,21 +542,39 @@ export class MicmAdapter {
   async collect(): Promise<{ regulations: RawRegulation[]; gaps: string[] }> {
     const gaps: string[] = [];
     const regulations: RawRegulation[] = [];
+    let successfulBranches = 0;
 
     // Resoluciones: index → latest "resoluciones-YYYY" → leaf articles.
     try {
       const idx = await fetchText(this.resolucionesIndex, { timeoutMs: 25_000 });
-      const yearCat = latestCategory(idx, /href="(\/transparencia\/[^"]*\/category\/resoluciones-(\d{4}))"/gi);
+      const yearCat = latestCategory(
+        idx,
+        /href="(\/transparencia\/[^"]*\/category\/resoluciones-(\d{4}))"/gi,
+      );
       if (!yearCat) gaps.push("MICM resoluciones: no se halló categoría por año.");
       else {
         const leaf = await fetchText(this.host + yearCat, { timeoutMs: 25_000 });
+        successfulBranches++;
         for (const a of parseZooArticles(leaf, this.host)) {
-          const status = "Resolución publicada";
           regulations.push({
-            source: this.source, sourceId: a.url ?? a.title, institution: this.institution,
-            regType: inferRegType(a.title) ?? "Resolución", title: a.title, status,
-            interventionLevel: interventionFor(status, false), category: "INDUSTRIA Y COMERCIO",
-            isConsulta: false, publishedAt: a.date, deadline: null, url: a.url, raw: a,
+            source: this.source,
+            sourceId: a.url ?? a.title,
+            institution: this.institution,
+            regType: explicitRegTypeFromTitle(a.title),
+            title: a.title,
+            status: null,
+            sourceCategory: null,
+            isConsulta: false,
+            publishedAt: a.date,
+            deadline: null,
+            url: a.url,
+            raw: {
+              payload: a,
+              provenance: {
+                sourceUrl: this.host + yearCat,
+                officialSection: "Resoluciones",
+              },
+            },
           });
         }
       }
@@ -373,28 +585,52 @@ export class MicmAdapter {
     // Consultas abiertas: index → latest "YYYY-N" → month subcategories → leaf articles.
     try {
       const idx = await fetchText(this.consultasIndex, { timeoutMs: 25_000 });
-      const yearCat = latestCategory(idx, /href="(\/transparencia\/[^"]*\/proceso-de-consultas-abiertas\/category\/(\d{4})-\d+)"/gi);
+      const yearCat = latestCategory(
+        idx,
+        /href="(\/transparencia\/[^"]*\/proceso-de-consultas-abiertas\/category\/(\d{4})-\d+)"/gi,
+      );
       if (!yearCat) gaps.push("MICM consultas: no se halló categoría por año.");
       else {
         const yearPage = await fetchText(this.host + yearCat, { timeoutMs: 25_000 });
         const months = uniq(
-          [...yearPage.matchAll(/href="(\/transparencia\/[^"]*\/proceso-de-consultas-abiertas\/category\/[a-zñ]+-\d+)"/gi)].map((m) => m[1]!),
+          [
+            ...yearPage.matchAll(
+              /href="(\/transparencia\/[^"]*\/proceso-de-consultas-abiertas\/category\/[a-zñ]+-\d+)"/gi,
+            ),
+          ].map((m) => m[1]!),
         );
+        if (months.length === 0) {
+          gaps.push("MICM consultas: la categoría anual no contiene meses.");
+        }
         for (const mUrl of months) {
           let leaf: string;
           try {
             leaf = await fetchText(this.host + mUrl, { timeoutMs: 20_000 });
+            successfulBranches++;
           } catch (err) {
             gaps.push(`MICM consulta mes ${mUrl} · ${(err as Error).message}`);
             continue;
           }
           for (const a of parseZooArticles(leaf, this.host)) {
-            const status = "Consulta Pública (borrador)";
             regulations.push({
-              source: this.source, sourceId: a.url ?? a.title, institution: this.institution,
-              regType: inferRegType(a.title) ?? "Resolución", title: a.title, status,
-              interventionLevel: interventionFor(status, true), category: "INDUSTRIA Y COMERCIO",
-              isConsulta: true, publishedAt: a.date, deadline: null, url: a.url, raw: a,
+              source: this.source,
+              sourceId: a.url ?? a.title,
+              institution: this.institution,
+              regType: explicitRegTypeFromTitle(a.title),
+              title: a.title,
+              status: null,
+              sourceCategory: null,
+              isConsulta: true,
+              publishedAt: a.date,
+              deadline: null,
+              url: a.url,
+              raw: {
+                payload: a,
+                provenance: {
+                  sourceUrl: this.host + mUrl,
+                  officialSection: "Proceso de consultas abiertas",
+                },
+              },
             });
           }
         }
@@ -403,22 +639,77 @@ export class MicmAdapter {
       gaps.push(`MICM consultas · ${(err as Error).message}`);
     }
 
+    if (successfulBranches === 0) {
+      throw new Error(gaps.join(" | ") || "MICM branches unavailable");
+    }
     return { regulations, gaps };
   }
 }
 
 // --- INTRANT (transporte) ---
-interface IntrantDoc { title?: string; mimeType?: string; mediaItemUrl?: string; date?: string }
-/** INTRANT — headless WordPress (Next.js frontend); documents come from WPGraphQL,
- *  not the SSR shell. One query per transparency section URI. */
+export interface IntrantDocument {
+  title: string;
+  url: string;
+  /** Exact date text printed by the source. */
+  dateText: string | null;
+  /** Exact file-type text printed by the source. */
+  fileType: string | null;
+}
+
+/** Parse document cards rendered by the official INTRANT transparency template. */
+export function parseIntrantDocuments(html: string, pageUrl: string): IntrantDocument[] {
+  const documents: IntrantDocument[] = [];
+  const blocks = html.split(/<div\b[^>]*class=["'][^"']*\barchivo-card\b[^"']*["'][^>]*>/gi);
+  for (const block of blocks.slice(1)) {
+    const titleMatch = block.match(
+      /<div\b[^>]*class=["'][^"']*\barchivo-title\b[^"']*["'][^>]*>([\s\S]*?)<\/div>/i,
+    );
+    const anchor = [...block.matchAll(/<a\b([^>]*)>/gi)].find((match) =>
+      /\bclass=["'][^"']*\bbtn-descargar\b/i.test(match[1]!),
+    );
+    const hrefMatch = anchor?.[1]?.match(/\bhref=["']([^"']+)["']/i);
+    const title = titleMatch ? strip(titleMatch[1]!) : "";
+    if (!title || !hrefMatch) continue;
+    let url: string;
+    try {
+      url = new URL(decodeHtmlEntities(hrefMatch[1]!), pageUrl).toString();
+    } catch {
+      continue;
+    }
+    const dateMatch = block.match(
+      /<span\b[^>]*class=["'][^"']*\barchivo-fecha\b[^"']*["'][^>]*>([\s\S]*?)<\/span>/i,
+    );
+    const typeMatch = block.match(
+      /<span\b[^>]*class=["'][^"']*\barchivo-tipo\b[^"']*["'][^>]*>([\s\S]*?)<\/span>/i,
+    );
+    documents.push({
+      title,
+      url,
+      dateText: dateMatch ? strip(dateMatch[1]!) || null : null,
+      fileType: typeMatch ? strip(typeMatch[1]!) || null : null,
+    });
+  }
+  return documents;
+}
+
+/** INTRANT — documents rendered on its official transparency pages. */
 export class IntrantAdapter {
   readonly source = "reg-intrant";
   readonly institution = "INTRANT";
   constructor(
-    private readonly endpoint = "https://wp.intrant.gob.do/graphql",
     private readonly sections = [
-      { uri: "/transparencia/base-legal-de-la-institucion/resoluciones-base-legal/", category: "TRANSPORTE", label: "resoluciones" },
-      { uri: "/transparencia/marco-legal-del-sistema-de-transparencia/normativas/", category: "TRANSPORTE · NORMAS", label: "normativas" },
+      {
+        url: "https://intrant.gob.do/transparencia/marco-legal-del-sistema-de-transparencia/resoluciones-y-reglamentos/resoluciones-resoluciones-marco-legal-de-transparencia",
+        label: "Resoluciones",
+      },
+      {
+        url: "https://intrant.gob.do/transparencia/marco-legal-del-sistema-de-transparencia/resoluciones-y-reglamentos/reglamentos",
+        label: "Reglamentos",
+      },
+      {
+        url: "https://intrant.gob.do/transparencia/marco-legal-del-sistema-de-transparencia/normativas",
+        label: "Normativas",
+      },
     ],
     private readonly perSection = 25,
   ) {}
@@ -426,51 +717,49 @@ export class IntrantAdapter {
   async collect(): Promise<{ regulations: RawRegulation[]; gaps: string[] }> {
     const gaps: string[] = [];
     const regulations: RawRegulation[] = [];
-    const query =
-      "query($id:ID!){transparencia(idType:URI,id:$id){title relatedDocuments{documents{document{title mimeType mediaItemUrl date}}}}}";
+    let successfulSections = 0;
     for (const s of this.sections) {
-      let docs: { document?: IntrantDoc }[] = [];
+      let docs: IntrantDocument[] = [];
       try {
-        const d = await fetchJson<{ data?: { transparencia?: { relatedDocuments?: { documents?: { document?: IntrantDoc }[] } } } }>(
-          this.endpoint,
-          {
-            method: "POST",
-            body: JSON.stringify({ query, variables: { id: s.uri } }),
-            headers: { "Content-Type": "application/json" },
-            timeoutMs: 30_000,
-          },
-        );
-        docs = d.data?.transparencia?.relatedDocuments?.documents ?? [];
+        const html = await fetchText(s.url, { timeoutMs: 30_000 });
+        docs = parseIntrantDocuments(html, s.url);
+        successfulSections++;
       } catch (err) {
         gaps.push(`INTRANT ${s.label} · ${(err as Error).message}`);
         continue;
       }
-      if (!docs.length) gaps.push(`INTRANT ${s.label} sin documentos (¿cambió el URI?).`);
+      if (!docs.length) gaps.push(`INTRANT ${s.label}: la fuente devolvió 0 documentos.`);
       const items = docs
-        .map((x) => x.document)
-        .filter((doc): doc is IntrantDoc => !!doc?.title && (doc.mimeType ?? "").includes("pdf"))
-        .sort((a, b) => (b.date ?? "").localeCompare(a.date ?? ""))
+        .sort((a, b) => (b.dateText ?? "").localeCompare(a.dateText ?? ""))
         .slice(0, this.perSection);
       for (const doc of items) {
-        const status = "Publicada/Vigente";
         regulations.push({
           source: this.source,
-          sourceId: doc.mediaItemUrl ?? doc.title!,
+          sourceId: doc.url,
           institution: this.institution,
-          regType: inferRegType(doc.title!) ?? (/^\s*normativa/i.test(doc.title!) ? "Norma" : "Resolución"),
-          title: cleanTitle(doc.title!),
-          status,
-          interventionLevel: interventionFor(status, false),
-          category: s.category,
+          regType: explicitRegTypeFromTitle(doc.title),
+          title: doc.title,
+          status: null,
+          sourceCategory: null,
           isConsulta: false,
-          publishedAt: isoDate(doc.date),
+          publishedAt: parseSpanishLongDate(doc.dateText ?? ""),
           deadline: null,
-          url: doc.mediaItemUrl ?? null,
-          raw: doc,
+          url: doc.url,
+          raw: {
+            payload: doc,
+            provenance: {
+              sourceUrl: s.url,
+              officialSection: s.label,
+            },
+          },
         });
       }
     }
-    return { regulations, gaps };
+    if (successfulSections === 0) {
+      throw new Error(gaps.join(" | ") || "INTRANT sections unavailable");
+    }
+    const deduplicated = [...new Map(regulations.map((item) => [item.sourceId, item])).values()];
+    return { regulations: deduplicated, gaps };
   }
 }
 

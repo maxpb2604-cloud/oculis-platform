@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseOrdenFileName, detectReadingStatuses } from "../src/dip-oficial.js";
+import { parseOrdenFileName, extractProceduralMentions } from "../src/dip-oficial.js";
 import { parseSenadoDate } from "../src/senado.js";
 
 describe("dip-oficial: parseOrdenFileName", () => {
@@ -21,14 +21,23 @@ describe("dip-oficial: parseOrdenFileName", () => {
   });
 });
 
-describe("dip-oficial: detectReadingStatuses", () => {
-  it("finds reading statuses present in agenda text", () => {
-    const text = "... aprobado en SEGUNDA LECTURA ... declarado de urgencia ... tomado en consideración ...";
-    const s = detectReadingStatuses(text);
-    expect(s).toContain("Aprobado 2da lectura");
+describe("dip-oficial: extractProceduralMentions", () => {
+  it("keeps only procedural phrases that occur in the document", () => {
+    const text =
+      "... aprobado en SEGUNDA LECTURA ... declarado de urgencia ... tomado en consideración ...";
+    const s = extractProceduralMentions(text);
+    expect(s).toContain("Segunda lectura");
     expect(s).toContain("Declarado de urgencia");
     expect(s).toContain("Tomado en consideración");
-    expect(s).not.toContain("Aprobado 1ra lectura");
+    expect(s).not.toContain("Primera lectura");
+    expect(s.some((label) => label.startsWith("Aprobado"))).toBe(false);
+  });
+
+  it("uses neutral labels for every reading type mentioned by an agenda", () => {
+    expect(extractProceduralMentions("Primera lectura; única lectura")).toEqual([
+      "Primera lectura",
+      "Única lectura",
+    ]);
   });
 });
 

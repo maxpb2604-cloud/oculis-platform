@@ -1,14 +1,19 @@
 "use client";
 
 /**
- * Searchable, de-duplicated agenda view for the Diputados / Senado pages. Replaces the
- * flat repetitive list: each session/committee shows once, as a clean row with a single
- * "Ver agenda" button (the source PDF) — no repeated description spam. A live search box
- * filters across committee name, date, kind and reading statuses.
+ * Searchable agenda view for the Diputados / Senado pages. Every stored official row is
+ * retained; the UI only filters on the user's literal query and never collapses records
+ * because their titles, dates, or committee names look similar.
  */
 import { useMemo, useState } from "react";
-import { ScopeChip, StatusChip, type ActivityItem } from "@/components/monitoring";
+import {
+  ActivityInitiativeLinks,
+  ProceduralMentionChip,
+  ScopeChip,
+  type ActivityItem,
+} from "@/components/monitoring";
 import { formatISODate } from "@/lib/format";
+import { safeHttpUrl } from "@/lib/input";
 
 export interface AgendaSection {
   key: string;
@@ -25,58 +30,103 @@ function rowTitle(item: ActivityItem, es: boolean): string {
 function AgendaRow({ item, es }: { item: ActivityItem; es: boolean }) {
   const statuses = item.statuses ?? [];
   const date = item.eventDate ? formatISODate(item.eventDate, es ? "es" : "en") : null;
+  const agendaUrl = safeHttpUrl(item.agendaUrl);
   return (
     <div className="flex items-start gap-3 border-b px-4 py-3 last:border-0">
-      <div className="pt-0.5"><ScopeChip scope={item.scope} lang={es ? "es" : "en"} /></div>
+      <div className="pt-0.5">
+        <ScopeChip scope={item.scope} lang={es ? "es" : "en"} />
+      </div>
       <div className="min-w-0 flex-1">
         <div className="text-sm font-medium leading-snug">{rowTitle(item, es)}</div>
-        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px]" style={{ color: "var(--text-muted)" }}>
-          {date && <span className="tnum font-medium" style={{ color: "var(--text)" }}>{date}</span>}
+        <div
+          className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px]"
+          style={{ color: "var(--text-muted)" }}
+        >
+          {date && (
+            <span className="tnum font-medium" style={{ color: "var(--text)" }}>
+              {date}
+            </span>
+          )}
+          {item.eventTime && (
+            <span>
+              · {es ? "Hora reportada" : "Reported time"}: {item.eventTime}
+            </span>
+          )}
           {item.kind && <span>· {item.kind}</span>}
           {item.initiativeCount > 0 && (
             <span className="rounded bg-[var(--surface-2)] px-1.5 py-0.5 font-medium">
-              {item.initiativeCount} {item.initiativeCount === 1 ? (es ? "iniciativa" : "initiative") : (es ? "iniciativas" : "initiatives")}
+              {item.initiativeCount}{" "}
+              {item.initiativeCount === 1
+                ? es
+                  ? "iniciativa"
+                  : "initiative"
+                : es
+                  ? "iniciativas"
+                  : "initiatives"}
             </span>
           )}
         </div>
         {statuses.length > 0 && (
-          <div className="mt-1.5 flex flex-wrap gap-1.5">
-            {statuses.map((s, i) => <StatusChip key={i} raw={s} />)}
+          <div className="mt-1.5">
+            <div
+              className="mb-1 text-[10px] font-semibold uppercase tracking-wide"
+              style={{ color: "var(--text-muted)" }}
+            >
+              {es ? "Menciones procedimentales en la agenda" : "Procedural mentions in the agenda"}
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {statuses.map((s, i) => (
+                <ProceduralMentionChip key={i} raw={s} />
+              ))}
+            </div>
           </div>
         )}
+        <ActivityInitiativeLinks initiatives={item.initiatives} lang={es ? "es" : "en"} />
       </div>
-      {item.agendaUrl && (
-        <a href={item.agendaUrl} target="_blank" rel="noreferrer"
+      {agendaUrl && (
+        <a
+          href={agendaUrl}
+          target="_blank"
+          rel="noreferrer"
           className="shrink-0 self-center rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold transition-colors hover:bg-[var(--accent-soft)]"
-          style={{ color: "var(--accent)", borderColor: "var(--accent)" }}>
-          {es ? "Ver agenda ↗" : "View agenda ↗"}
+          style={{ color: "var(--accent)", borderColor: "var(--accent)" }}
+        >
+          {es ? "Ver agenda" : "View agenda"}
         </a>
       )}
     </div>
   );
 }
 
-export function AgendaBrowser({ sections, lang }: { sections: AgendaSection[]; lang: "es" | "en" }) {
+export function AgendaBrowser({
+  sections,
+  lang,
+}: {
+  sections: AgendaSection[];
+  lang: "es" | "en";
+}) {
   const es = lang === "es";
   const [q, setQ] = useState("");
   const ql = q.trim().toLowerCase();
 
-  // De-duplicate (same body + date + kind appears once) then filter by the query.
+  // Filter only. Source/database identity already handles exact idempotency.
   const prepared = useMemo(() => {
     const matches = (it: ActivityItem) =>
       !ql ||
-      [it.body, it.description, it.kind, it.eventDate, rowTitle(it, es), ...(it.statuses ?? [])]
-        .some((v) => String(v ?? "").toLowerCase().includes(ql));
+      [
+        it.body,
+        it.description,
+        it.kind,
+        it.eventDate,
+        rowTitle(it, es),
+        ...(it.statuses ?? []),
+      ].some((v) =>
+        String(v ?? "")
+          .toLowerCase()
+          .includes(ql),
+      );
     return sections.map((s) => {
-      const seen = new Set<string>();
-      const items: ActivityItem[] = [];
-      for (const it of s.items) {
-        const k = `${it.body}|${it.eventDate}|${it.kind}`;
-        if (seen.has(k)) continue;
-        seen.add(k);
-        if (matches(it)) items.push(it);
-      }
-      return { ...s, items };
+      return { ...s, items: s.items.filter(matches) };
     });
   }, [sections, ql, es]);
 
@@ -84,16 +134,17 @@ export function AgendaBrowser({ sections, lang }: { sections: AgendaSection[]; l
     <div>
       {/* Search */}
       <div className="relative max-w-md">
-        <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2" style={{ color: "var(--text-muted)" }}>
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
-            <circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" />
-          </svg>
-        </span>
+        <label htmlFor="agenda-search" className="eyebrow mb-1.5 block">
+          {es ? "Buscar agenda" : "Search agenda"}
+        </label>
         <input
+          id="agenda-search"
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder={es ? "Buscar comisión, fecha o estado…" : "Search committee, date or status…"}
-          className="w-full rounded-lg border bg-[var(--surface)] py-2 pl-9 pr-3 text-sm outline-none focus:border-[var(--accent)]"
+          placeholder={
+            es ? "Buscar comisión, fecha o estado…" : "Search committee, date or status…"
+          }
+          className="w-full rounded-lg border bg-[var(--surface)] px-3 py-2 text-sm outline-none focus:border-[var(--accent)]"
           style={{ borderColor: "var(--border)" }}
         />
       </div>
@@ -103,11 +154,26 @@ export function AgendaBrowser({ sections, lang }: { sections: AgendaSection[]; l
           <div key={s.key} className="card overflow-hidden p-0">
             <div className="flex items-center justify-between border-b px-4 py-3">
               <span className="text-sm font-semibold">{s.title}</span>
-              <span className="tnum text-[12px] font-semibold" style={{ color: "var(--text-muted)" }}>{s.items.length}</span>
+              <span
+                className="tnum text-[12px] font-semibold"
+                style={{ color: "var(--text-muted)" }}
+              >
+                {s.items.length}
+              </span>
             </div>
             {s.items.length === 0 ? (
-              <div role="status" className="px-4 py-8 text-center text-sm" style={{ color: "var(--text-muted)" }}>
-                {ql ? (es ? "Sin coincidencias para la búsqueda." : "No matches for your search.") : (es ? "Sin actividad reciente." : "No recent activity.")}
+              <div
+                role="status"
+                className="px-4 py-8 text-center text-sm"
+                style={{ color: "var(--text-muted)" }}
+              >
+                {ql
+                  ? es
+                    ? "Sin coincidencias para la búsqueda."
+                    : "No matches for your search."
+                  : es
+                    ? "Sin actividad reciente."
+                    : "No recent activity."}
               </div>
             ) : (
               s.items.map((it) => <AgendaRow key={it.id} item={it} es={es} />)

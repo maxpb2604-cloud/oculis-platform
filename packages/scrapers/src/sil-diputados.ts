@@ -20,6 +20,7 @@
  * every grupo × {true,false} enumerates the full corpus.
  */
 import type { RawInitiative, RawStatusEvent, SourceAdapter } from "./types.js";
+import { extractLeadingISODate } from "./dates.js";
 import { fetchJson } from "./http.js";
 
 const BASE = "https://www.diputadosrd.gob.do/sil/api/iniciativa";
@@ -115,11 +116,18 @@ export class SilDiputadosAdapter implements SourceAdapter {
   constructor(private readonly base: string = BASE) {}
 
   async count(): Promise<number> {
-    return fetchJson<number>(`${this.base}/CountIniciativas?periodoId=0`, { headers });
+    const count = await fetchJson<number>(`${this.base}/CountIniciativas?periodoId=0`, { headers });
+    if (!Number.isFinite(count) || count < 0)
+      throw new Error("SIL returned an invalid initiative count");
+    return count;
   }
 
   async groups(): Promise<Grupo[]> {
-    return fetchJson<Grupo[]>(`${this.base}/Grupos?periodoId=0`, { headers });
+    const groups = await fetchJson<Grupo[]>(`${this.base}/Grupos?periodoId=0`, { headers });
+    if (!Array.isArray(groups) || groups.length === 0) {
+      throw new Error("SIL returned 0 initiative groups");
+    }
+    return groups;
   }
 
   async materias(grupo: number): Promise<Materia[]> {
@@ -129,12 +137,12 @@ export class SilDiputadosAdapter implements SourceAdapter {
   }
 
   /** Build the (verified) paginated list URL. */
-  buildListUrl(grupo: number, tipo: boolean, page: number): string {
+  buildListUrl(grupo: number, tipo: boolean, page: number, perimidas = false): string {
     const qs = new URLSearchParams({
       page: String(page),
       grupo: String(grupo),
       tipo: String(tipo),
-      perimidas: "false",
+      perimidas: String(perimidas),
       keyword: "",
       periodoId: "0",
     });
@@ -142,10 +150,18 @@ export class SilDiputadosAdapter implements SourceAdapter {
   }
 
   /** One page of a (grupo, tipo) slice. */
-  listPage(grupo: number, tipo: boolean, page: number): Promise<Page<SilIniciativa>> {
-    return fetchJson<Page<SilIniciativa>>(this.buildListUrl(grupo, tipo, page), {
+  async listPage(
+    grupo: number,
+    tipo: boolean,
+    page: number,
+    perimidas = false,
+  ): Promise<Page<SilIniciativa>> {
+    const url = this.buildListUrl(grupo, tipo, page, perimidas);
+    const envelope = await fetchJson<Page<SilIniciativa>>(url, {
       headers,
     });
+    assertPageEnvelope(envelope, url);
+    return envelope;
   }
 
   /**
@@ -153,19 +169,24 @@ export class SilDiputadosAdapter implements SourceAdapter {
    * paging through each slice. Yields base records (no sponsor/history) — call
    * `enrich()` to add party/province/history when needed.
    */
-  async *list(
-    options: { maxPagesPerSlice?: number } = {},
-  ): AsyncIterable<RawInitiative> {
+  async *list(options: { maxPagesPerSlice?: number } = {}): AsyncIterable<RawInitiative> {
     const { maxPagesPerSlice = Infinity } = options;
     const groups = await this.groups();
+    const yielded = new Set<number>();
     for (const g of groups) {
       for (const tipo of [true, false]) {
-        let page = 1;
-        while (page <= maxPagesPerSlice) {
-          const env = await this.listPage(g.id, tipo, page);
-          for (const row of env.results) yield mapInitiative(row);
-          if (page * env.pageSize >= env.total || env.results.length === 0) break;
-          page++;
+        for (const perimidas of [false, true]) {
+          let page = 1;
+          while (page <= maxPagesPerSlice) {
+            const env = await this.listPage(g.id, tipo, page, perimidas);
+            for (const row of env.results) {
+              if (yielded.has(row.id)) continue;
+              yielded.add(row.id);
+              yield mapInitiative(row, this.base, { perimidas });
+            }
+            if (page * env.pageSize >= env.total || env.results.length === 0) break;
+            page++;
+          }
         }
       }
     }
@@ -176,25 +197,17 @@ export class SilDiputadosAdapter implements SourceAdapter {
       `${this.base}/iniciativa/${encodeURIComponent(sourceId)}`,
       { headers },
     );
-    return data == null ? null : mapInitiative(data);
+    return data == null ? null : mapInitiative(data, this.base);
   }
 
   /** Sponsors for an initiative (party + province live here). */
   async proponentes(id: string | number): Promise<SilProponente[]> {
-    const env = await fetchJson<Page<SilProponente>>(
-      `${this.base}/proponentes?page=1&id=${id}`,
-      { headers },
-    );
-    return env.results ?? [];
+    return this.allPages<SilProponente>("proponentes", id);
   }
 
   /** Status-change history for an initiative. */
   async historicos(id: string | number): Promise<SilHistorico[]> {
-    const env = await fetchJson<Page<SilHistorico>>(
-      `${this.base}/historicos?page=1&id=${id}`,
-      { headers },
-    );
-    return env.results ?? [];
+    return this.allPages<SilHistorico>("historicos", id);
   }
 
   /**
@@ -204,11 +217,7 @@ export class SilDiputadosAdapter implements SourceAdapter {
    * be reachable only from certain networks. `documentUrl()` builds the official link.
    */
   async documentos(id: string | number): Promise<SilDocumento[]> {
-    const env = await fetchJson<Page<SilDocumento>>(
-      `${this.base}/documentos?page=1&id=${id}`,
-      { headers },
-    );
-    return env.results ?? [];
+    return this.allPages<SilDocumento>("documentos", id);
   }
 
   /** Official view/download URL for a SIL document id. */
@@ -225,53 +234,99 @@ export class SilDiputadosAdapter implements SourceAdapter {
       this.proponentes(raw.sourceId),
       this.historicos(raw.sourceId),
     ]);
-    const principal = props.find((p) => p.principal) ?? props[0];
+    const principal = props.find((p) => p.principal === true);
     const rep = principal?.representacion;
-    const history: RawStatusEvent[] = hist.map((h) => ({
-      status: String(h.estado ?? ""),
-      date: h.inicio ?? null,
-      note: null,
-    }));
+    const history: RawStatusEvent[] = hist
+      .map((h) => ({
+        status: h.estado?.trim() ?? "",
+        date: extractLeadingISODate(h.inicio),
+        note: null,
+        raw: h,
+      }))
+      .filter((event) => event.status.length > 0);
     return {
       ...raw,
       sponsor: proponenteName(principal) ?? raw.sponsor,
       party: rep?.partido?.siglas ?? rep?.partido?.nombre ?? raw.party,
       province: rep?.provincia ?? raw.province,
       history: history.length ? history : raw.history,
-      raw: { base: raw.raw, proponentes: props, historicos: hist },
+      raw: {
+        payload: { base: raw.raw, proponentes: props, historicos: hist },
+        provenance: {
+          sourceUrl: raw.sourceUrl,
+          endpoints: ["iniciativa/iniciativas", "iniciativa/proponentes", "iniciativa/historicos"],
+        },
+      },
     };
+  }
+
+  private async allPages<T>(path: string, id: string | number): Promise<T[]> {
+    const rows: T[] = [];
+    for (let page = 1; page <= 200; page++) {
+      const url = `${this.base}/${path}?page=${page}&id=${encodeURIComponent(String(id))}`;
+      const envelope = await fetchJson<Page<T>>(url, { headers });
+      assertPageEnvelope(envelope, url);
+      rows.push(...envelope.results);
+      if (envelope.results.length === 0 || page * envelope.pageSize >= envelope.total) {
+        return rows;
+      }
+    }
+    throw new Error(`SIL ${path} exceeded the 200-page safety limit for initiative ${id}`);
   }
 }
 
 /** Map a SIL record into our canonical RawInitiative. */
-function mapInitiative(d: SilIniciativa): RawInitiative {
+function mapInitiative(
+  d: SilIniciativa,
+  base = BASE,
+  query: { perimidas?: boolean } = {},
+): RawInitiative {
   const id = String(d.id);
+  const title = d.descripcion?.trim() ?? "";
+  if (!title) throw new Error(`SIL initiative ${id} has no explicit description/title`);
+  const sourceUrl = `https://www.diputadosrd.gob.do/sil/iniciativa/${id}`;
   return {
     sourceId: id,
     source: "sil-diputados",
     kind: "LEGISLATIVE",
     code: d.numero ?? null,
-    title: String(d.descripcion ?? ""),
+    title,
     purpose: null,
     type: d.tipo ?? null,
-    status: d.estado ?? d.condicion ?? null,
+    status: d.estado?.trim() || null,
     chamber: "DIPUTADOS",
     sourceCategory: d.grupo ?? d.materia ?? null,
     sponsor: null,
     party: null,
     province: null,
     committee: null,
-    filedAt: normalizeDate(d.fechaDeposito),
+    filedAt: extractLeadingISODate(d.fechaDeposito),
     expiresAt: null,
-    sourceUrl: `https://www.diputadosrd.gob.do/sil/iniciativa/${id}`,
+    sourceUrl,
     history: [],
-    raw: d,
+    raw: {
+      payload: d,
+      provenance: {
+        sourceUrl,
+        endpoint: `${base}/iniciativas`,
+        query: { perimidas: query.perimidas ?? null },
+        explicitStatusField: "estado",
+        explicitCategoryFields: ["grupo", "materia"],
+      },
+    },
   };
 }
 
-/** SIL dates are like "2026-06-18T00:00:00" (no TZ). Keep date portion as ISO. */
-function normalizeDate(v: string | null | undefined): string | null {
-  if (!v) return null;
-  const m = /^(\d{4}-\d{2}-\d{2})/.exec(v);
-  return m ? m[1]! : null;
+function assertPageEnvelope<T>(value: Page<T>, url: string): void {
+  if (
+    !value ||
+    !Array.isArray(value.results) ||
+    !Number.isFinite(Number(value.page)) ||
+    !Number.isFinite(Number(value.pageSize)) ||
+    Number(value.pageSize) <= 0 ||
+    !Number.isFinite(Number(value.total)) ||
+    Number(value.total) < 0
+  ) {
+    throw new Error(`SIL returned an invalid page envelope: ${url}`);
+  }
 }

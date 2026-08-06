@@ -1,0 +1,76 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1785948340198,
+      "tag": "0000_illegal_champions",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1785948372205,
+      "tag": "0001_famous_winter_soldier",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1785948489646,
+      "tag": "0002_outstanding_bug",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1785959124776,
+      "tag": "0003_neutralize_inference",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1785960273563,
+      "tag": "0004_factual_status_cycles",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1785961876840,
+      "tag": "0005_nullable_consulta_fact",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1785963202367,
+      "tag": "0006_cooing_romulus",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1785964442337,
+      "tag": "0007_rainy_gargoyle",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1785964689123,
+      "tag": "0008_reclassify_legacy_status_provenance",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1785971821546,
+      "tag": "0009_icy_mentor",
+      "breakpoints": true
+    }
+  ]
+}

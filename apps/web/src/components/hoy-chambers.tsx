@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Panel } from "@/components/dashboard";
+import { Panel } from "@/components/report-ui";
 import { ActivityList, DepositList, StatTile, type ActivityItem } from "@/components/monitoring";
 import { ChamberToggle, type Chamber } from "@/components/ui/chamber-toggle";
 import type { DepositItem } from "@/lib/data";
@@ -71,7 +71,7 @@ export function HoyChambers({
           label={es ? "Iniciativas depositadas" : "Initiatives deposited"}
         />
         <StatTile value={committee.length} label={`${es ? "Movimientos en comisión" : "Committee movements"}${windowTag}`} accent="var(--accent)" />
-        <StatTile value={`${docsUp}/${shownDeposits.length || 0}`} label={es ? "Con documento cargado" : "With document uploaded"} accent="var(--risk-bajo)" />
+        <StatTile value={`${docsUp}/${shownDeposits.length || 0}`} label={es ? "Con documento oficial" : "With official document"} accent="var(--accent)" />
       </div>
 
       {/* 1 — Iniciativas depositadas */}

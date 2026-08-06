@@ -1,14 +1,11 @@
 import {
   getFeed,
-  getFeedFacets,
-  getFeedTrending,
-  getSuggestedAccounts,
+  getAccountDirectory,
   getInitiativeByCode,
   getFeedFreshness,
   todayISO,
 } from "@/lib/data";
 import { type Lang } from "@/lib/i18n";
-import { shortBillName } from "@/lib/format";
 import { AppShell } from "@/components/app-shell";
 import { FeedFilters } from "@/components/feed-filters";
 import { FeedTimeline } from "@/components/feed-timeline";
@@ -24,11 +21,9 @@ export default async function FeedPage({ searchParams }: { searchParams: Promise
   const sp = await searchParams;
   const lang: Lang = sp.lang === "en" ? "en" : "es";
   const es = lang === "es";
-  const windowDays = sp.window === "30" ? 30 : sp.window === "7" ? 7 : 14;
 
   const filters = {
     kind: sp.kind,
-    category: sp.category,
     chamber: sp.chamber,
     initiativeCode: sp.initiativeCode,
     legislatorSourceId: sp.legislatorSourceId,
@@ -36,11 +31,9 @@ export default async function FeedPage({ searchParams }: { searchParams: Promise
     search: sp.search,
   };
 
-  const [page, facets, trending, accounts, freshness] = await Promise.all([
+  const [page, accounts, freshness] = await Promise.all([
     getFeed(filters, { limit: 25 }),
-    getFeedFacets(),
-    getFeedTrending(windowDays),
-    getSuggestedAccounts(),
+    getAccountDirectory(),
     getFeedFreshness(),
   ]);
 
@@ -48,7 +41,7 @@ export default async function FeedPage({ searchParams }: { searchParams: Promise
   let activeLabel: string | undefined;
   if (filters.initiativeCode) {
     const bill = await getInitiativeByCode(filters.initiativeCode);
-    activeLabel = shortBillName(bill?.title, filters.initiativeCode);
+    activeLabel = bill?.title ?? filters.initiativeCode;
   }
 
   return (
@@ -60,12 +53,12 @@ export default async function FeedPage({ searchParams }: { searchParams: Promise
       <div className="mb-4">
         <FeedFreshness
           lang={lang}
-          updatedAt={freshness.updatedAt}
+          newestSuccessAt={freshness.newestSuccessAt}
           sources={freshness.sources}
         />
       </div>
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-[230px_minmax(0,1fr)_290px]">
-        <FeedFilters lang={lang} facets={facets} active={filters} activeLabel={activeLabel} />
+        <FeedFilters lang={lang} active={filters} activeLabel={activeLabel} />
         {sp.view === "directory" || (filters.kind === "SOCIAL" && page.items.length === 0) ? (
           <FeedSocialDirectory lang={lang} accounts={accounts} />
         ) : (
@@ -77,13 +70,7 @@ export default async function FeedPage({ searchParams }: { searchParams: Promise
             today={todayISO()}
           />
         )}
-        <FeedRail
-          lang={lang}
-          topics={trending.topics}
-          entities={trending.entities}
-          accounts={accounts}
-          windowDays={windowDays}
-        />
+        <FeedRail lang={lang} accounts={accounts} />
       </div>
     </AppShell>
   );

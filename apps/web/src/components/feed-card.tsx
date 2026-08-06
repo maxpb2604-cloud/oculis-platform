@@ -1,13 +1,12 @@
 import Link from "next/link";
-import { CATEGORY_LABELS, type Category } from "@oculis/core";
 import { type Lang } from "@/lib/i18n";
-import { shortBillName } from "@/lib/format";
+import { safeHttpUrl } from "@/lib/input";
 import type { FeedListItem, FeedTag } from "@/lib/data";
 
 /** Chip text: bill NAME for initiatives (more identifiable than the code), else the label. */
 function tagDisplay(tag: FeedTag): string {
   return tag.entityType === "INITIATIVE"
-    ? shortBillName(tag.initiativeTitle, tag.initiativeCode)
+    ? (tag.initiativeTitle ?? tag.initiativeCode ?? tag.label)
     : tag.label;
 }
 
@@ -19,8 +18,8 @@ const KIND_STYLE: Record<string, { es: string; en: string; fg: string; bg: strin
   LEGISLATIVE: {
     es: "Congreso",
     en: "Congress",
-    fg: "var(--risk-bajo)",
-    bg: "var(--risk-bajo-soft)",
+    fg: "var(--verified)",
+    bg: "var(--verified-soft)",
   },
 };
 
@@ -38,12 +37,19 @@ const SOURCE_LABEL: Record<string, string> = {
   "feed-legislative": "Señal legislativa",
 };
 
+const ENTITY_LABEL: Record<string, { es: string; en: string }> = {
+  INITIATIVE: { es: "Proyecto", en: "Bill" },
+  LEGISLATOR: { es: "Legislador", en: "Legislator" },
+  COMMISSION: { es: "Comisión", en: "Committee" },
+};
+
 function fmtDate(iso: string | null, lang: Lang): string {
-  if (!iso) return "";
+  const missing = lang === "es" ? "No informado" : "Not reported";
+  if (!iso) return missing;
   let s = iso.replace(" ", "T");
   if (!/[zZ]|[+-]\d\d:?\d\d$/.test(s)) s += "Z";
   const d = new Date(s);
-  if (Number.isNaN(d.getTime())) return "";
+  if (Number.isNaN(d.getTime())) return missing;
   try {
     return new Intl.DateTimeFormat(lang === "es" ? "es-DO" : "en-US", {
       day: "numeric",
@@ -53,7 +59,7 @@ function fmtDate(iso: string | null, lang: Lang): string {
       timeZone: "America/Santo_Domingo",
     }).format(d);
   } catch {
-    return "";
+    return missing;
   }
 }
 
@@ -70,29 +76,40 @@ function entityHref(tag: FeedTag, lang: Lang): string {
   return `/feed?${p.toString()}`;
 }
 
-const TAG_ICON: Record<string, string> = { INITIATIVE: "🏛", LEGISLATOR: "👤", COMMISSION: "🗂" };
-
 export function FeedCard({ item, lang }: { item: FeedListItem; lang: Lang }) {
   const es = lang === "es";
-  const k = KIND_STYLE[item.kind] ?? KIND_STYLE.NEWS!;
+  const k =
+    KIND_STYLE[item.kind] ??
+    ({
+      es: item.kind || "No informado",
+      en: item.kind || "Not reported",
+      fg: "var(--text-muted)",
+      bg: "var(--surface-2)",
+    } satisfies (typeof KIND_STYLE)[string]);
   // Prefer a friendly outlet label; for Google-News press the outlet is in `author`.
   const sourceName = SOURCE_LABEL[item.source] ?? item.handle ?? item.author ?? item.source;
-  const when = fmtDate(item.publishedAt, lang);
-  const catLabel = item.category
-    ? (CATEGORY_LABELS[item.category as Category] ?? item.category)
-    : null;
+  const when = fmtDate(item.publishedAt ?? item.observedAt, lang);
+  const whenLabel = item.publishedAt
+    ? es
+      ? "Publicado"
+      : "Published"
+    : es
+      ? "Observado por Oculis"
+      : "Observed by Oculis";
+  const itemUrl = safeHttpUrl(item.url);
+  const imageUrl = safeHttpUrl(item.imageUrl);
 
   return (
     <article className="card overflow-hidden transition-shadow hover:shadow-lg">
       <div className="flex gap-3 p-3.5">
-        {item.imageUrl && (
+        {imageUrl && (
           <div
             className="hidden h-[84px] w-[112px] shrink-0 rounded-lg sm:block"
             style={{
-              backgroundImage: `url("${item.imageUrl}")`,
+              backgroundImage: `url("${imageUrl}")`,
               backgroundSize: "cover",
               backgroundPosition: "center",
-              background: `var(--surface-2) url("${item.imageUrl}") center/cover no-repeat`,
+              background: `var(--surface-2) url("${imageUrl}") center/cover no-repeat`,
             }}
             role="img"
             aria-label={item.title}
@@ -112,23 +129,13 @@ export function FeedCard({ item, lang }: { item: FeedListItem; lang: Lang }) {
             >
               {sourceName}
             </span>
-            {when && (
-              <span className="tnum text-[11px]" style={{ color: "var(--text-muted)" }}>
-                · {when}
-              </span>
-            )}
-            {catLabel && (
-              <span
-                className="ml-auto rounded px-1.5 py-0.5 text-[10px] font-medium"
-                style={{ color: "var(--accent)", background: "var(--accent-soft)" }}
-              >
-                {catLabel}
-              </span>
-            )}
+            <span className="tnum text-[11px]" style={{ color: "var(--text-muted)" }}>
+              · {whenLabel}: {when}
+            </span>
           </div>
 
-          {item.url ? (
-            <a href={item.url} target="_blank" rel="noreferrer" className="block">
+          {itemUrl ? (
+            <a href={itemUrl} target="_blank" rel="noreferrer" className="block">
               <h3 className="serif text-[15.5px] font-semibold leading-snug hover:underline">
                 {item.title}
               </h3>
@@ -162,7 +169,14 @@ export function FeedCard({ item, lang }: { item: FeedListItem; lang: Lang }) {
                         : "See everything related"
                   }
                 >
-                  <span aria-hidden>{TAG_ICON[tag.entityType] ?? "•"}</span>
+                  <span
+                    className="rounded border px-1 py-0.5 text-[9px] font-semibold uppercase tracking-wide"
+                    style={{ color: "var(--text-muted)" }}
+                  >
+                    {es
+                      ? (ENTITY_LABEL[tag.entityType]?.es ?? tag.entityType)
+                      : (ENTITY_LABEL[tag.entityType]?.en ?? tag.entityType)}
+                  </span>
                   <span className="max-w-[240px] truncate">{tagDisplay(tag)}</span>
                 </Link>
               ))}

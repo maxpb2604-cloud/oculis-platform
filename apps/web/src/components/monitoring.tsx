@@ -2,30 +2,78 @@
  * Phase 1 monitoring UI — shared building blocks for the daily activity dashboard.
  * Pure presentational server components; data comes from lib/data.ts.
  */
-import { STAGE_META, normalizeStatus } from "@oculis/core";
+import Link from "next/link";
 import { t, type Lang } from "@/lib/i18n";
 import { formatISODate, formatISODayMonth } from "@/lib/format";
+import { safeHttpUrl, senateRecordId } from "@/lib/input";
 
 export interface ActivityItem {
   id: number;
+  source: string;
   scope: string;
   chamber: string | null;
   eventDate: string | null;
+  eventTime: string | null;
   kind: string | null;
   body: string | null;
   description: string;
   agendaUrl: string | null;
   statuses: string[] | null;
   initiativeCount: number;
+  initiatives: Array<{
+    code: string;
+    initiativeId: number | null;
+    title: string | null;
+    sourceUrl: string | null;
+  }>;
 }
 
-const STAGE_COLOR: Record<string, string> = {
-  slate: "#64748b", blue: "#3b82f6", violet: "#8b5cf6", amber: "#d97706",
-  green: "#0b6e4f", teal: "#0d9488", rose: "#e11d48",
-};
+/** Every code explicitly mentioned by an activity row; ambiguous codes remain unlinked. */
+export function ActivityInitiativeLinks({
+  initiatives,
+  lang = "es",
+}: {
+  initiatives: ActivityItem["initiatives"];
+  lang?: Lang;
+}) {
+  if (initiatives.length === 0) return null;
+  const missing = lang === "es" ? "Enlace: No informado" : "Link: Not reported";
+  return (
+    <ul className="mt-2 flex flex-col gap-1 text-[11px]">
+      {initiatives.map((initiative) => {
+        const label = [initiative.code, initiative.title].filter(Boolean).join(" — ");
+        return (
+          <li key={`${initiative.code}-${initiative.initiativeId ?? "unresolved"}`}>
+            {initiative.initiativeId ? (
+              <Link
+                href={`/initiatives/${initiative.initiativeId}`}
+                className="font-medium underline-offset-2 hover:underline"
+                style={{ color: "var(--accent)" }}
+              >
+                {label}
+              </Link>
+            ) : (
+              <span>
+                {label} · <span style={{ color: "var(--text-muted)" }}>{missing}</span>
+              </span>
+            )}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
 
 /** Small KPI tile (count + label). */
-export function StatTile({ value, label, accent = "var(--accent)" }: { value: number | string; label: string; accent?: string }) {
+export function StatTile({
+  value,
+  label,
+  accent = "var(--accent)",
+}: {
+  value: number | string;
+  label: string;
+  accent?: string;
+}) {
   return (
     <div className="card elev p-4">
       <div className="tnum text-[28px] font-semibold leading-none">{value}</div>
@@ -37,26 +85,27 @@ export function StatTile({ value, label, accent = "var(--accent)" }: { value: nu
 
 /** Scope chip (Pleno / Asamblea / Comisión). Label is always text, not color-only. */
 export function ScopeChip({ scope, lang = "es" }: { scope: string; lang?: Lang }) {
-  const label = ["PLENARY", "ASAMBLEA", "COMMITTEE"].includes(scope) ? t(lang, `scope${scope}`) : scope;
+  const label = ["PLENARY", "ASAMBLEA", "COMMITTEE"].includes(scope)
+    ? t(lang, `scope${scope}`)
+    : scope;
   return (
-    <span className="rounded-full px-2 py-0.5 text-[11px] font-semibold"
-      style={{ background: "var(--accent-soft)", color: "var(--accent)" }}>
+    <span
+      className="rounded-full px-2 py-0.5 text-[11px] font-semibold"
+      style={{ background: "var(--accent-soft)", color: "var(--accent)" }}
+    >
       {label}
     </span>
   );
 }
 
-/** Status chip with self-explanatory tooltip. The label text always carries the
- *  meaning (never color-only); the dot is decorative (aria-hidden). */
-export function StatusChip({ raw }: { raw: string }) {
-  const meta = normalizeStatus(raw);
-  const color = STAGE_COLOR[STAGE_META[meta.stage].color] ?? "#64748b";
+/** Procedural phrase literally present in an agenda; never a bill lifecycle status. */
+export function ProceduralMentionChip({ raw }: { raw: string }) {
   return (
-    <span title={meta.tooltip} aria-label={`${meta.label}: ${meta.tooltip}`}
-      className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-medium"
-      style={{ background: `${color}1a`, color }}>
-      <span aria-hidden className="h-1.5 w-1.5 rounded-full" style={{ background: color }} />
-      {meta.label}
+    <span
+      className="inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-medium"
+      style={{ background: "var(--surface-2)", color: "var(--text-muted)" }}
+    >
+      {raw}
     </span>
   );
 }
@@ -65,31 +114,63 @@ export function StatusChip({ raw }: { raw: string }) {
  *  count chip, date — instead of re-printing a pre-baked description string. */
 export function ActivityRow({ item, lang = "es" }: { item: ActivityItem; lang?: Lang }) {
   const statuses = item.statuses ?? [];
+  const agendaUrl = safeHttpUrl(item.agendaUrl);
   // show description only when it adds detail beyond the body title
   const showDesc = item.description && item.description.trim() !== (item.body ?? "").trim();
   return (
     <div className="flex items-start gap-3 border-b px-5 py-3 last:border-0">
-      <div className="pt-0.5"><ScopeChip scope={item.scope} lang={lang} /></div>
+      <div className="pt-0.5">
+        <ScopeChip scope={item.scope} lang={lang} />
+      </div>
       <div className="min-w-0 flex-1">
         <div className="text-sm font-medium leading-snug">{item.body}</div>
         {showDesc && (
-          <div className="mt-0.5 text-[13px]" style={{ color: "var(--text-muted)" }}>{item.description}</div>
-        )}
-        {statuses.length > 0 && (
-          <div className="mt-1.5 flex flex-wrap gap-1.5">
-            {statuses.map((s, i) => <StatusChip key={i} raw={s} />)}
+          <div className="mt-0.5 text-[13px]" style={{ color: "var(--text-muted)" }}>
+            {item.description}
           </div>
         )}
-        <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[11px]" style={{ color: "var(--text-muted)" }}>
+        {statuses.length > 0 && (
+          <div className="mt-1.5">
+            <div
+              className="mb-1 text-[10px] font-semibold uppercase tracking-wide"
+              style={{ color: "var(--text-muted)" }}
+            >
+              {lang === "es"
+                ? "Menciones procedimentales en la agenda"
+                : "Procedural mentions in the agenda"}
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {statuses.map((s, i) => (
+                <ProceduralMentionChip key={i} raw={s} />
+              ))}
+            </div>
+          </div>
+        )}
+        <ActivityInitiativeLinks initiatives={item.initiatives} lang={lang} />
+        <div
+          className="mt-1.5 flex flex-wrap items-center gap-2 text-[11px]"
+          style={{ color: "var(--text-muted)" }}
+        >
           {item.kind && <span>{item.kind}</span>}
-          {item.initiativeCount > 0 && (
-            <span className="rounded bg-[var(--surface-2)] px-1.5 py-0.5 font-medium">
-              {item.initiativeCount} {t(lang, item.initiativeCount === 1 ? "initiative" : "initiativePlural")}
+          {item.eventTime && (
+            <span>
+              {lang === "es" ? "Hora reportada" : "Reported time"}: {item.eventTime}
             </span>
           )}
-          {item.agendaUrl && (
-            <a href={item.agendaUrl} target="_blank" rel="noreferrer"
-              className="font-medium underline-offset-2 hover:underline" style={{ color: "var(--accent)" }}>
+          {item.initiativeCount > 0 && (
+            <span className="rounded bg-[var(--surface-2)] px-1.5 py-0.5 font-medium">
+              {item.initiativeCount}{" "}
+              {t(lang, item.initiativeCount === 1 ? "initiative" : "initiativePlural")}
+            </span>
+          )}
+          {agendaUrl && (
+            <a
+              href={agendaUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="font-medium underline-offset-2 hover:underline"
+              style={{ color: "var(--accent)" }}
+            >
               {t(lang, "viewDocument")}
             </a>
           )}
@@ -105,27 +186,31 @@ export function ActivityRow({ item, lang = "es" }: { item: ActivityItem; lang?: 
 }
 
 /** A list of activity with empty state. */
-export function ActivityList({ items, empty, lang = "es" }: { items: ActivityItem[]; empty: React.ReactNode; lang?: Lang }) {
+export function ActivityList({
+  items,
+  empty,
+  lang = "es",
+}: {
+  items: ActivityItem[];
+  empty: React.ReactNode;
+  lang?: Lang;
+}) {
   if (!items.length) {
-    return <div role="status" className="px-5 py-8 text-center text-sm" style={{ color: "var(--text-muted)" }}>{empty}</div>;
+    return (
+      <div
+        role="status"
+        className="px-5 py-8 text-center text-sm"
+        style={{ color: "var(--text-muted)" }}
+      >
+        {empty}
+      </div>
+    );
   }
-  return <div>{items.map((i) => <ActivityRow key={i.id} item={i} lang={lang} />)}</div>;
-}
-
-/** Legend explaining the lifecycle stages (makes the dashboard self-explanatory). */
-export function StatusLegend() {
-  const stages = Object.entries(STAGE_META).sort((a, b) => a[1].order - b[1].order);
   return (
-    <div className="flex flex-wrap gap-x-4 gap-y-2">
-      {stages.map(([key, m]) => {
-        const color = STAGE_COLOR[m.color] ?? "#64748b";
-        return (
-          <span key={key} className="inline-flex items-center gap-1.5 text-[12px]" style={{ color: "var(--text-muted)" }}>
-            <span aria-hidden className="h-2 w-2 rounded-full" style={{ background: color }} />
-            {m.label}
-          </span>
-        );
-      })}
+    <div>
+      {items.map((i) => (
+        <ActivityRow key={i.id} item={i} lang={lang} />
+      ))}
     </div>
   );
 }
@@ -153,18 +238,35 @@ export interface DepositItem {
 }
 
 /** Document-status pill — the "¿está cargado el PDF?" signal the user asked for. */
-function DocStatus({ uploaded, senado, lang = "es" }: { uploaded: boolean; senado?: boolean; lang?: Lang }) {
+function DocStatus({
+  uploaded,
+  chamber,
+  lang = "es",
+}: {
+  uploaded: boolean;
+  chamber: string | null;
+  lang?: Lang;
+}) {
   // The Senate's document registry is behind a login, so document availability can't be
   // verified publicly per-initiative — we flag it as "consult the portal" rather than
   // claiming pending/uploaded.
-  const m = senado
-    ? { bg: "var(--surface-2)", fg: "var(--text-muted)", label: t(lang, "docSenate") }
-    : uploaded
-      ? { bg: "var(--accent-soft)", fg: "var(--accent)", label: t(lang, "docFiled") }
-      : { bg: "var(--warn-soft)", fg: "var(--warn)", label: t(lang, "docPending") };
+  const m =
+    chamber === "SENADO"
+      ? { bg: "var(--surface-2)", fg: "var(--text-muted)", label: t(lang, "docSenate") }
+      : chamber === "DIPUTADOS" && uploaded
+        ? { bg: "var(--accent-soft)", fg: "var(--accent)", label: t(lang, "docFiled") }
+        : chamber === "DIPUTADOS"
+          ? { bg: "var(--surface-2)", fg: "var(--text-muted)", label: t(lang, "docPending") }
+          : {
+              bg: "var(--surface-2)",
+              fg: "var(--text-muted)",
+              label: lang === "es" ? "Documento: No informado" : "Document: Not reported",
+            };
   return (
-    <span className="inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[11px] font-semibold"
-      style={{ background: m.bg, color: m.fg }}>
+    <span
+      className="inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[11px] font-semibold"
+      style={{ background: m.bg, color: m.fg }}
+    >
       <span aria-hidden className="h-1.5 w-1.5 rounded-full" style={{ background: m.fg }} />
       {m.label}
     </span>
@@ -180,12 +282,20 @@ export function DepositCard({ item, lang = "es" }: { item: DepositItem; lang?: L
   const sponsorMeta = [item.party, item.province].filter(Boolean).join(" · ");
   const others = (item.sponsorCount ?? 1) - 1;
   const isSenado = item.chamber === "SENADO";
+  const isDiputados = item.chamber === "DIPUTADOS";
+  const senateId = isSenado ? senateRecordId(item.sourceId) : null;
+  const sourceUrl = safeHttpUrl(item.sourceUrl);
+  const docUrl = safeHttpUrl(item.docUrl);
   return (
-    <div data-initiative-id={item.id} className="flex cursor-pointer flex-col gap-2 border-b px-5 py-4 last:border-0 transition-colors hover:bg-[var(--surface-2)]">
+    <div className="flex flex-col gap-2 border-b px-5 py-4 last:border-0 transition-colors hover:bg-[var(--surface-2)]">
       <div className="flex items-center gap-2">
         {item.code && (
-          <span className="tnum rounded px-1.5 py-0.5 text-[11px] font-semibold"
-            style={{ background: "var(--surface-2)" }}>{item.code}</span>
+          <span
+            className="tnum rounded px-1.5 py-0.5 text-[11px] font-semibold"
+            style={{ background: "var(--surface-2)" }}
+          >
+            {item.code}
+          </span>
         )}
         {item.type && <span className="eyebrow">{item.type}</span>}
         {item.filedAt && (
@@ -195,12 +305,25 @@ export function DepositCard({ item, lang = "es" }: { item: DepositItem; lang?: L
         )}
       </div>
 
-      <div className="text-sm font-medium leading-snug">{item.title}</div>
+      <button
+        type="button"
+        data-initiative-id={item.id}
+        aria-haspopup="dialog"
+        className="text-left text-sm font-medium leading-snug underline-offset-2 hover:underline"
+        aria-label={`${lang === "es" ? "Abrir detalle de iniciativa" : "Open initiative detail"}: ${item.title}`}
+      >
+        {item.title}
+      </button>
 
       {item.sponsor && (
-        <div className="flex flex-wrap items-center gap-x-1.5 text-[12px]" style={{ color: "var(--text-muted)" }}>
+        <div
+          className="flex flex-wrap items-center gap-x-1.5 text-[12px]"
+          style={{ color: "var(--text-muted)" }}
+        >
           <span>{t(lang, "filedBy")}</span>
-          <span className="font-semibold" style={{ color: "var(--text)" }}>{item.sponsor}</span>
+          <span className="font-semibold" style={{ color: "var(--text)" }}>
+            {item.sponsor}
+          </span>
           {item.sponsorRole && <span>· {item.sponsorRole}</span>}
           {sponsorMeta && <span>· {sponsorMeta}</span>}
           {others > 0 && (
@@ -212,21 +335,44 @@ export function DepositCard({ item, lang = "es" }: { item: DepositItem; lang?: L
       )}
 
       <div className="flex flex-wrap items-center gap-3">
-        <DocStatus uploaded={item.docUploaded} senado={isSenado} lang={lang} />
-        {isSenado && item.sourceId ? (
-          <a href={`/api/senado/ficha/${item.sourceId}`} target="_blank" rel="noreferrer"
-            className="text-[11px] font-medium underline-offset-2 hover:underline" style={{ color: "var(--accent)" }}>
+        <DocStatus uploaded={item.docUploaded} chamber={item.chamber} lang={lang} />
+        {senateId ? (
+          <a
+            href={`/api/senado/ficha/${senateId}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-[11px] font-medium underline-offset-2 hover:underline"
+            style={{ color: "var(--accent)" }}
+          >
             {t(lang, "openSenateRecord")}
           </a>
-        ) : item.sourceUrl ? (
-          <a href={item.sourceUrl} target="_blank" rel="noreferrer"
-            className="text-[11px] font-medium underline-offset-2 hover:underline" style={{ color: "var(--accent)" }}>
-            {t(lang, "viewSilRecord")}
+        ) : sourceUrl ? (
+          <a
+            href={sourceUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-[11px] font-medium underline-offset-2 hover:underline"
+            style={{ color: "var(--accent)" }}
+          >
+            {isDiputados
+              ? t(lang, "viewSilRecord")
+              : lang === "es"
+                ? "Abrir fuente oficial"
+                : "Open official source"}
           </a>
-        ) : null}
-        {!isSenado && item.docUploaded && item.docUrl && (
-          <a href={item.docUrl} target="_blank" rel="noreferrer"
-            className="text-[11px] font-medium underline-offset-2 hover:underline" style={{ color: "var(--accent)" }}>
+        ) : (
+          <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>
+            {lang === "es" ? "Enlace oficial: No informado" : "Official link: Not reported"}
+          </span>
+        )}
+        {isDiputados && item.docUploaded && docUrl && (
+          <a
+            href={docUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="text-[11px] font-medium underline-offset-2 hover:underline"
+            style={{ color: "var(--accent)" }}
+          >
             {t(lang, "openDocument")}
           </a>
         )}
@@ -235,9 +381,32 @@ export function DepositCard({ item, lang = "es" }: { item: DepositItem; lang?: L
   );
 }
 
-export function DepositList({ items, empty, lang = "es" }: { items: DepositItem[]; empty: React.ReactNode; lang?: Lang }) {
-  if (!items.length) return <div role="status" className="px-5 py-8 text-center text-sm" style={{ color: "var(--text-muted)" }}>{empty}</div>;
-  return <div>{items.map((i) => <DepositCard key={i.id} item={i} lang={lang} />)}</div>;
+export function DepositList({
+  items,
+  empty,
+  lang = "es",
+}: {
+  items: DepositItem[];
+  empty: React.ReactNode;
+  lang?: Lang;
+}) {
+  if (!items.length)
+    return (
+      <div
+        role="status"
+        className="px-5 py-8 text-center text-sm"
+        style={{ color: "var(--text-muted)" }}
+      >
+        {empty}
+      </div>
+    );
+  return (
+    <div>
+      {items.map((i) => (
+        <DepositCard key={i.id} item={i} lang={lang} />
+      ))}
+    </div>
+  );
 }
 
 // --- Regulatory monitoring building blocks ---
@@ -248,91 +417,127 @@ export interface RegulationItem {
   regType: string | null;
   title: string;
   status: string | null;
-  interventionLevel: string | null;
-  category: string | null;
-  isConsulta: boolean;
+  isConsulta: boolean | null;
   publishedAt: string | null;
   deadline: string | null;
   url: string | null;
 }
 
-const INTERV_COLOR: Record<string, string> = {
-  HIGH: "#0b6e4f",
-  INTERMEDIATE: "#d97706",
-  LOW: "#64748b",
-};
-const INTERV_KEYS: Record<string, { label: string; short: string }> = {
-  HIGH: { label: "intervHigh", short: "intervHighShort" },
-  INTERMEDIATE: { label: "intervMid", short: "intervMidShort" },
-  LOW: { label: "intervLow", short: "intervLowShort" },
-};
-
-/** Possibility-of-intervention chip — the key regulatory signal (HIGH = act now). */
-export function InterventionChip({ level, lang = "es" }: { level: string | null; lang?: Lang }) {
-  const key = level && INTERV_KEYS[level] ? level : "LOW";
-  const color = INTERV_COLOR[key];
-  const label = t(lang, INTERV_KEYS[key].label);
-  const short = t(lang, INTERV_KEYS[key].short);
-  return (
-    <span title={label} aria-label={label}
-      className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-semibold"
-      style={{ background: `${color}1a`, color }}>
-      <span aria-hidden className="h-1.5 w-1.5 rounded-full" style={{ background: color }} />
-      {short}
-    </span>
-  );
-}
-
 export function RegulationRow({ item, lang = "es" }: { item: RegulationItem; lang?: Lang }) {
+  const sourceUrl = safeHttpUrl(item.url);
+  const missing = lang === "es" ? "No informado" : "Not reported";
+  const consultation =
+    item.isConsulta == null ? missing : item.isConsulta ? (lang === "es" ? "Sí" : "Yes") : "No";
   return (
     <div className="flex items-start gap-3 border-b px-5 py-3 last:border-0">
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="rounded-full px-2 py-0.5 text-[11px] font-semibold"
-            style={{ background: "var(--accent-soft)", color: "var(--accent)" }}>{item.institution}</span>
-          {item.regType && <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>{item.regType}</span>}
+          <span
+            className="rounded-full px-2 py-0.5 text-[11px] font-semibold"
+            style={{ background: "var(--accent-soft)", color: "var(--accent)" }}
+          >
+            {item.institution}
+          </span>
+          <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>
+            {lang === "es" ? "Tipo" : "Type"}: {item.regType ?? missing}
+          </span>
           {item.isConsulta && (
-            <span className="rounded px-1.5 py-0.5 text-[10px] font-bold"
-              style={{ background: "var(--accent)", color: "#fff" }}>{t(lang, "publicConsultation")}</span>
+            <span
+              className="rounded px-1.5 py-0.5 text-[10px] font-bold"
+              style={{ background: "var(--accent)", color: "#fff" }}
+            >
+              {t(lang, "publicConsultation")}
+            </span>
           )}
         </div>
         <div className="mt-1 text-sm font-medium leading-snug">{item.title}</div>
-        <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[11px]" style={{ color: "var(--text-muted)" }}>
-          {item.status && <span>{item.status}</span>}
-          {item.deadline && <span className="font-medium" style={{ color: "var(--warn)" }}>{t(lang, "deadline")}: {item.deadline}</span>}
-          {item.url && (
-            <a href={item.url} target="_blank" rel="noreferrer"
-              className="font-medium underline-offset-2 hover:underline" style={{ color: "var(--accent)" }}>
+        <div
+          className="mt-1.5 flex flex-wrap items-center gap-2 text-[11px]"
+          style={{ color: "var(--text-muted)" }}
+        >
+          <span>
+            {lang === "es" ? "Estado" : "Status"}: {item.status ?? missing}
+          </span>
+          <span>
+            {lang === "es" ? "Consulta pública" : "Public consultation"}: {consultation}
+          </span>
+          <span>
+            {t(lang, "deadline")}: {item.deadline ?? missing}
+          </span>
+          {sourceUrl ? (
+            <a
+              href={sourceUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="font-medium underline-offset-2 hover:underline"
+              style={{ color: "var(--accent)" }}
+            >
               {t(lang, "viewDocument")}
             </a>
+          ) : (
+            <span>
+              {lang === "es" ? "Enlace oficial: No informado" : "Official link: Not reported"}
+            </span>
           )}
         </div>
       </div>
       <div className="shrink-0 text-right">
-        <InterventionChip level={item.interventionLevel} lang={lang} />
-        {item.publishedAt && <div className="tnum mt-1 text-[11px]" style={{ color: "var(--text-muted)" }}>{item.publishedAt}</div>}
+        <div className="tnum text-[11px]" style={{ color: "var(--text-muted)" }}>
+          {lang === "es" ? "Fecha" : "Date"}: {item.publishedAt ?? missing}
+        </div>
       </div>
     </div>
   );
 }
 
-export function RegulationList({ items, empty, lang = "es" }: { items: RegulationItem[]; empty: React.ReactNode; lang?: Lang }) {
-  if (!items.length) return <div role="status" className="px-5 py-8 text-center text-sm" style={{ color: "var(--text-muted)" }}>{empty}</div>;
-  return <div>{items.map((i) => <RegulationRow key={i.id} item={i} lang={lang} />)}</div>;
+export function RegulationList({
+  items,
+  empty,
+  lang = "es",
+}: {
+  items: RegulationItem[];
+  empty: React.ReactNode;
+  lang?: Lang;
+}) {
+  if (!items.length)
+    return (
+      <div
+        role="status"
+        className="px-5 py-8 text-center text-sm"
+        style={{ color: "var(--text-muted)" }}
+      >
+        {empty}
+      </div>
+    );
+  return (
+    <div>
+      {items.map((i) => (
+        <RegulationRow key={i.id} item={i} lang={lang} />
+      ))}
+    </div>
+  );
 }
 
 // --- Health (Estado de monitoreo) building blocks ---
 
 /** OK / WARN / ERROR pill using design tokens (dark-mode safe). */
-export function HealthPill({ state, children }: { state: "ok" | "warn" | "error"; children: React.ReactNode }) {
+export function HealthPill({
+  state,
+  children,
+}: {
+  state: "ok" | "warn" | "error";
+  children: React.ReactNode;
+}) {
   const map = {
     ok: { bg: "var(--accent-soft)", fg: "var(--accent)" },
     warn: { bg: "var(--warn-soft)", fg: "var(--warn)" },
     error: { bg: "var(--danger-soft)", fg: "var(--danger)" },
   }[state];
   return (
-    <span className="inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[11px] font-semibold"
-      style={{ background: map.bg, color: map.fg }}>
+    <span
+      className="inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[11px] font-semibold"
+      style={{ background: map.bg, color: map.fg }}
+    >
       <span aria-hidden className="h-1.5 w-1.5 rounded-full" style={{ background: map.fg }} />
       {children}
     </span>

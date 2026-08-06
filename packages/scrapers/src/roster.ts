@@ -20,7 +20,7 @@ export interface RawLegislator {
   circumscription: string | null;
   party: string | null;
   partyShort: string | null;
-  /** Directive-board role (e.g. "Presidente del Senado"), else null. */
+  /** Role/function exactly published by the source, else null. */
   role: string | null;
   representationLevel: string | null;
   period: string | null;
@@ -40,7 +40,7 @@ export interface RawCommissionMembership {
   commissionSourceId: string | null;
   legislatorName: string;
   legislatorSourceId: string | null;
-  /** Normalized to: Presidente | Vicepresidente | Secretario | Miembro. */
+  /** Role text exactly as reported by the official committee source. */
   cargo: string | null;
   party: string | null;
   sourceUrl: string | null;

@@ -18,7 +18,7 @@ function toDate(iso: string | null): Date | null {
 /** Day bucket key (YYYY-MM-DD in DR time) for grouping the feed by day. */
 function dayKey(iso: string | null): string {
   const d = toDate(iso);
-  if (!d) return "—";
+  if (!d) return "not-reported";
   return new Intl.DateTimeFormat("en-CA", {
     timeZone: DR_TZ,
     year: "numeric",
@@ -37,7 +37,7 @@ function dayHeading(
   if (today && k === today) return lang === "es" ? "Hoy" : "Today";
   if (yest && k === yest) return lang === "es" ? "Ayer" : "Yesterday";
   const d = toDate(iso);
-  if (!d) return "";
+  if (!d) return lang === "es" ? "No informado" : "Not reported";
   return new Intl.DateTimeFormat(lang === "es" ? "es-DO" : "en-US", {
     timeZone: DR_TZ,
     weekday: "long",
@@ -92,7 +92,11 @@ export function FeedTimeline({
   const [items, setItems] = useState(initial);
   const [cursor, setCursor] = useState(nextCursor);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState(false);
   const sentinel = useRef<HTMLDivElement>(null);
+  const cursorRef = useRef(nextCursor);
+  const loadingRef = useRef(false);
+  const requestRef = useRef<AbortController | null>(null);
   const yesterday = (() => {
     const d = new Date(`${today}T12:00:00Z`);
     d.setUTCDate(d.getUTCDate() - 1);
@@ -101,28 +105,69 @@ export function FeedTimeline({
 
   // Server re-renders on filter navigation → reset the list.
   useEffect(() => {
+    requestRef.current?.abort();
+    requestRef.current = null;
+    loadingRef.current = false;
+    cursorRef.current = nextCursor;
     setItems(initial);
     setCursor(nextCursor);
+    setLoading(false);
+    setLoadError(false);
   }, [initial, nextCursor]);
 
+  useEffect(() => () => requestRef.current?.abort(), []);
+
   const loadMore = useCallback(async () => {
-    setCursor((cur) => {
-      if (!cur) return cur;
-      setLoading(true);
-      const p = new URLSearchParams();
-      for (const [k, v] of Object.entries(filters)) if (v) p.set(k, String(v));
-      if (cur.publishedAt) p.set("cursorAt", cur.publishedAt);
-      p.set("cursorId", String(cur.id));
-      fetch(`/api/feed?${p.toString()}`)
-        .then((r) => r.json())
-        .then((data) => {
-          setItems((prev) => [...prev, ...(data.items ?? [])]);
-          setCursor(data.nextCursor ?? null);
-        })
-        .catch(() => {})
-        .finally(() => setLoading(false));
-      return cur;
-    });
+    const currentCursor = cursorRef.current;
+    if (!currentCursor || loadingRef.current) return;
+
+    loadingRef.current = true;
+    setLoading(true);
+    setLoadError(false);
+
+    const params = new URLSearchParams();
+    for (const [key, value] of Object.entries(filters)) {
+      if (value) params.set(key, String(value));
+    }
+    params.set("cursorAt", currentCursor.sortAt);
+    params.set("cursorId", String(currentCursor.id));
+
+    const ctrl = new AbortController();
+    requestRef.current?.abort();
+    requestRef.current = ctrl;
+
+    try {
+      const response = await fetch(`/api/feed?${params.toString()}`, { signal: ctrl.signal });
+      if (!response.ok) throw new Error(`Feed request failed with ${response.status}`);
+
+      const data = (await response.json()) as {
+        items?: FeedListItem[];
+        nextCursor?: FeedCursor | null;
+      };
+      const incoming = Array.isArray(data.items) ? data.items : [];
+      setItems((previous) => {
+        const seen = new Set(previous.map((item) => `${item.source}:${item.id}`));
+        const unique = incoming.filter((item) => {
+          const key = `${item.source}:${item.id}`;
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+        return unique.length ? [...previous, ...unique] : previous;
+      });
+
+      const followingCursor = data.nextCursor ?? null;
+      cursorRef.current = followingCursor;
+      setCursor(followingCursor);
+    } catch (error) {
+      if (!(error instanceof DOMException && error.name === "AbortError")) setLoadError(true);
+    } finally {
+      if (requestRef.current === ctrl) {
+        requestRef.current = null;
+        loadingRef.current = false;
+        setLoading(false);
+      }
+    }
   }, [filters]);
 
   useEffect(() => {
@@ -146,10 +191,24 @@ export function FeedTimeline({
           role="status"
           style={{ color: "var(--text-muted)" }}
         >
-          <span className="text-2xl" aria-hidden>
-            🗞️
+          <span className="serif text-base font-semibold" style={{ color: "var(--text)" }}>
+            {hasFilters
+              ? es
+                ? "Sin publicaciones para estos filtros"
+                : "No posts match these filters"
+              : es
+                ? "Esta conexión todavía no contiene publicaciones"
+                : "This connection does not contain posts yet"}
           </span>
-          <span>{es ? "Sin publicaciones para estos filtros." : "No posts for these filters."}</span>
+          <span className="max-w-md text-[13px]">
+            {hasFilters
+              ? es
+                ? "Prueba otra combinación o limpia los filtros para volver al feed completo."
+                : "Try another combination or clear the filters to return to the complete feed."
+              : es
+                ? "Las publicaciones aparecerán cuando una ejecución de recolección las guarde en esta base de datos."
+                : "Posts will appear after an ingestion run stores them in this database."}
+          </span>
           {hasFilters && (
             <a
               href={es ? "/feed" : "/feed?lang=en"}
@@ -165,13 +224,14 @@ export function FeedTimeline({
           const out: React.ReactNode[] = [];
           let lastDay: string | null = null;
           for (const it of items) {
-            const k = dayKey(it.publishedAt);
+            const displayTime = it.publishedAt ?? it.observedAt;
+            const k = dayKey(displayTime);
             if (k !== lastDay) {
               lastDay = k;
               out.push(
                 <DayDivider
                   key={`day-${k}-${it.id}`}
-                  label={dayHeading(it.publishedAt, lang, today, yesterday)}
+                  label={dayHeading(displayTime, lang, today, yesterday)}
                 />,
               );
             }
@@ -186,10 +246,25 @@ export function FeedTimeline({
           <SkeletonCard />
         </>
       )}
-      {cursor && !loading && (
+      {loadError && (
+        <div className="card flex items-center justify-between gap-3 p-3 text-sm" role="alert">
+          <span style={{ color: "var(--danger)" }}>
+            {es ? "No se pudieron cargar más publicaciones." : "More posts could not be loaded."}
+          </span>
+          <button
+            type="button"
+            onClick={() => void loadMore()}
+            className="shrink-0 rounded-lg border px-3 py-1.5 text-xs font-semibold"
+          >
+            {es ? "Reintentar" : "Try again"}
+          </button>
+        </div>
+      )}
+      {cursor && !loading && !loadError && (
         <div ref={sentinel} className="py-4 text-center">
           <button
-            onClick={loadMore}
+            type="button"
+            onClick={() => void loadMore()}
             className="rounded-lg border px-4 py-2 text-sm transition-colors hover:bg-[var(--surface-2)]"
             style={{ cursor: "pointer", color: "var(--text-muted)" }}
           >

@@ -3,13 +3,10 @@
  *
  * Separate from `ingest.ts` (which crawls the bill corpus): this captures "what the
  * chamber worked on today" — committee meetings and plenary orders — and links each
- * agenda item to the initiatives it references. Run it frequently (hourly on session
- * days) to detect same-day activity that the slow-moving iniciativa endpoints miss.
+ * agenda item to the initiatives it references. The configured workflow runs it three
+ * times per day; each execution records its observed coverage and gaps.
  */
-import {
-  upsertActivityEvent,
-  type Database,
-} from "@oculis/db";
+import { upsertActivityEvent, type Database } from "@oculis/db";
 import { SilActividadAdapter } from "@oculis/scrapers";
 
 export interface ActivityIngestSummary {

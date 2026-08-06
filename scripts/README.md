@@ -1,39 +1,41 @@
-# Scheduled data refresh (live feed)
+# Operación programada
 
-`refresh-feed.sh` keeps the feed live: it runs the worker's `daily` (chamber
-activity + deposits) and `feed` (news + social + legislative signals) against the
-local Postgres, using the **offline heuristic** categorizer/scorer — no Anthropic
-API credits required (it unsets `OCULIS_USE_CLAUDE`).
+Los runners de este directorio ejecutan la recolección factual del worker. No llaman
+modelos generativos, no clasifican temas, no calculan scores y no deducen estados.
 
-## Current setup — local launchd (this Mac)
+## Ejecución local en macOS
 
-A launchd agent runs the script at load and every 3 hours:
+- `daily-run.sh`: actividad, depósitos, feed y fuentes regulatorias. El `launchd`
+  incluido lo programa seis veces al día.
+- `roster-run.sh`: congresistas y membresías de comisiones, una vez por semana.
+- `refresh-feed.sh`: variante compacta que ejecuta el ciclo `daily` una sola vez.
 
-- Agent: `~/Library/LaunchAgents/com.oculis.feed-refresh.plist`
-- Logs: `app/.logs/refresh-feed.log` (and `launchd.out/err.log`)
+Los scripts exigen una base persistente configurada mediante `DATABASE_URL` o un
+`DB_DRIVER=pglite` intencional con `PGLITE_DIR`. Cada fallo conserva un código de salida
+distinto de cero para que el programador no lo presente como una corrida exitosa.
 
-Manage it:
+Instalación opcional de los agentes locales:
 
 ```bash
-# status
-launchctl list | grep oculis
-# run once now
-bash "scripts/refresh-feed.sh"
-# stop / disable
-launchctl unload -w ~/Library/LaunchAgents/com.oculis.feed-refresh.plist
-# start / enable
-launchctl load -w ~/Library/LaunchAgents/com.oculis.feed-refresh.plist
+mkdir -p ~/Library/LaunchAgents
+cp scripts/com.fhc.monitoring.daily.plist ~/Library/LaunchAgents/
+cp scripts/com.fhc.monitoring.roster.plist ~/Library/LaunchAgents/
+launchctl load ~/Library/LaunchAgents/com.fhc.monitoring.daily.plist
+launchctl load ~/Library/LaunchAgents/com.fhc.monitoring.roster.plist
 ```
 
-Caveat: a local agent only runs while this Mac is awake. For truly always-on
-"live" data, move to the cloud option below.
+La programación local solo funciona mientras esta Mac esté encendida. Para continuidad,
+usa `.github/workflows/cloud-ingestion.yml` con una base PostgreSQL persistente. La página
+`/estado-fuentes` muestra el resultado literal de cada proceso, incluyendo fuentes nunca
+ejecutadas, fallos, respuestas con cero elementos, conteos y último éxito.
 
-## Cloud option (when the app is deployed)
+## Utilidades de auditoría
 
-A cloud cron can't reach `localhost:5433`. It becomes viable once the database is
-hosted (Neon / Supabase / RDS) and `DATABASE_URL` points at it. Then either:
+- `check-factual-policy.mjs` bloquea en CI dependencias y campos de inferencia retirados.
+- `verify-x-handles.mjs` comprueba que un identificador responde en la API de X; esa
+  comprobación no demuestra por sí sola la identidad de la cuenta.
+- `capture-sil-request.mjs` y `weekly-activity.mjs` ayudan a inspeccionar endpoints
+  oficiales sin alterar estados en la base.
 
-- run `scripts/refresh-feed.sh` from a CI/cron with the hosted `DATABASE_URL`, or
-- create a Claude Code scheduled routine (`/schedule`) that runs the worker.
-
-Until the DB is hosted, the local launchd agent above is the working setup.
+Consulta [`FACTUAL_DATA_POLICY.md`](../FACTUAL_DATA_POLICY.md) antes de agregar un parser,
+una fuente o un campo derivado.

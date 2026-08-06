@@ -1,8 +1,9 @@
-// Verify candidate X handles against the live X API and enrich with follower
-// counts + the real display name. Reads X_BEARER_TOKEN from app/.env.
+// Check whether supplied X handles resolve through the live X API and copy the
+// API-reported metadata. Reachability does not prove the identity of an account;
+// seed inclusion separately requires a primary-source evidence URL.
 //
 // Usage: node scripts/verify-x-handles.mjs <candidates.json> <out.json>
-//   candidates.json: [{ name, handle, kind, chamber, rationale, _cat }, ...]
+//   candidates.json: [{ name, handle, ... }, ...]
 //   out.json: same objects + { found, xId, xName, followers, xVerified }
 import { readFileSync, writeFileSync, existsSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'
@@ -46,7 +47,7 @@ const all = [...byHandle.values()]
 const VALID = /^[A-Za-z0-9_]{1,15}$/
 const list = all.filter((c) => VALID.test(c.handle))
 const invalid = all.filter((c) => !VALID.test(c.handle))
-console.error(`Verifying ${list.length} valid handles (${invalid.length} skipped as malformed)…`)
+console.error(`Checking ${list.length} valid handles (${invalid.length} skipped as malformed)…`)
 
 async function api(usernames) {
   const url = `https://api.twitter.com/2/users/by?usernames=${usernames.join(',')}&user.fields=public_metrics,verified,name,username`
@@ -96,6 +97,6 @@ const enrich = (c) => {
 const out = [...list.map(enrich), ...invalid.map((c) => ({ ...c, found: false, xId: null, xName: null, followers: 0, xVerified: false }))]
 const real = out.filter((c) => c.found)
 writeFileSync(outPath, JSON.stringify(out, null, 2))
-console.error(`\n✔ ${real.length}/${list.length} handles are real and active. Wrote ${outPath}`)
+console.error(`\n✔ ${real.length}/${list.length} handles resolved through the API. Wrote ${outPath}`)
 // Quick summary to stdout.
 console.log(JSON.stringify({ total: list.length, real: real.length, missing: list.length - real.length }))

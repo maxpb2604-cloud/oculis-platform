@@ -1,13 +1,13 @@
 /**
  * Drizzle schema (Postgres) for Oculis Auribus.
  *
- * Modeled on the canonical `RawInitiative` produced by scraper adapters plus the
- * derived categorization + scoring fields. Enum-like columns are stored as text and
- * validated in the app layer against `@oculis/core` types (keeps migrations simple and
- * portable to PGlite for local/dev).
+ * Modeled on the canonical `RawInitiative` produced by scraper adapters. Legacy
+ * inference columns remain nullable for wire/schema compatibility, but database
+ * checks keep them neutral. Only source-reported facts belong in active records.
  */
 import {
   boolean,
+  check,
   index,
   integer,
   jsonb,
@@ -18,6 +18,7 @@ import {
   timestamp,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 
 /** One initiative (legislative or regulatory), canonical across sources. */
 export const initiatives = pgTable(
@@ -39,9 +40,9 @@ export const initiatives = pgTable(
     chamber: text("chamber"), // SENADO | DIPUTADOS | null
 
     // --- categorization ---
-    sourceCategory: text("source_category"), // source's own subject/group label
-    category: text("category"), // our taxonomy (Category), null until categorized
-    categoryConfidence: real("category_confidence"),
+    sourceCategory: text("source_category"), // explicit subject/group label from source
+    category: text("category"), // legacy inferred field; must remain null
+    categoryConfidence: real("category_confidence"), // legacy inferred field; must remain null
 
     // --- sponsor / provenance ---
     sponsor: text("sponsor"), // principal proponente (full name)
@@ -54,13 +55,13 @@ export const initiatives = pgTable(
     expiresAt: text("expires_at"),
     sourceUrl: text("source_url"),
 
-    // --- scoring (null until scored) ---
-    riskLevel: text("risk_level"), // ALTO | MEDIO | BAJO
-    approvalProbability: text("approval_probability"), // ALTA | MEDIA | BAJA
+    // --- retired inference fields (kept only for schema compatibility) ---
+    riskLevel: text("risk_level"),
+    approvalProbability: text("approval_probability"),
     approvalScore: integer("approval_score"),
 
-    // --- workflow ---
-    needsReview: boolean("needs_review").notNull().default(true),
+    // --- retired inferred workflow flags ---
+    needsReview: boolean("needs_review").notNull().default(false),
     published: boolean("published").notNull().default(false),
 
     // --- audit ---
@@ -71,10 +72,19 @@ export const initiatives = pgTable(
   },
   (t) => ({
     bySource: uniqueIndex("initiatives_source_source_id_uq").on(t.source, t.sourceId),
-    byCategory: index("initiatives_category_idx").on(t.category),
-    byRisk: index("initiatives_risk_idx").on(t.riskLevel),
+    bySourceCategory: index("initiatives_source_category_idx").on(t.sourceCategory),
     byChamber: index("initiatives_chamber_idx").on(t.chamber),
     byFiledAt: index("initiatives_filed_at_idx").on(t.filedAt),
+    noInferredValues: check(
+      "initiatives_no_inferred_values_check",
+      sql`${t.category} is null
+          and ${t.categoryConfidence} is null
+          and ${t.riskLevel} is null
+          and ${t.approvalProbability} is null
+          and ${t.approvalScore} is null
+          and ${t.needsReview} = false
+          and ${t.published} = false`,
+    ),
   }),
 );
 
@@ -89,32 +99,93 @@ export const statusEvents = pgTable(
     status: text("status").notNull(),
     eventDate: text("event_date"), // ISO date
     note: text("note"),
+    source: text("source").notNull(), // adapter/source that supplied or observed the status
+    sourceUrl: text("source_url"),
+    evidenceType: text("evidence_type").notNull().default("SOURCE_HISTORY"),
+    raw: jsonb("raw"),
+    observedAt: timestamp("observed_at").notNull().defaultNow(),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
   (t) => ({
-    // dedupe identical (initiative, status, date) events across re-scrapes
-    uq: uniqueIndex("status_events_uq").on(t.initiativeId, t.status, t.eventDate),
+    // Official history dedupes within each source on the source event date (including
+    // explicitly undated rows). Independent official sources remain separate evidence.
+    // Observed changes use observation time so an A → B → A cycle is retained.
+    sourceDatedUq: uniqueIndex("status_events_source_dated_uq")
+      .on(
+        t.initiativeId,
+        t.status,
+        t.eventDate,
+        t.evidenceType,
+        t.source,
+        sql`coalesce(${t.sourceUrl}, '')`,
+      )
+      .where(sql`${t.evidenceType} = 'SOURCE_HISTORY' and ${t.eventDate} is not null`),
+    sourceUndatedUq: uniqueIndex("status_events_source_undated_uq")
+      .on(t.initiativeId, t.status, t.evidenceType, t.source, sql`coalesce(${t.sourceUrl}, '')`)
+      .where(sql`${t.evidenceType} = 'SOURCE_HISTORY' and ${t.eventDate} is null`),
+    observedUq: uniqueIndex("status_events_observed_uq")
+      .on(t.initiativeId, t.status, t.observedAt, t.evidenceType)
+      .where(sql`${t.evidenceType} = 'OBSERVED_CHANGE'`),
     byInitiative: index("status_events_initiative_idx").on(t.initiativeId),
   }),
 );
 
 /**
- * The five scoring inputs per initiative (one row each), with provenance so the
- * analyst-review (hybrid scoring) workflow can track auto vs human values.
+ * Retired scoring-input shape retained for compatibility. New values are rejected;
+ * historical provenance is copied to `inferenceAudit` before rows are cleared.
  */
-export const scoreInputs = pgTable("score_inputs", {
-  initiativeId: integer("initiative_id")
-    .primaryKey()
-    .references(() => initiatives.id, { onDelete: "cascade" }),
-  party: text("party"), // PartyStrength
-  sponsorRecord: text("sponsor_record"), // SponsorTrackRecord
-  executiveSupport: text("executive_support"), // YesNo
-  stakeholderSupport: text("stakeholder_support"), // YesNo
-  socialPressureCount: integer("social_pressure_count"),
-  // which fields were auto-derived vs estimated vs analyst-set
-  provenance: jsonb("provenance"),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+export const scoreInputs = pgTable(
+  "score_inputs",
+  {
+    initiativeId: integer("initiative_id")
+      .primaryKey()
+      .references(() => initiatives.id, { onDelete: "cascade" }),
+    party: text("party"), // PartyStrength
+    sponsorRecord: text("sponsor_record"), // SponsorTrackRecord
+    executiveSupport: text("executive_support"), // YesNo
+    stakeholderSupport: text("stakeholder_support"), // YesNo
+    socialPressureCount: integer("social_pressure_count"),
+    // which fields were auto-derived vs estimated vs analyst-set
+    provenance: jsonb("provenance"),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    nonNegativePressure: check(
+      "score_inputs_social_pressure_count_check",
+      sql`${t.socialPressureCount} is null or ${t.socialPressureCount} >= 0`,
+    ),
+    noInferredValues: check(
+      "score_inputs_no_inferred_values_check",
+      sql`${t.party} is null
+          and ${t.sponsorRecord} is null
+          and ${t.executiveSupport} is null
+          and ${t.stakeholderSupport} is null
+          and ${t.socialPressureCount} is null`,
+    ),
+  }),
+);
+
+/**
+ * Append/update-safe archive for inference values rejected from active records.
+ * It preserves what was supplied, when it was blocked, and any available provenance
+ * without allowing those values to appear as platform facts.
+ */
+export const inferenceAudit = pgTable(
+  "inference_audit",
+  {
+    id: serial("id").primaryKey(),
+    entityType: text("entity_type").notNull(),
+    entityId: integer("entity_id").notNull(),
+    inferenceKind: text("inference_kind").notNull(),
+    value: jsonb("value").notNull(),
+    provenance: jsonb("provenance"),
+    archivedAt: timestamp("archived_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    uq: uniqueIndex("inference_audit_entity_kind_uq").on(t.entityType, t.entityId, t.inferenceKind),
+    byEntity: index("inference_audit_entity_idx").on(t.entityType, t.entityId),
+  }),
+);
 
 /**
  * Daily committee / plenary agenda activity (SIL "actividad" subsystem).
@@ -131,6 +202,7 @@ export const activityEvents = pgTable(
     scope: text("scope").notNull(), // COMMITTEE | PLENARY | ASAMBLEA
     chamber: text("chamber"), // DIPUTADOS | SENADO
     eventDate: text("event_date"), // ISO date (yyyy-mm-dd)
+    eventTime: text("event_time"), // literal time/range reported by the agenda
     kind: text("kind"), // "Reunión", "Encuentros…", "Orden del Día"
     body: text("body"), // committee name (COMMITTEE) or chamber (PLENARY)
     description: text("description").notNull(),
@@ -190,8 +262,9 @@ export const commissions = pgTable(
 
 /**
  * Documents attached to an initiative (deposited text, committee reports, approved
- * text…). Powers the "publicado / no publicado" indicator and the per-initiative
- * document links. SEGMENTED from initiatives so we can track publication over time.
+ * text…). Powers the factual "con documento oficial" count and per-initiative links.
+ * SEGMENTED from initiatives so document availability is never presented as a
+ * legislative lifecycle status.
  */
 export const documents = pgTable(
   "documents",
@@ -206,8 +279,13 @@ export const documents = pgTable(
     extension: text("extension"), // "pdf"
     url: text("url"), // official view/download URL
     uploadedAt: text("uploaded_at"), // ISO date the source uploaded it
+    modifiedAt: text("modified_at"), // ISO date the source last modified it, when stated
+    sourceCategory: text("source_category"), // literal official collection/section label
+    sourceFragment: text("source_fragment"), // literal PDF slice that supplied an exact code
     sourceDocId: text("source_doc_id"), // stable id within the source
+    raw: jsonb("raw"), // source metadata and parser evidence retained for audit
     firstSeenAt: timestamp("first_seen_at").notNull().defaultNow(),
+    lastSeenAt: timestamp("last_seen_at").notNull().defaultNow(),
   },
   (t) => ({
     uq: uniqueIndex("documents_uq").on(t.source, t.sourceDocId),
@@ -219,8 +297,8 @@ export const documents = pgTable(
 /**
  * Regulatory instruments (norms/resolutions/reglamentos/NORDOM) from DR regulatory
  * institutions — the REGULATORY twin of `initiatives`. Mirrors the columns of the
- * Monitoreo Regulatorio workbook. The high-value signal is `interventionLevel`
- * (HIGH when still a draft/consulta-pública, LOW once published).
+ * Monitoreo Regulatorio workbook. Source-reported status remains literal; retired
+ * category/intervention judgments are held null.
  */
 export const regulations = pgTable(
   "regulations",
@@ -233,23 +311,30 @@ export const regulations = pgTable(
     title: text("title").notNull(),
     purpose: text("purpose"),
     status: text("status"), // regulatory lifecycle status (Spanish/English label)
-    interventionLevel: text("intervention_level"), // HIGH | INTERMEDIATE | LOW
-    category: text("category"), // our taxonomy, null until categorized
+    sourceCategory: text("source_category"), // explicit category reported by the institution
+    interventionLevel: text("intervention_level"), // legacy inferred field; must remain null
+    category: text("category"), // legacy inferred field; must remain null
     province: text("province"),
-    isConsulta: boolean("is_consulta").notNull().default(false), // public consultation / draft
+    // Explicit source/adaptor assertion. null means the source did not establish it.
+    isConsulta: boolean("is_consulta"),
     publishedAt: text("published_at"), // ISO date
     deadline: text("deadline"), // consulta comment deadline, if any
     url: text("url"), // source page / PDF
-    needsReview: boolean("needs_review").notNull().default(true),
+    needsReview: boolean("needs_review").notNull().default(false),
     raw: jsonb("raw"),
     firstSeenAt: timestamp("first_seen_at").notNull().defaultNow(),
     lastSeenAt: timestamp("last_seen_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
   (t) => ({
     uq: uniqueIndex("regulations_source_uq").on(t.source, t.sourceId),
     byInstitution: index("regulations_institution_idx").on(t.institution),
-    byIntervention: index("regulations_intervention_idx").on(t.interventionLevel),
+    bySourceCategory: index("regulations_source_category_idx").on(t.sourceCategory),
     byConsulta: index("regulations_consulta_idx").on(t.isConsulta),
+    noInferredValues: check(
+      "regulations_no_inferred_values_check",
+      sql`${t.interventionLevel} is null and ${t.category} is null and ${t.needsReview} = false`,
+    ),
   }),
 );
 
@@ -279,6 +364,9 @@ export const legislators = pgTable(
     phone: text("phone"),
     profession: text("profession"),
     sourceUrl: text("source_url"),
+    // Snapshot visibility. Missing from a successfully validated current roster does
+    // not delete history; it makes the old row inactive until the source reports it.
+    active: boolean("active").notNull().default(true),
     raw: jsonb("raw"),
     firstSeenAt: timestamp("first_seen_at").notNull().defaultNow(),
     lastSeenAt: timestamp("last_seen_at").notNull().defaultNow(),
@@ -309,6 +397,7 @@ export const commissionMembers = pgTable(
     cargo: text("cargo"), // Presidente | Vicepresidente | Secretario | Miembro
     party: text("party"),
     sourceUrl: text("source_url"),
+    active: boolean("active").notNull().default(true),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
   (t) => ({
@@ -361,10 +450,12 @@ export const feedItems = pgTable(
     author: text("author"), // byline / account display name
     handle: text("handle"), // @handle for social
     platform: text("platform"), // X | INSTAGRAM | RSS | WEB
-    category: text("category"), // our taxonomy (Category), null until tagged
+    category: text("category"), // legacy inferred field; must remain null
     publishedAt: timestamp("published_at"), // real datetime — the feed orders by this
     // --- primary entity link (denormalized for single-column left-panel filters) ---
-    initiativeId: integer("initiative_id").references(() => initiatives.id, { onDelete: "set null" }),
+    initiativeId: integer("initiative_id").references(() => initiatives.id, {
+      onDelete: "set null",
+    }),
     initiativeCode: text("initiative_code"),
     legislatorSourceId: text("legislator_source_id"),
     commissionName: text("commission_name"),
@@ -376,10 +467,14 @@ export const feedItems = pgTable(
   (t) => ({
     uq: uniqueIndex("feed_items_source_uq").on(t.source, t.sourceId),
     byPublished: index("feed_items_published_idx").on(t.publishedAt.desc()),
+    byChronology: index("feed_items_chronology_idx").on(
+      sql`coalesce(${t.publishedAt}, ${t.firstSeenAt}) desc`,
+      t.id.desc(),
+    ),
     byKind: index("feed_items_kind_idx").on(t.kind),
-    byCategory: index("feed_items_category_idx").on(t.category),
     byInitiative: index("feed_items_initiative_idx").on(t.initiativeId),
     byLegislator: index("feed_items_legislator_idx").on(t.legislatorSourceId),
+    noInferredCategory: check("feed_items_no_inferred_category_check", sql`${t.category} is null`),
   }),
 );
 
@@ -423,7 +518,7 @@ export const feedAccounts = pgTable(
     kind: text("kind").notNull(), // SENADO_OFFICIAL | SENATOR | DEPUTY | JOURNALIST | NEWSPAPER | INSTITUTION
     chamber: text("chamber"), // SENADO | DIPUTADOS | null
     legislatorSourceId: text("legislator_source_id"), // links to legislators.sourceId when known
-    influenceRank: integer("influence_rank"), // lower = more influential
+    influenceRank: integer("influence_rank"), // legacy subjective field; must remain null
     active: boolean("active").notNull().default(true),
     raw: jsonb("raw"),
     firstSeenAt: timestamp("first_seen_at").notNull().defaultNow(),
@@ -435,13 +530,17 @@ export const feedAccounts = pgTable(
     byKind: index("feed_accounts_kind_idx").on(t.kind),
     byActive: index("feed_accounts_active_idx").on(t.active),
     byLegislator: index("feed_accounts_legislator_idx").on(t.legislatorSourceId),
+    noInfluenceRank: check(
+      "feed_accounts_no_influence_rank_check",
+      sql`${t.influenceRank} is null`,
+    ),
   }),
 );
 
 export type Initiative = typeof initiatives.$inferSelect;
 export type NewInitiative = typeof initiatives.$inferInsert;
 export type StatusEvent = typeof statusEvents.$inferSelect;
-export type ScoreInputRow = typeof scoreInputs.$inferSelect;
+export type InferenceAudit = typeof inferenceAudit.$inferSelect;
 export type ActivityEvent = typeof activityEvents.$inferSelect;
 export type NewActivityEvent = typeof activityEvents.$inferInsert;
 export type ActivityInitiative = typeof activityInitiatives.$inferSelect;

@@ -67,7 +67,9 @@ for (const id of ids) {
   try {
     const env = await j(`${BASE}/historicos?page=1&id=${id}`);
     hist = env?.results ?? [];
-  } catch {}
+  } catch {
+    // A single unavailable history endpoint should not abort the weekly report.
+  }
   const wk = hist.filter((h) => inWin(h.inicio) || inWin(h.fin));
   const deposited = inWin(row.fechaDeposito);
   events.push({

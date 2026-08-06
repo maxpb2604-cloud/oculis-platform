@@ -22,19 +22,21 @@ interface Selected {
  * Clicking a province opens a readable side panel listing its full elected roster — every
  * senator and deputy for that province (from the `legislators` table). Driven by real DB data.
  */
+export interface ProvinceBubbleMapProps {
+  data: ProvinceFC;
+  legislators?: LegislatorsByProvince;
+  height?: number;
+  labelThreshold?: number;
+  lang?: Lang;
+}
+
 export function ProvinceBubbleMap({
   data,
   legislators,
   height = 420,
   labelThreshold = 25,
   lang = "es",
-}: {
-  data: ProvinceFC;
-  legislators?: LegislatorsByProvince;
-  height?: number;
-  labelThreshold?: number;
-  lang?: Lang;
-}) {
+}: ProvinceBubbleMapProps) {
   const ref = useRef<HTMLDivElement>(null);
   const [err, setErr] = useState<string | null>(null);
   const [sel, setSel] = useState<Selected | null>(null);
@@ -115,10 +117,50 @@ export function ProvinceBubbleMap({
     <div className="relative">
       <div
         ref={ref}
-        role="application"
+        role="img"
         aria-label={t(lang, "mapAriaLabel")}
         style={{ height, width: "100%", background: "#0a0f14" }}
       />
+      <div className="absolute left-3 top-3 z-10 rounded-lg p-2" style={{ background: "rgba(8,11,10,0.82)" }}>
+        <label htmlFor="province-map-select" className="sr-only">
+          {lang === "es" ? "Seleccionar provincia" : "Select province"}
+        </label>
+        <select
+          id="province-map-select"
+          value={sel?.nombre ?? ""}
+          onChange={(event) => {
+            const feature = data.features.find(
+              (candidate) => candidate.properties.nombre === event.target.value,
+            );
+            if (!feature) {
+              setSel(null);
+              return;
+            }
+            const people = legislators?.[resolveProvince(feature.properties.nombre)] ?? {
+              diputados: [],
+              senadores: [],
+            };
+            setSel({
+              nombre: feature.properties.nombre,
+              iniciativas: feature.properties.iniciativas,
+              diputados: people.diputados,
+              senadores: people.senadores,
+            });
+          }}
+          className="max-w-[220px] rounded-md border px-2 py-1 text-xs text-white"
+          style={{ background: "#101923", borderColor: "rgba(255,255,255,0.24)" }}
+        >
+          <option value="">{lang === "es" ? "Seleccionar provincia" : "Select province"}</option>
+          {data.features
+            .slice()
+            .sort((a, b) => a.properties.nombre.localeCompare(b.properties.nombre, "es"))
+            .map((feature) => (
+              <option key={feature.properties.nombre} value={feature.properties.nombre}>
+                {feature.properties.nombre} · {feature.properties.iniciativas}
+              </option>
+            ))}
+        </select>
+      </div>
       {err && (
         <div role="status" className="absolute inset-0 flex items-center justify-center p-4 text-center text-[12px]"
           style={{ background: "rgba(8,11,10,0.85)", color: "var(--text-muted)" }}>
@@ -147,8 +189,10 @@ export function ProvinceBubbleMap({
                   {sel.iniciativas} {t(lang, sel.iniciativas === 1 ? "initiative" : "initiativePlural")}
                 </div>
               </div>
-              <button onClick={() => setSel(null)} aria-label={t(lang, "close")}
-                className="rounded-md px-1.5 text-white/60 hover:text-white" style={{ background: "rgba(255,255,255,0.08)" }}>✕</button>
+              <button onClick={() => setSel(null)}
+                className="rounded-md px-2 py-1 text-[11px] font-semibold text-white/70 hover:text-white" style={{ background: "rgba(255,255,255,0.08)" }}>
+                {t(lang, "close")}
+              </button>
             </div>
 
             <LegGroup title={t(lang, "senators")} legs={sel.senadores} empty={t(lang, "noSenator")} />

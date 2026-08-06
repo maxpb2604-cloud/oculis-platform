@@ -15,7 +15,10 @@ export interface PdfText {
 /** Distinguishes a genuine parse failure (WAF page, corrupt file, fetch error)
  *  from a successfully-parsed-but-empty PDF, so callers can flag it as a gap. */
 export class PdfParseError extends Error {
-  constructor(public readonly url: string, message: string) {
+  constructor(
+    public readonly url: string,
+    message: string,
+  ) {
     super(`PDF parse failed for ${url}: ${message}`);
     this.name = "PdfParseError";
   }

@@ -3,6 +3,7 @@
  *
  * Usage:
  *   npm run ingest -w @oculis/worker -- [--limit N] [--enrich] [--delay MS]
+ *   npm run publications -w @oculis/worker -- [--limit N] [--full]
  *   npm run ingest:demo -w @oculis/worker        # 25 records, enriched, into PGlite
  *
  * DB target: set DATABASE_URL for Postgres/RDS; otherwise an in-memory PGlite is used
@@ -17,33 +18,37 @@ import { ingestRegulatory } from "./ingest-regulatory.js";
 import { ingestDeposits, ingestSenateDeposits } from "./ingest-deposits.js";
 import { runDaily } from "./daily.js";
 import { ingestRoster } from "./ingest-roster.js";
-import { rescoreAll } from "./rescore.js";
+import { ingestMovements } from "./ingest-movements.js";
+import { ingestCongressPublications } from "./ingest-congress-publications.js";
 import { ingestFeed } from "./ingest-feed.js";
 import { seedFeedAccounts } from "./feed-accounts.seed.js";
+import { numericArg } from "./cli.js";
+import {
+  assertRequiredSourcesOk,
+  assertSourcesOk,
+  REQUIRED_SOURCE_SETS,
+  type SourceResult,
+} from "./reliability.js";
 
 loadEnv();
 
-function arg(name: string): string | undefined {
-  const i = process.argv.indexOf(`--${name}`);
-  return i >= 0 ? process.argv[i + 1] : undefined;
-}
 function flag(name: string): boolean {
   return process.argv.includes(`--${name}`);
 }
 
 async function main() {
-  const limit = arg("limit") ? Number(arg("limit")) : undefined;
-  const maxPagesPerSlice = arg("pages") ? Number(arg("pages")) : undefined;
-  const concurrency = arg("concurrency") ? Number(arg("concurrency")) : undefined;
+  const limit = numericArg(process.argv, "limit", { min: 1 });
+  const maxPagesPerSlice = numericArg(process.argv, "pages", { min: 1 });
+  const concurrency = numericArg(process.argv, "concurrency", { min: 1 });
   const enrich = flag("enrich");
-  const delayMs = arg("delay") ? Number(arg("delay")) : enrich ? 150 : 0;
+  const delayMs = numericArg(process.argv, "delay", { min: 0 }) ?? (enrich ? 150 : 0);
 
   const target = process.env.DATABASE_URL
     ? "Postgres (DATABASE_URL)"
     : process.env.PGLITE_DIR
       ? `PGlite (file: ${process.env.PGLITE_DIR})`
       : "PGlite (in-memory)";
-  console.log(`▶ Oculis ingestion — source: sil-diputados → ${target}`);
+  console.log(`▶ Oculis ingestion → ${target}`);
   console.log(
     `  limit=${limit ?? "all"} pagesPerSlice=${maxPagesPerSlice ?? "all"} ` +
       `enrich=${enrich} delay=${delayMs}ms\n`,
@@ -61,7 +66,13 @@ async function main() {
       const ok = r.filter((s) => s.ok).length;
       const total = r.reduce((n, s) => n + s.count, 0);
       const consultas = r.reduce((n, s) => n + s.consultas, 0);
-      console.log(`\n✔ done in ${secs}s — sources ok ${ok}/${r.length}, norms ${total}, consultas ${consultas}`);
+      const mark = ok === r.length ? "✔" : "⚠";
+      console.log(
+        `\n${mark} done in ${secs}s — sources ok ${ok}/${r.length}, norms ${total}, consultas ${consultas}`,
+      );
+      // Known external blockers remain recorded by ingestRegulatory, but only sources
+      // declared operational and required in SOURCE_REGISTRY fail the whole job.
+      assertRequiredSourcesOk("regulatory ingestion", r, REQUIRED_SOURCE_SETS.regulatory);
       return;
     }
 
@@ -70,8 +81,10 @@ async function main() {
       const r = await ingestDocuments(db, { limit, log: (m) => console.log(m) });
       const secs = ((Date.now() - started) / 1000).toFixed(1);
       console.log(
-        `\n✔ done in ${secs}s — ${r.initiatives} initiatives, ${r.documents} docs (${r.newDocuments} new)`,
+        `\n${r.ok ? "✔" : "⚠"} done in ${secs}s — ${r.initiatives} initiatives, ` +
+          `${r.documents} docs (${r.newDocuments} new), ${r.failures} failures`,
       );
+      assertSourcesOk("document metadata ingestion", [r]);
       return;
     }
 
@@ -82,39 +95,64 @@ async function main() {
       console.log(
         `\n✔ done in ${secs}s — backend ${r.backend}: stored ${r.stored}, skipped ${r.skipped}, failed ${r.failed} of ${r.attempted}`,
       );
+      if (r.failed > 0)
+        throw new Error(`document fetch: ${r.failed} of ${r.attempted} download(s) failed`);
+      return;
+    }
+
+    if (flag("senate-corpus")) {
+      console.log("🏛  Ingesting the complete configured Senate collection\n");
+      const result = await ingestSenateDeposits(db, {
+        fullCollection: true,
+        log: (message) => console.log(message),
+      });
+      const secs = ((Date.now() - started) / 1000).toFixed(1);
+      console.log(
+        `\n${result.ok ? "✔" : "⚠"} done in ${secs}s — ` +
+          `${result.deposits} rows, ${result.inserted} new, ${result.rejected} rejected`,
+      );
+      assertSourcesOk("Senate corpus ingestion", [result]);
       return;
     }
 
     if (flag("deposits")) {
       console.log("📥 Syncing recent deposits (initiatives + documents)\n");
-      const sinceDays = arg("since-days") ? Number(arg("since-days")) : undefined;
+      const sinceDays = numericArg(process.argv, "since-days", { min: 0 });
       const r = await ingestDeposits(db, { sinceDays, log: (m) => console.log(m) });
       const sen = await ingestSenateDeposits(db, { sinceDays, log: (m) => console.log(m) });
       const secs = ((Date.now() - started) / 1000).toFixed(1);
+      const mark = r.ok && sen.ok ? "✔" : "⚠";
       console.log(
-        `\n✔ done in ${secs}s — Diputados ${r.deposits} deposits (${r.inserted} new), ` +
+        `\n${mark} done in ${secs}s — Diputados ${r.deposits} deposits (${r.inserted} new), ` +
           `${r.documents} new docs · Senado ${sen.deposits} deposits (${sen.inserted} new)`,
       );
+      assertSourcesOk("deposits ingestion", [r, sen]);
       return;
     }
 
     if (flag("daily")) {
       console.log("🗓  FHC daily monitoring — both chambers\n");
-      const summaries = await runDaily(db, { log: (m) => console.log(m) });
-      // Deposits sync runs as part of the daily pass so "depositadas hoy" stays fresh —
-      // both chambers (Diputados via SIL API, Senado via the legacy MasterLex SIL).
+      // Ingest deposits first so agenda rows collected immediately afterward can resolve
+      // their exact initiative codes in the same run.
       const dep = await ingestDeposits(db, { log: (m) => console.log(m) });
       const senDep = await ingestSenateDeposits(db, { log: (m) => console.log(m) });
+      const summaries = await runDaily(db, { log: (m) => console.log(m) });
       // Feed refresh (news / official / social / legislative signals) on the same cadence.
-      await ingestFeed(db, { log: (m) => console.log(m) });
+      const feed = await ingestFeed(db, { log: (m) => console.log(m) });
       const secs = ((Date.now() - started) / 1000).toFixed(1);
-      const okCount = summaries.filter((s) => s.ok).length + (dep.ok ? 1 : 0) + (senDep.ok ? 1 : 0);
+      const sourceResults: SourceResult[] = [...summaries, dep, senDep, ...feed];
+      const okCount = sourceResults.filter((s) => s.ok).length;
       const totalEvents = summaries.reduce((n, s) => n + s.events, 0);
       const totalGaps = summaries.reduce((n, s) => n + s.gaps.length, 0);
+      const feedItems = feed.reduce((n, s) => n + s.count, 0);
+      const feedInserted = feed.reduce((n, s) => n + s.inserted, 0);
+      const mark = okCount === sourceResults.length ? "✔" : "⚠";
       console.log(
-        `\n✔ daily done in ${secs}s — sources ok ${okCount}/${summaries.length + 2}, ` +
-          `events ${totalEvents}, deposits ${dep.deposits}+${senDep.deposits} (Dip+Sen), flagged gaps ${totalGaps}`,
+        `\n${mark} daily done in ${secs}s — sources ok ${okCount}/${sourceResults.length}, ` +
+          `events ${totalEvents}, deposits ${dep.deposits}+${senDep.deposits} (Dip+Sen), ` +
+          `feed ${feedItems} (${feedInserted} new), flagged gaps ${totalGaps}`,
       );
+      assertRequiredSourcesOk("daily ingestion", sourceResults, REQUIRED_SOURCE_SETS.daily);
       return;
     }
 
@@ -125,7 +163,11 @@ async function main() {
       const ok = summaries.filter((s) => s.ok).length;
       const legs = summaries.reduce((n, s) => n + s.legislators, 0);
       const mem = summaries.reduce((n, s) => n + s.memberships, 0);
-      console.log(`\n✔ done in ${secs}s — sources ok ${ok}/${summaries.length}, legisladores ${legs}, membresías ${mem}`);
+      const mark = ok === summaries.length ? "✔" : "⚠";
+      console.log(
+        `\n${mark} done in ${secs}s — sources ok ${ok}/${summaries.length}, legisladores ${legs}, membresías ${mem}`,
+      );
+      assertSourcesOk("roster ingestion", summaries);
       return;
     }
 
@@ -140,12 +182,46 @@ async function main() {
       return;
     }
 
-    if (flag("rescore")) {
-      console.log("↻ Re-scoring existing initiatives (no scraping)\n");
-      const r = await rescoreAll(db, { log: (m) => console.log(m) });
+    if (flag("movements")) {
+      console.log("↻ Refreshing official SIL status histories\n");
+      const r = await ingestMovements(db, {
+        limit,
+        concurrency,
+        delayMs,
+        log: (m) => console.log(m),
+      });
       const secs = ((Date.now() - started) / 1000).toFixed(1);
       console.log(
-        `\n✔ rescored ${r.scored} in ${secs}s — risk spread: ${JSON.stringify(r.byRisk)}`,
+        `\n${r.ok ? "✔" : "⚠"} done in ${secs}s — checked ${r.checked}/${r.initiatives}, ` +
+          `official events ${r.statusEventsSeen} (${r.statusEventsInserted} new), failures ${r.failures}`,
+      );
+      assertSourcesOk("status-movement ingestion", [r]);
+      return;
+    }
+
+    if (flag("publications")) {
+      const full = flag("full");
+      console.log(
+        `📚 Ingesting official congressional publications (${full ? "full PDF sweep" : "recent PDF slice"})\n`,
+      );
+      const summaries = await ingestCongressPublications(db, {
+        full,
+        pdfLimitPerSource: limit,
+        log: (message) => console.log(message),
+      });
+      const secs = ((Date.now() - started) / 1000).toFixed(1);
+      const documents = summaries.reduce((sum, row) => sum + row.seen, 0);
+      const changes = summaries.reduce((sum, row) => sum + row.statusChanges, 0);
+      const complete = summaries.filter((row) => row.ok).length;
+      console.log(
+        `\n${complete === summaries.length ? "✔" : "⚠"} done in ${secs}s — ` +
+          `${complete}/${summaries.length} fuentes completas, ${documents} documentos observados, ` +
+          `${changes} eventos de estado nuevos`,
+      );
+      assertRequiredSourcesOk(
+        "congressional publications ingestion",
+        summaries,
+        REQUIRED_SOURCE_SETS.publications,
       );
       return;
     }
@@ -157,15 +233,22 @@ async function main() {
       const ok = r.filter((s) => s.ok).length;
       const total = r.reduce((n, s) => n + s.count, 0);
       const inserted = r.reduce((n, s) => n + s.inserted, 0);
-      console.log(`\n✔ done in ${secs}s — sources ok ${ok}/${r.length}, items ${total} (${inserted} new)`);
+      const mark = ok === r.length ? "✔" : "⚠";
+      console.log(
+        `\n${mark} done in ${secs}s — sources ok ${ok}/${r.length}, items ${total} (${inserted} new)`,
+      );
+      assertRequiredSourcesOk("feed ingestion", r, REQUIRED_SOURCE_SETS.feed);
       return;
     }
 
     if (flag("seed-accounts")) {
-      console.log("👥 Seeding the influential-accounts directory\n");
+      console.log("👥 Seeding the verified institutional account directory\n");
       const r = await seedFeedAccounts(db, { log: (m) => console.log(m) });
       const secs = ((Date.now() - started) / 1000).toFixed(1);
-      console.log(`\n✔ done in ${secs}s — ${r.total} accounts (${r.linked} linked to legislators)`);
+      console.log(
+        `\n✔ done in ${secs}s — ${r.total} verified accounts ` +
+          `(${r.linked} linked to legislators, ${r.deactivated} legacy entries disabled)`,
+      );
       return;
     }
 
@@ -179,10 +262,12 @@ async function main() {
     });
     const secs = ((Date.now() - started) / 1000).toFixed(1);
     console.log(
-      `\n✔ done in ${secs}s — seen ${summary.seen}, inserted ${summary.inserted}, ` +
-        `updated ${summary.updated}, status-changes ${summary.statusChanges}, ` +
-        `categorized ${summary.categorized}, total in DB ${summary.total}`,
+      `\n${summary.ok ? "✔" : "⚠"} done in ${secs}s — seen ${summary.seen}, ` +
+        `inserted ${summary.inserted}, updated ${summary.updated}, ` +
+        `official status changes ${summary.statusChanges}, enrichment failures ` +
+        `${summary.enrichmentFailures}, total in DB ${summary.total}`,
     );
+    assertSourcesOk("SIL corpus ingestion", [summary]);
   } finally {
     await close();
   }

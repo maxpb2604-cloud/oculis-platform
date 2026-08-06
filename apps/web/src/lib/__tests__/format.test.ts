@@ -2,10 +2,10 @@ import { describe, expect, it } from "vitest";
 import { formatISODate, formatISODayMonth } from "@/lib/format";
 
 describe("formatISODate", () => {
-  it("returns the em-dash sentinel for nullish/empty input", () => {
-    expect(formatISODate(null, "es")).toBe("—");
-    expect(formatISODate(undefined, "es")).toBe("—");
-    expect(formatISODate("", "en")).toBe("—");
+  it("returns an explicit not-reported label for nullish/empty input", () => {
+    expect(formatISODate(null, "es")).toBe("No informado");
+    expect(formatISODate(undefined, "es")).toBe("No informado");
+    expect(formatISODate("", "en")).toBe("Not reported");
   });
 
   it("formats an ISO date with the default dd/mm/yyyy numeric options", () => {
@@ -30,8 +30,9 @@ describe("formatISODate", () => {
     expect(formatISODate("2026-12-31", "en")).toMatch(/31/);
   });
 
-  it("returns the raw input when it is not a parseable date", () => {
-    expect(formatISODate("not-a-date", "es")).toBe("not-a-date");
+  it("returns not reported for malformed or impossible calendar dates", () => {
+    expect(formatISODate("not-a-date", "es")).toBe("No informado");
+    expect(formatISODate("2026-02-31", "en")).toBe("Not reported");
   });
 
   it("honors custom Intl options", () => {

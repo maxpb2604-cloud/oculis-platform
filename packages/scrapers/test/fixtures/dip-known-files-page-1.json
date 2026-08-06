@@ -1,0 +1,36 @@
+{
+  "files": [
+    {
+      "ID": 28859,
+      "post_title": "Sesión 50 del viernes 24 de julio de 2026",
+      "post_name": "sesion-50-del-viernes-24-de-julio-de-2026",
+      "ext": "pdf",
+      "created_time": "2026-07-27 18:59:47",
+      "modified_time": "2026-07-27 18:59:47",
+      "catid": "1936",
+      "cattitle": "2026-PLO-ÓRDENES DEL DÍA CONOCIDOS POR EL PLENO",
+      "linkdownload": "https://camaradediputados.gob.do/download/1936/2026-plo-ordenes-del-dia-conocidos-por-el-pleno/28859/sesion-50-del-viernes-24-de-julio-de-2026.pdf",
+      "openpdflink": "https://camaradediputados.gob.do/wp-admin/admin-ajax.php?action=wpfd&task=file.download&wpfd_file_id=28859&preview=1"
+    },
+    {
+      "ID": 28858,
+      "post_title": "Sesión 49 del viernes 24 de julio de 2026",
+      "post_name": "sesion-49-del-viernes-24-de-julio-de-2026",
+      "ext": "pdf",
+      "created_time": "2026-07-27 18:59:40",
+      "modified_time": "2026-07-27 18:59:40",
+      "catid": "1936",
+      "cattitle": "2026-PLO-ÓRDENES DEL DÍA CONOCIDOS POR EL PLENO",
+      "linkdownload": "https://camaradediputados.gob.do/download/1936/2026-plo-ordenes-del-dia-conocidos-por-el-pleno/28858/sesion-49-del-viernes-24-de-julio-de-2026.pdf",
+      "openpdflink": null
+    }
+  ],
+  "category": {
+    "term_id": 1936,
+    "name": "2026-PLO-ÓRDENES DEL DÍA CONOCIDOS POR EL PLENO",
+    "slug": "2026-plo-ordenes-del-dia-conocidos-por-el-pleno",
+    "count": 3,
+    "ordering": "ordering",
+    "orderingdir": "asc"
+  }
+}

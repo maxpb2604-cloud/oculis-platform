@@ -41,7 +41,9 @@ page.on("response", async (res) => {
     rec.status = res.status();
     if (/iniciativa/i.test(url)) rec.responsePreview = body.slice(0, 500);
     seen.set(url, rec);
-  } catch {}
+  } catch {
+    // Response bodies can be unavailable for redirects or aborted requests.
+  }
 });
 
 // Load the app, then navigate the SPA into the Iniciativas section so its
@@ -108,7 +110,9 @@ for (const label of materiaLabels) {
       await el.click({ timeout: 4000 });
       await page.waitForTimeout(3500);
     }
-  } catch {}
+  } catch {
+    // Optional discovery click; continue with the remaining labels.
+  }
 }
 
 // Dump current DOM links/buttons to reveal the SPA's list route.

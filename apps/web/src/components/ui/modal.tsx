@@ -1,12 +1,14 @@
 "use client";
 
 import { useEffect, useRef, type CSSProperties, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 
 /**
  * Accessible modal primitive shared by every dialog in the app. Provides:
  *  - `role="dialog"` + `aria-modal` + `aria-labelledby` semantics
  *  - a focus trap (Tab/Shift+Tab cycle within the panel)
  *  - Escape to close, click-on-backdrop to close
+ *  - body scroll lock while open
  *  - focus moves into the panel on open and is restored to the opener on close
  *
  * Callers render their own panel contents and give the heading element `id={labelledBy}`.
@@ -27,11 +29,35 @@ export function Modal({
   children: ReactNode;
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
+  const overlayRef = useRef<HTMLDivElement>(null);
+  const onCloseRef = useRef(onClose);
+
+  // Callers commonly pass an inline close handler. Keep the latest handler in a ref so
+  // focus management is tied only to the modal's open/closed lifecycle, not every render.
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
 
   useEffect(() => {
     if (!open) return;
     const opener = document.activeElement as HTMLElement | null;
     const panel = panelRef.current;
+    const overlay = overlayRef.current;
+    const previousOverflow = document.body.style.overflow;
+    const background = Array.from(document.body.children).filter(
+      (element): element is HTMLElement =>
+        element instanceof HTMLElement && element !== overlay && element.tagName !== "SCRIPT",
+    );
+    const previousBackground = background.map((element) => ({
+      element,
+      inert: element.inert,
+      ariaHidden: element.getAttribute("aria-hidden"),
+    }));
+    for (const element of background) {
+      element.inert = true;
+      element.setAttribute("aria-hidden", "true");
+    }
+    document.body.style.overflow = "hidden";
     const focusables = () =>
       panel
         ? Array.from(
@@ -46,7 +72,7 @@ export function Modal({
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.preventDefault();
-        onClose();
+        onCloseRef.current();
         return;
       }
       if (e.key !== "Tab") return;
@@ -71,17 +97,24 @@ export function Modal({
     document.addEventListener("keydown", onKey);
     return () => {
       document.removeEventListener("keydown", onKey);
-      opener?.focus?.();
+      document.body.style.overflow = previousOverflow;
+      for (const state of previousBackground) {
+        state.element.inert = state.inert;
+        if (state.ariaHidden == null) state.element.removeAttribute("aria-hidden");
+        else state.element.setAttribute("aria-hidden", state.ariaHidden);
+      }
+      if (opener?.isConnected) opener.focus();
     };
-  }, [open, onClose]);
+  }, [open]);
 
-  if (!open) return null;
+  if (!open || typeof document === "undefined") return null;
 
-  return (
+  return createPortal(
     <div
+      ref={overlayRef}
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
       style={{ background: "var(--modal-overlay)", backdropFilter: "blur(2px)" }}
-      onClick={onClose}
+      onClick={() => onCloseRef.current()}
     >
       <div
         ref={panelRef}
@@ -95,6 +128,7 @@ export function Modal({
       >
         {children}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

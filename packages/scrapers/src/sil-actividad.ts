@@ -9,15 +9,16 @@
  *   comision/ordenes?page={p}&periodoId=0   -> Page<ComisionOrden>  (committee meetings/agenda)
  *   sesion/ordenes?page={p}&periodoId=0     -> Page<SesionOrden>    (plenary order-of-the-day)
  *
- * Neither payload carries a stable record id, so we synthesize a dedupe key from
- * (scope, fecha, comisión/cámara, kind) — NOT the full description, so an edited
- * agenda updates the same row instead of spawning a duplicate. Each agenda item
- * references initiatives by official code; we extract those to link activity ↔ bills.
+ * Committee rows carry no stable record id, so their identity is an exact fingerprint
+ * of every consumed source field plus a literal-duplicate occurrence number. Plenary
+ * rows use the official `id` when present. Each agenda item references initiatives by
+ * official code; those links resolve only when the code identifies one unique PDL.
  */
 import { extractCodes } from "./codes.js";
-import { buildISODate, spanishMonthToNum } from "./dates.js";
+import { buildISODate, extractLeadingISODate, spanishMonthToNum } from "./dates.js";
 import { fetchJson } from "./http.js";
 import type { Page } from "./sil-diputados.js";
+import { createHash } from "node:crypto";
 
 const ROOT = "https://www.diputadosrd.gob.do/sil/api";
 const REFERER = "https://www.diputadosrd.gob.do/sil/sesiones";
@@ -57,6 +58,8 @@ export interface RawActivityEvent {
   chamber?: "DIPUTADOS" | "SENADO" | null;
   agendaUrl?: string | null;
   date: string | null;
+  /** Literal time/range reported by the agenda, when present. */
+  time?: string | null;
   kind: string | null;
   body: string | null;
   description: string;
@@ -72,10 +75,8 @@ export interface ActivityCollectResult {
   gaps: string[];
 }
 
-function isoDate(v: string | null | undefined): string | null {
-  if (!v) return null;
-  const m = /^(\d{4}-\d{2}-\d{2})/.exec(v);
-  return m ? m[1]! : null;
+function exactFingerprint(value: unknown): string {
+  return createHash("sha256").update(JSON.stringify(value)).digest("hex");
 }
 
 /** Pull a Spanish date ("24 de junio de 2026") out of free text → ISO yyyy-mm-dd. */
@@ -107,21 +108,33 @@ export class SilActividadAdapter {
     let expected = 0;
     let page = 1;
     while (page <= MAX_PAGES) {
-      const env = await fetchJson<Page<T>>(`${this.root}/${path}?page=${page}&periodoId=0`, { headers });
-      if (!env?.results?.length) break;
-      if (page === 1) expected = Number(env.total) || 0;
-      rows.push(...env.results);
+      const env = await fetchJson<Page<T>>(`${this.root}/${path}?page=${page}&periodoId=0`, {
+        headers,
+      });
       const pageSize = Number(env.pageSize);
       const total = Number(env.total);
-      // terminate on a short page (robust to bad pageSize/total)
-      if (!Number.isFinite(pageSize) || pageSize <= 0) break;
+      if (
+        !env ||
+        !Array.isArray(env.results) ||
+        !Number.isFinite(pageSize) ||
+        pageSize <= 0 ||
+        !Number.isFinite(total) ||
+        total < 0
+      ) {
+        throw new Error(
+          `SIL actividad devolvió una página inválida para ${label} (página ${page}).`,
+        );
+      }
+      if (page === 1) expected = total;
+      if (env.results.length === 0) break;
+      rows.push(...env.results);
       if (env.results.length < pageSize) break;
-      if (Number.isFinite(total) && page * pageSize >= total) break;
+      if (page * pageSize >= total) break;
       page++;
     }
     const gap =
       expected > 0 && rows.length < expected
-        ? `SIL · ${label}: se recolectaron ${rows.length} de ${expected} esperados (posible recorte).`
+        ? `SIL · ${label}: se recolectaron ${rows.length} de ${expected} informados por la fuente.`
         : page > MAX_PAGES
           ? `SIL · ${label}: se alcanzó el tope de ${MAX_PAGES} páginas.`
           : undefined;
@@ -130,19 +143,23 @@ export class SilActividadAdapter {
 
   async committeeOrders(): Promise<{ events: RawActivityEvent[]; gap?: string }> {
     const { rows, gap } = await this.fetchAll<SilComisionOrden>("comision/ordenes", "comisiones");
-    // The committee payload has no stable id, so the dedupe key is content-derived. Two
-    // genuinely distinct meetings of the SAME committee+tipo on the SAME day would share a
-    // key and overwrite each other — so we append an ordinal for the 2nd+ same-key item in
-    // a batch. A single meeting (the normal case) keeps the bare key, so a re-scrape — or an
-    // edited agenda — still updates in place instead of spawning a duplicate row.
-    const seen = new Map<string, number>();
+    // This endpoint has no stable id. Fingerprint the complete source row and retain an
+    // occurrence number only for literally identical duplicate rows. No date/name/text
+    // similarity is used to merge distinct published records.
+    const occurrences = new Map<string, number>();
     const events = rows.map((r): RawActivityEvent => {
       const description = (r.descripcion ?? "").replace(/\s+/g, " ").trim();
-      const date = isoDate(r.fecha);
+      const date = extractLeadingISODate(r.fecha);
       const body = (r.nombreComision ?? "").trim() || null;
-      const base = `sil-com|${date ?? "?"}|${body ?? "?"}|${r.tipo ?? "?"}`;
-      const n = (seen.get(base) ?? 0) + 1;
-      seen.set(base, n);
+      const fingerprint = exactFingerprint({
+        fecha: r.fecha ?? null,
+        descripcion: r.descripcion ?? null,
+        tipo: r.tipo ?? null,
+        nombreComision: r.nombreComision ?? null,
+        periodoLegislativo: r.periodoLegislativo ?? null,
+      });
+      const occurrence = (occurrences.get(fingerprint) ?? 0) + 1;
+      occurrences.set(fingerprint, occurrence);
       return {
         source: this.source,
         scope: "COMMITTEE",
@@ -152,8 +169,15 @@ export class SilActividadAdapter {
         body,
         description,
         initiativeCodes: extractCodes(r.descripcion),
-        dedupeKey: n === 1 ? base : `${base}#${n}`,
-        raw: r,
+        dedupeKey: `sil-com|${fingerprint}|${occurrence}`,
+        raw: {
+          payload: r,
+          provenance: {
+            endpoint: `${this.root}/comision/ordenes`,
+            explicitDateField: "fecha",
+            explicitKindField: "tipo",
+          },
+        },
       };
     });
     return { events, gap };
@@ -161,11 +185,20 @@ export class SilActividadAdapter {
 
   async plenaryOrders(): Promise<{ events: RawActivityEvent[]; gap?: string }> {
     const { rows, gap } = await this.fetchAll<SilSesionOrden>("sesion/ordenes", "pleno");
+    const fallbackOccurrences = new Map<string, number>();
     const events = rows.map((r): RawActivityEvent => {
       const description = (r.descripcion ?? r.documento ?? "").replace(/\s+/g, " ").trim();
-      // No `fecha` field exists here. The session date is named in `documento`
-      // ("...MIÉRCOLES 24 DE JUNIO DE 2026..."); fall back to the upload timestamp.
-      const date = parseSpanishDate(r.documento) ?? isoDate(r.cargado);
+      // No `fecha` field exists here. Use only the session date explicitly named in
+      // `documento`; `cargado` is an upload timestamp, not evidence of session date.
+      const date = parseSpanishDate(r.documento);
+      const fallbackFingerprint = exactFingerprint({
+        documento: r.documento ?? null,
+        descripcion: r.descripcion ?? null,
+        cargado: r.cargado ?? null,
+        tipoAgenda: r.tipoAgenda ?? null,
+      });
+      const fallbackOccurrence = (fallbackOccurrences.get(fallbackFingerprint) ?? 0) + 1;
+      fallbackOccurrences.set(fallbackFingerprint, fallbackOccurrence);
       return {
         source: this.source,
         scope: "PLENARY",
@@ -177,8 +210,15 @@ export class SilActividadAdapter {
         initiativeCodes: extractCodes(r.descripcion ?? r.documento),
         // `id` is stable + unique per order — kills the old constant `sil-ple|?|?|?`
         // key that made every plenary order overwrite the previous one.
-        dedupeKey: r.id != null ? `sil-ple|${r.id}` : `sil-ple|${date ?? "?"}|${description.slice(0, 48)}`,
-        raw: r,
+        dedupeKey:
+          r.id != null ? `sil-ple|${r.id}` : `sil-ple|${fallbackFingerprint}|${fallbackOccurrence}`,
+        raw: {
+          payload: r,
+          provenance: {
+            endpoint: `${this.root}/sesion/ordenes`,
+            dateEvidence: date ? "documento" : null,
+          },
+        },
       };
     });
     return { events, gap };
