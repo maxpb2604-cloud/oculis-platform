@@ -13,6 +13,12 @@ describe("assertSourcesOk", () => {
     );
   });
 
+  it("allows partial factual coverage when collection remained operational", () => {
+    assert.doesNotThrow(() =>
+      assertSourcesOk("daily", [{ source: "activity", ok: true, outcome: "PARTIAL" }]),
+    );
+  });
+
   it("throws once with every failed source named", () => {
     assert.throws(
       () =>

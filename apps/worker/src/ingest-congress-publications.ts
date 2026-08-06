@@ -134,6 +134,8 @@ async function ingestKnownAgenda(
   let inserted = 0;
   let parsedPdfs = 0;
   let activityInserted = 0;
+  let technicalFailures = 0;
+  const failureExamples: string[] = [];
   const unmatchedCodes = new Set<string>();
   try {
     const catalog = await adapter.catalog();
@@ -142,7 +144,10 @@ async function ingestKnownAgenda(
       try {
         documents.push(...(await adapter.documentsInCategory(category)));
       } catch (error) {
-        gaps.push(`Cámara · ${category.title}: ${(error as Error).message}`);
+        const message = `Cámara · ${category.title}: ${(error as Error).message}`;
+        technicalFailures++;
+        if (failureExamples.length < 10) failureExamples.push(message);
+        gaps.push(message);
       }
     }
     const declaredDocuments = catalog.categories.reduce((sum, category) => sum + category.count, 0);
@@ -218,7 +223,10 @@ async function ingestKnownAgenda(
         });
         if (activity.inserted) activityInserted++;
       } catch (error) {
-        gaps.push(`Cámara · documento ${document.sourceId}: ${(error as Error).message}`);
+        const message = `Cámara · documento ${document.sourceId}: ${(error as Error).message}`;
+        technicalFailures++;
+        if (failureExamples.length < 10) failureExamples.push(message);
+        gaps.push(message);
       }
     }
 
@@ -229,13 +237,16 @@ async function ingestKnownAgenda(
     }
 
     const outcome = gaps.length ? "PARTIAL" : "COMPLETE";
+    const ok = technicalFailures === 0;
+    const error = ok ? undefined : `${technicalFailures} official request(s) failed`;
     await recordIngestionRun(db, {
       runId,
       source: DIP_SOURCE,
       seen,
       inserted: inserted + activityInserted,
-      ok: outcome === "COMPLETE",
+      ok,
       outcome,
+      error,
       details: {
         categories: catalog.categories.length,
         documents: documents.length,
@@ -243,6 +254,8 @@ async function ingestKnownAgenda(
         activityInserted,
         unmatchedCodes: unmatchedCodes.size,
         unmatchedCodeExamples: [...unmatchedCodes].slice(0, 50),
+        technicalFailures,
+        failureExamples,
         pdfMode: options.full ? "ALL" : "RECENT_SLICE",
         gaps,
       },
@@ -250,14 +263,16 @@ async function ingestKnownAgenda(
     options.log(
       `  ${outcome === "COMPLETE" ? "✔" : "⚠"} ${DIP_SOURCE}: ${documents.length} documento(s), ${parsedPdfs} PDF leídos`,
     );
+    gaps.forEach((gap) => options.log(`    ⚠ ${gap}`));
     return {
       source: DIP_SOURCE,
-      ok: outcome === "COMPLETE",
+      ok,
       outcome,
       seen,
       inserted: inserted + activityInserted,
       statusChanges: 0,
       gaps,
+      ...(error ? { error } : {}),
     };
   } catch (error) {
     const message = (error as Error).message;
@@ -328,6 +343,8 @@ async function ingestSenateKind(
   let statusChanges = 0;
   let parsedPdfs = 0;
   let activityInserted = 0;
+  let technicalFailures = 0;
+  const failureExamples: string[] = [];
   const unmatchedCodes = new Set<string>();
   let explicitMeetingDates = 0;
   let partialReferences = 0;
@@ -487,9 +504,11 @@ async function ingestSenateKind(
             });
           }
         } catch (error) {
-          gaps.push(
-            `Senado · ${registry.label} · archivo ${document.fileId}: ${(error as Error).message}`,
-          );
+          const message =
+            `Senado · ${registry.label} · archivo ${document.fileId}: ${(error as Error).message}`;
+          technicalFailures++;
+          if (failureExamples.length < 10) failureExamples.push(message);
+          gaps.push(message);
         }
       }
     }
@@ -501,14 +520,17 @@ async function ingestSenateKind(
     }
 
     const outcome = gaps.length ? "PARTIAL" : "COMPLETE";
+    const ok = technicalFailures === 0;
+    const error = ok ? undefined : `${technicalFailures} official document request(s) failed`;
     await recordIngestionRun(db, {
       runId,
       source,
       seen,
       inserted: inserted + activityInserted,
       statusChanges,
-      ok: outcome === "COMPLETE",
+      ok,
       outcome,
+      error,
       details: {
         publicationKind: kind,
         pageUrl: registry.pageUrl,
@@ -519,6 +541,8 @@ async function ingestSenateKind(
         parsedPdfs,
         unmatchedCodes: unmatchedCodes.size,
         unmatchedCodeExamples: [...unmatchedCodes].slice(0, 50),
+        technicalFailures,
+        failureExamples,
         explicitMeetingDates,
         partialReferences,
         activityInserted,
@@ -529,14 +553,16 @@ async function ingestSenateKind(
     options.log(
       `  ${outcome === "COMPLETE" ? "✔" : "⚠"} ${source}: ${seen} documento(s), ${parsedPdfs} PDF leídos`,
     );
+    gaps.forEach((gap) => options.log(`    ⚠ ${gap}`));
     return {
       source,
-      ok: outcome === "COMPLETE",
+      ok,
       outcome,
       seen,
       inserted: inserted + activityInserted,
       statusChanges,
       gaps,
+      ...(error ? { error } : {}),
     };
   } catch (error) {
     const message = (error as Error).message;

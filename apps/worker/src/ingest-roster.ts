@@ -114,7 +114,9 @@ async function runOne(
     }
     await persist(db, source, r);
     const outcome = r.gaps.length ? "PARTIAL" : "COMPLETE";
-    const ok = outcome === "COMPLETE";
+    // Cardinality failures return above without replacing the snapshot. Remaining
+    // gaps preserve explicit fallback or unmatched evidence without fabricating links.
+    const ok = true;
     await recordIngestionRun(db, {
       source,
       runId,
@@ -125,7 +127,7 @@ async function runOne(
       details: r.gaps.length ? { gaps: r.gaps } : null,
     });
     log(
-      `  ${ok ? "✔" : "⚠"} ${r.legislators.length} legisladores, ${r.memberships.length} membresías de comisión`,
+      `  ${outcome === "COMPLETE" ? "✔" : "⚠"} ${r.legislators.length} legisladores, ${r.memberships.length} membresías de comisión`,
     );
     r.gaps.forEach((g) => log(`    ⚠ ${g}`));
     return {

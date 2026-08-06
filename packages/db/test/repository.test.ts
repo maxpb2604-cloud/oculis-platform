@@ -685,13 +685,13 @@ describe("ingestion health", () => {
     await recordIngestionRun(h.db, {
       source: "health-partial",
       seen: 4,
-      ok: false,
+      ok: true,
       outcome: "PARTIAL",
-      details: { gaps: ["one required section failed"] },
+      details: { gaps: ["the source explicitly reported no activity"] },
     });
     const row = (await latestRunsBySource(h.db)).find((run) => run.source === "health-partial");
     expect(row?.outcome).toBe("PARTIAL");
-    expect(row?.lastSuccessAt).toBeNull();
+    expect(row?.lastSuccessAt).toEqual(expect.any(String));
     expect(row?.lastDataAt).toEqual(expect.any(String));
   });
 });

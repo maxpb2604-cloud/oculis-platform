@@ -165,7 +165,7 @@ describe("source requirements and account evidence", () => {
     assert.throws(
       () =>
         assertRequiredSourcesOk("daily", [{ source: "feed-senado", ok: false }], ["feed-senado"]),
-      /failed\/partial: feed-senado/,
+      /failed: feed-senado/,
     );
     assert.throws(
       () => assertRequiredSourcesOk("daily", [], ["feed-senado"]),
