@@ -6,10 +6,11 @@
  * On apply it navigates to the page with ?from=&to= so the server filters the feed to
  * that window. Native to the Oculis Auribus design tokens; no external date/UI dependencies.
  */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { langParam, langQuery } from "@/lib/i18n";
 
+const DR_TZ = "America/Santo_Domingo";
 const pad = (n: number) => String(n).padStart(2, "0");
 const toISO = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 const fromISO = (s: string) => {
@@ -23,6 +24,13 @@ const addDays = (d: Date, n: number) => {
 };
 const startOfMonth = (d: Date) => new Date(d.getFullYear(), d.getMonth(), 1);
 const addMonths = (d: Date, n: number) => new Date(d.getFullYear(), d.getMonth() + n, 1);
+const todayInDR = () =>
+  new Intl.DateTimeFormat("en-CA", {
+    timeZone: DR_TZ,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
 
 export function RangePicker({
   initialFrom,
@@ -42,19 +50,34 @@ export function RangePicker({
   const [start, setStart] = useState<string | null>(initialFrom ?? null);
   const [end, setEnd] = useState<string | null>(initialTo ?? null);
   const [hover, setHover] = useState<string | null>(null);
-  const [view, setView] = useState<Date>(startOfMonth(initialFrom ? fromISO(initialFrom) : new Date()));
+  const [view, setView] = useState<Date>(() =>
+    startOfMonth(fromISO(initialFrom ?? todayInDR())),
+  );
   const ref = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const dialogId = useId();
+  const monthLabelId = useId();
 
   useEffect(() => {
     if (!open) return;
     const onDown = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
     };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      setOpen(false);
+      triggerRef.current?.focus();
+    };
     document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
   }, [open]);
 
-  const todayISO = toISO(new Date());
+  const todayISO = todayInDR();
 
   const grid = useMemo(() => {
     const first = startOfMonth(view);
@@ -62,6 +85,16 @@ export function RangePicker({
     const gridStart = addDays(first, -offset);
     return Array.from({ length: 42 }, (_, i) => addDays(gridStart, i));
   }, [view]);
+  const fullDateFormatter = useMemo(
+    () =>
+      new Intl.DateTimeFormat(locale, {
+        weekday: "long",
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+      }),
+    [locale],
+  );
 
   function pickDay(iso: string) {
     if (!start || (start && end)) {
@@ -94,8 +127,8 @@ export function RangePicker({
   };
 
   const presets: { label: string; from: string; to: string }[] = (() => {
-    const now = new Date();
-    const t = toISO(now);
+    const t = todayInDR();
+    const now = fromISO(t);
     return [
       { label: es ? "Hoy" : "Today", from: t, to: t },
       { label: es ? "Ayer" : "Yesterday", from: toISO(addDays(now, -1)), to: toISO(addDays(now, -1)) },
@@ -114,7 +147,12 @@ export function RangePicker({
   return (
     <div ref={ref} className="relative">
       <button
+        ref={triggerRef}
+        type="button"
         onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        aria-haspopup="dialog"
+        aria-controls={dialogId}
         className="inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm transition-colors hover:bg-[var(--surface-2)]"
         style={{ cursor: "pointer", color: hasActive ? "var(--accent)" : "var(--text)", borderColor: hasActive ? "var(--accent)" : "var(--border)" }}
       >
@@ -125,13 +163,17 @@ export function RangePicker({
 
       {open && (
         <div
-          className="absolute left-0 top-11 z-30 w-[300px] rounded-xl border p-3 shadow-xl"
+          id={dialogId}
+          role="dialog"
+          aria-labelledby={monthLabelId}
+          className="absolute right-0 top-11 z-30 w-[min(300px,calc(100vw-2rem))] rounded-xl border p-3 shadow-xl sm:left-0 sm:right-auto"
           style={{ background: "var(--surface)", borderColor: "var(--border)" }}
         >
           {/* Quick presets */}
           <div className="mb-3 flex flex-wrap gap-1.5">
             {presets.map((p) => (
               <button
+                type="button"
                 key={p.label}
                 onClick={() => apply(p.from, p.to)}
                 className="rounded-md px-2 py-1 text-[11px] font-medium transition-colors hover:bg-[var(--accent-soft)]"
@@ -144,12 +186,12 @@ export function RangePicker({
 
           {/* Month header */}
           <div className="mb-2 flex items-center justify-between">
-            <button onClick={() => setView(addMonths(view, -1))} aria-label={es ? "Mes anterior" : "Previous month"}
+            <button type="button" onClick={() => setView(addMonths(view, -1))} aria-label={es ? "Mes anterior" : "Previous month"}
               className="flex h-7 w-7 items-center justify-center rounded-md hover:bg-[var(--surface-2)]" style={{ cursor: "pointer" }}>
               <Chevron dir="left" />
             </button>
-            <span className="text-sm font-semibold first-letter:uppercase">{monthLabel}</span>
-            <button onClick={() => setView(addMonths(view, 1))} aria-label={es ? "Mes siguiente" : "Next month"}
+            <span id={monthLabelId} className="text-sm font-semibold first-letter:uppercase">{monthLabel}</span>
+            <button type="button" onClick={() => setView(addMonths(view, 1))} aria-label={es ? "Mes siguiente" : "Next month"}
               className="flex h-7 w-7 items-center justify-center rounded-md hover:bg-[var(--surface-2)]" style={{ cursor: "pointer" }}>
               <Chevron dir="right" />
             </button>
@@ -157,7 +199,9 @@ export function RangePicker({
 
           {/* Weekday row */}
           <div className="mb-1 grid grid-cols-7 text-center text-[10px] font-semibold uppercase" style={{ color: "var(--text-muted)" }}>
-            {weekdays.map((w, i) => <div key={i}>{w}</div>)}
+            {weekdays.map((w, i) => (
+              <div key={i} aria-hidden="true">{w}</div>
+            ))}
           </div>
 
           {/* Day grid */}
@@ -168,11 +212,16 @@ export function RangePicker({
               const isEdge = iso === start || iso === end;
               const within = inRange(iso);
               const isToday = iso === todayISO;
+              const accessibleDate = fullDateFormatter.format(d);
               return (
                 <button
+                  type="button"
                   key={iso}
                   onClick={() => pickDay(iso)}
                   onMouseEnter={() => setHover(iso)}
+                  aria-label={accessibleDate}
+                  aria-pressed={within}
+                  aria-current={isToday ? "date" : undefined}
                   className="flex h-9 items-center justify-center text-[13px] transition-colors"
                   style={{
                     cursor: "pointer",
@@ -191,16 +240,17 @@ export function RangePicker({
 
           {/* Footer */}
           <div className="mt-3 flex items-center justify-between border-t pt-3" style={{ borderColor: "var(--border)" }}>
-            <span className="text-[12px]" style={{ color: "var(--text-muted)" }}>
+            <span className="text-[12px]" aria-live="polite" style={{ color: "var(--text-muted)" }}>
               {start ? (end ? `${fmt(start)} – ${fmt(end)}` : fmt(start)) : es ? "Selecciona un rango" : "Pick a range"}
             </span>
             <div className="flex items-center gap-2">
               {hasActive && (
-                <button onClick={clearRange} className="text-[12px] font-medium underline" style={{ cursor: "pointer", color: "var(--text-muted)" }}>
+                <button type="button" onClick={clearRange} className="text-[12px] font-medium underline" style={{ cursor: "pointer", color: "var(--text-muted)" }}>
                   {es ? "limpiar" : "clear"}
                 </button>
               )}
               <button
+                type="button"
                 onClick={applySelection}
                 disabled={!start}
                 className="rounded-md px-3 py-1.5 text-[12px] font-semibold text-white disabled:opacity-40"
@@ -218,14 +268,14 @@ export function RangePicker({
 
 function CalIcon() {
   return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+    <svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
       <rect x="3" y="4" width="18" height="17" rx="2" /><path d="M3 9h18M8 2v4M16 2v4" />
     </svg>
   );
 }
 function ChevronDown({ open }: { open: boolean }) {
   return (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+    <svg aria-hidden="true" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
       style={{ transition: "transform .15s", transform: open ? "rotate(180deg)" : "none" }}>
       <path d="m6 9 6 6 6-6" />
     </svg>
@@ -233,7 +283,7 @@ function ChevronDown({ open }: { open: boolean }) {
 }
 function Chevron({ dir }: { dir: "left" | "right" }) {
   return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d={dir === "left" ? "m15 18-6-6 6-6" : "m9 18 6-6-6-6"} />
     </svg>
   );

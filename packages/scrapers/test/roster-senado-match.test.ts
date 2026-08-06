@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { matchCardSlug, nameTokens } from "../src/roster-senado.js";
+import { matchCardSlug, normalizeRosterName, parseProfileName } from "../src/roster-senado.js";
 
 // A few real senator cards (short forms from the /senadores/ index).
 const CARDS = [
@@ -10,29 +10,26 @@ const CARDS = [
   { slug: "distrito-nacional", name: "Antonio M. Taveras Guzmán", role: null },
 ];
 
-describe("roster-senado: nameTokens", () => {
-  it("lowercases, strips accents and connector words", () => {
-    expect(nameTokens("Ricardo De Los Santos Polanco")).toEqual(["ricardo", "santos", "polanco"]);
-  });
-  it("drops standalone initials shorter than 3 chars only when filtered downstream", () => {
-    expect(nameTokens("Antonio M. Taveras")).toEqual(["antonio", "m", "taveras"]);
+describe("roster-senado: normalizeRosterName", () => {
+  it("folds formatting without dropping identity-bearing words", () => {
+    expect(normalizeRosterName("Ricardo Dé Los Santos Polanco")).toBe(
+      "ricardo de los santos polanco",
+    );
   });
 });
 
 describe("roster-senado: matchCardSlug", () => {
-  it("matches a full legal name to its short-form card (extra surname)", () => {
-    // committee member carries the full name; card is shorter
-    expect(matchCardSlug("Ricardo De Los Santos Polanco", CARDS)).toBe("sanchez-ramirez");
+  it("matches one exact normalized full name", () => {
+    expect(matchCardSlug("RICARDO DE LOS SANTOS", CARDS)).toBe("sanchez-ramirez");
   });
 
-  it("matches across a different given name (senator goes by second name)", () => {
-    // card: "Secundino Velázquez Pimentel" vs member "Augusto Velázquez Pimentel"
-    expect(matchCardSlug("Augusto Velázquez Pimentel", CARDS)).toBe("bahoruco");
+  it("does not link an extra-surname variant", () => {
+    expect(matchCardSlug("Ricardo De Los Santos Polanco", CARDS)).toBeNull();
   });
 
-  it("matches across a given-name spelling variant via a distinctive surname", () => {
-    // card "Ginnette" vs member "Ginette A. Bournigal De Jiménez" — bournigal is unique
-    expect(matchCardSlug("Ginette A. Bournigal De Jiménez", CARDS)).toBe("puerto-plata");
+  it("does not link different given names or spelling variants", () => {
+    expect(matchCardSlug("Augusto Velázquez Pimentel", CARDS)).toBeNull();
+    expect(matchCardSlug("Ginette A. Bournigal De Jiménez", CARDS)).toBeNull();
   });
 
   it("does not mis-link on a single common given name", () => {
@@ -41,5 +38,21 @@ describe("roster-senado: matchCardSlug", () => {
 
   it("returns null when nothing meaningfully overlaps", () => {
     expect(matchCardSlug("Juan Carlos Mejía", CARDS)).toBeNull();
+  });
+});
+
+describe("roster-senado: province-profile fallback", () => {
+  it("extracts the senator name from semantic headings without Divi card markup", () => {
+    const html = `
+      <html><head><title>Senado | Santiago</title></head><body>
+        <h2>DANIEL ENRIQUE DE JESÚS RIVERA REYES</h2>
+        <h5>SENADOR DE LA REPÚBLICA, PROV. SANTIAGO</h5>
+        <h6>Partido Revolucionario Moderno (PRM)</h6>
+      </body></html>`;
+    expect(parseProfileName(html)).toBe("Daniel Enrique De Jesús Rivera Reyes");
+  });
+
+  it("ignores institutional headings", () => {
+    expect(parseProfileName("<h2>Senado de la República</h2><h3>Provincia</h3>")).toBeNull();
   });
 });

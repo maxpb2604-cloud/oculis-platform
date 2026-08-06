@@ -2,8 +2,14 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Oculis Auribus — Monitoreo Legislativo y Regulatorio",
+  title: {
+    default: "Oculis Auribus — Monitoreo Legislativo y Regulatorio",
+    template: "%s | Oculis Auribus",
+  },
   description: "Ferdinand Herrera Consultants — seguimiento experto de legislación y regulaciones en República Dominicana.",
+  applicationName: "Oculis Auribus",
+  category: "business intelligence",
+  icons: { icon: "/oculis-mark.png", apple: "/oculis-mark.png" },
 };
 
 // Set the theme class before paint to avoid a flash (respects saved choice / OS).

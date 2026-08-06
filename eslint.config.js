@@ -15,6 +15,7 @@ export default tseslint.config(
       "**/dist/**",
       "**/build/**",
       "**/.next/**",
+      "**/.next-ci/**",
       "**/coverage/**",
       "**/*.tsbuildinfo",
       ".data/**",
@@ -40,7 +41,12 @@ export default tseslint.config(
       "no-unused-vars": "off", // superseded by the TS-aware rule below
       "@typescript-eslint/no-unused-vars": [
         "error",
-        { argsIgnorePattern: "^_", varsIgnorePattern: "^_", ignoreRestSiblings: true, caughtErrors: "none" },
+        {
+          argsIgnorePattern: "^_",
+          varsIgnorePattern: "^_",
+          ignoreRestSiblings: true,
+          caughtErrors: "none",
+        },
       ],
       // Stylistic / opinion → warn so CI lint stays green while still flagging.
       "@typescript-eslint/no-explicit-any": "warn",
@@ -52,6 +58,21 @@ export default tseslint.config(
       // soften to warn so they don't block CI on pre-existing code.
       "no-useless-escape": "warn",
       "no-empty": "warn",
+    },
+  },
+
+  // Codex workflow definitions run in an orchestrator that injects these DSL globals.
+  // Declaring them here keeps regular `no-undef` checks strict everywhere else.
+  {
+    files: ["scripts/*.workflow.js"],
+    languageOptions: {
+      globals: {
+        args: "readonly",
+        phase: "readonly",
+        parallel: "readonly",
+        agent: "readonly",
+        log: "readonly",
+      },
     },
   },
 

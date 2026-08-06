@@ -1,18 +1,17 @@
 #!/bin/bash
 #
-# Live data refresh for the Oculis feed. Scrapes chamber activity + deposits
-# (`daily`) and rebuilds the news/social/legislative feed (`feed`), writing to
-# the local Postgres. Runs the OFFLINE heuristic categorizer/scorer — it does
-# NOT set OCULIS_USE_CLAUDE, so it never needs Anthropic API credits.
+# Scheduled factual-data refresh for Oculis. `daily` collects chamber activity,
+# deposits and source publications, then writes them to the configured database.
+# It does not classify, score or infer legislative states.
 #
 # Invoked by the launchd agent com.oculis.feed-refresh (every few hours) and can
 # also be run by hand: `bash scripts/refresh-feed.sh`.
 set -uo pipefail
 
 export PATH="/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
-export DATABASE_URL="${DATABASE_URL:-postgres://emilpenabautista@localhost:5433/oculis}"
-# Force the offline path regardless of any shell profile that exports these.
-unset OCULIS_USE_CLAUDE ANTHROPIC_API_KEY
+# Prevent an accidental in-memory database if `.env` does not provide a durable
+# DATABASE_URL (or an explicitly configured DB_DRIVER=pglite/PGLITE_DIR pair).
+export OCULIS_ENV="production"
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 LOG_DIR="$ROOT/.logs"
@@ -24,8 +23,12 @@ echo "[$(ts)] ▶ refresh start" >>"$LOG"
 
 cd "$ROOT/apps/worker" || { echo "[$(ts)] ✖ worker dir missing" >>"$LOG"; exit 1; }
 
-# Chamber activity + deposits (live scrape), then the feed (news + signals).
-npm run daily >>"$LOG" 2>&1 && echo "[$(ts)] ✔ daily ok" >>"$LOG" || echo "[$(ts)] ✖ daily failed" >>"$LOG"
-npm run feed  >>"$LOG" 2>&1 && echo "[$(ts)] ✔ feed ok"  >>"$LOG" || echo "[$(ts)] ✖ feed failed"  >>"$LOG"
-
-echo "[$(ts)] ◼ refresh done" >>"$LOG"
+# `daily` already includes activity, deposits and feed. Preserve its failure code
+# so launchd/GitHub can never report a green refresh when a source failed.
+if npm run daily >>"$LOG" 2>&1; then
+  echo "[$(ts)] ✔ refresh done" >>"$LOG"
+else
+  status=$?
+  echo "[$(ts)] ✖ refresh failed (exit $status)" >>"$LOG"
+  exit "$status"
+fi

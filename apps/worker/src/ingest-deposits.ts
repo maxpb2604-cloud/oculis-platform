@@ -1,16 +1,6 @@
-/**
- * Daily "deposits" sync — the heart of Phase 1's Hoy feed.
- *
- * Pulls the initiatives DEPOSITED in a recent window from the Cámara's SIL API,
- * enriches each with its principal sponsor (name + role + party + province + how many
- * co-proponents) and its official documents (so the dashboard can show whether the PDF
- * is uploaded yet), and upserts them into `initiatives` + `documents`.
- *
- * The SIL list is sorted newest-first by deposit date, so we read each
- * (grupo × tipo) slice page-by-page and stop as soon as it drops out of the window —
- * cheap enough to run every morning.
- */
+/** Factual deposit ingestion for both chambers. */
 import {
+  beginIngestionRun,
   recordIngestionRun,
   upsertDocument,
   upsertInitiative,
@@ -18,6 +8,7 @@ import {
   type NewInitiative,
 } from "@oculis/db";
 import {
+  extractLeadingISODate,
   SilDiputadosAdapter,
   SenadoSilAdapter,
   proponenteName,
@@ -27,128 +18,207 @@ import {
 
 export const DEPOSITS_SOURCE = "sil-deposits";
 export const SENADO_DEPOSITS_SOURCE = "senado-sil-deposits";
+export const SENADO_CORPUS_SOURCE = "senado-sil-corpus";
 
 export interface DepositsSummary {
   source: string;
   ok: boolean;
-  windowFrom: string;
+  outcome: "COMPLETE" | "PARTIAL" | "FAILED";
+  windowFrom: string | null;
   deposits: number;
   inserted: number;
+  updated: number;
+  statusChanges: number;
   documents: number;
   withDocUploaded: number;
+  failures: number;
+  rejected: number;
+  gaps: string[];
   error?: string;
 }
 
-const isoDay = (v: string | null | undefined): string | null => {
-  const m = /^(\d{4}-\d{2}-\d{2})/.exec(v ?? "");
-  return m ? m[1]! : null;
-};
-
 function shiftISO(iso: string, days: number): string {
-  const [y, m, d] = iso.split("-").map(Number);
-  const dt = new Date(Date.UTC(y!, m! - 1, d!));
-  dt.setUTCDate(dt.getUTCDate() + days);
-  return dt.toISOString().slice(0, 10);
+  const [year, month, day] = iso.split("-").map(Number);
+  const date = new Date(Date.UTC(year!, month! - 1, day!));
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
 }
 
-/** Scan every (grupo × tipo) slice, collecting deposits with fechaDeposito >= since. */
 async function recentDeposits(
   adapter: SilDiputadosAdapter,
   since: string,
   maxPagesPerSlice: number,
-): Promise<SilIniciativa[]> {
+): Promise<{ rows: SilIniciativa[]; truncatedSlices: number }> {
   const groups = await adapter.groups();
   const seen = new Map<number, SilIniciativa>();
-  for (const g of groups) {
-    for (const tipo of [true, false]) {
-      let page = 1;
-      while (page <= maxPagesPerSlice) {
-        const env = await adapter.listPage(g.id, tipo, page);
-        const rows = env.results ?? [];
-        if (rows.length === 0) break;
+  let truncatedSlices = 0;
+  for (const group of groups) {
+    for (const type of [true, false]) {
+      let exhausted = false;
+      for (let page = 1; page <= maxPagesPerSlice; page++) {
+        const envelope = await adapter.listPage(group.id, type, page);
+        const rows = envelope.results;
+        if (rows.length === 0) {
+          exhausted = true;
+          break;
+        }
         let anyInWindow = false;
-        for (const r of rows) {
-          const day = isoDay(r.fechaDeposito);
+        for (const row of rows) {
+          const day = extractLeadingISODate(row.fechaDeposito);
           if (day && day >= since) {
             anyInWindow = true;
-            seen.set(r.id, r);
+            seen.set(row.id, row);
           }
         }
-        // List is newest-first: once a full page falls before the window, stop the slice.
-        const lastDay = isoDay(rows[rows.length - 1]?.fechaDeposito);
-        if (!anyInWindow || (lastDay && lastDay < since)) break;
-        if (page * env.pageSize >= env.total) break;
-        page++;
+        const lastDay = extractLeadingISODate(rows[rows.length - 1]?.fechaDeposito);
+        if (!anyInWindow || (lastDay && lastDay < since)) {
+          exhausted = true;
+          break;
+        }
+        if (page * envelope.pageSize >= envelope.total) {
+          exhausted = true;
+          break;
+        }
       }
+      if (!exhausted) truncatedSlices++;
     }
   }
-  return [...seen.values()];
+  return { rows: [...seen.values()], truncatedSlices };
 }
 
 export async function ingestDeposits(
   db: Database,
-  opts: { sinceDays?: number; today?: string; maxPagesPerSlice?: number; delayMs?: number; log?: (m: string) => void } = {},
+  opts: {
+    sinceDays?: number;
+    today?: string;
+    maxPagesPerSlice?: number;
+    delayMs?: number;
+    log?: (message: string) => void;
+  } = {},
 ): Promise<DepositsSummary> {
   const log = opts.log ?? (() => {});
-  const today = opts.today ?? new Date().toISOString().slice(0, 10);
+  const today = extractLeadingISODate(opts.today ?? new Date().toISOString());
+  if (!today) throw new Error("today must begin with a valid ISO date");
   const since = shiftISO(today, -(opts.sinceDays ?? 21));
   const maxPagesPerSlice = opts.maxPagesPerSlice ?? 4;
   const delayMs = opts.delayMs ?? 100;
   const adapter = new SilDiputadosAdapter();
 
-  log(`\n▶ ${DEPOSITS_SOURCE} — deposits since ${since}`);
+  log(`\n▶ ${DEPOSITS_SOURCE} — deposits ${since}..${today}`);
+  const runId = await beginIngestionRun(db, DEPOSITS_SOURCE, {
+    interval: { since, until: today },
+  });
   try {
-    const deposits = await recentDeposits(adapter, since, maxPagesPerSlice);
-    log(`  ${deposits.length} initiatives deposited in window`);
+    const scan = await recentDeposits(adapter, since, maxPagesPerSlice);
+    const deposits = scan.rows;
+    const gaps: string[] = [];
+    if (deposits.length === 0) {
+      gaps.push(`La fuente devolvió 0 depósitos en el intervalo ${since}..${today}.`);
+    }
+    if (scan.truncatedSlices) {
+      gaps.push(
+        `${scan.truncatedSlices} segmento(s) alcanzaron el límite de ${maxPagesPerSlice} páginas antes de salir del intervalo.`,
+      );
+    }
 
     let inserted = 0;
+    let updated = 0;
+    let statusChanges = 0;
     let documents = 0;
     let withDocUploaded = 0;
+    let failures = 0;
+    let rejected = 0;
+    const failureExamples: string[] = [];
 
-    for (const d of deposits) {
-      const id = String(d.id);
-      let props: Awaited<ReturnType<typeof adapter.proponentes>> = [];
-      let docs: SilDocumento[] = [];
-      try {
-        [props, docs] = await Promise.all([adapter.proponentes(id), adapter.documentos(id)]);
-      } catch (err) {
-        log(`    ⚠ enrich ${d.numero ?? id} falló: ${(err as Error).message}`);
+    for (const deposit of deposits) {
+      const sourceId = String(deposit.id);
+      const title = deposit.descripcion?.trim() ?? "";
+      if (!title) {
+        rejected++;
+        if (failureExamples.length < 10)
+          failureExamples.push(`${sourceId}: missing official title`);
+        continue;
       }
-      const principal = props.find((p) => p.principal) ?? props[0];
-      const rep = principal?.representacion;
 
+      let proponents: Awaited<ReturnType<typeof adapter.proponentes>> = [];
+      let docs: SilDocumento[] = [];
+      const [proponentsResult, documentsResult] = await Promise.allSettled([
+        adapter.proponentes(sourceId),
+        adapter.documentos(sourceId),
+      ]);
+      const proponentsObserved = proponentsResult.status === "fulfilled";
+      if (proponentsObserved) proponents = proponentsResult.value;
+      else {
+        failures++;
+        if (failureExamples.length < 10) {
+          failureExamples.push(`${sourceId}/proponentes: ${proponentsResult.reason}`);
+        }
+      }
+      if (documentsResult.status === "fulfilled") docs = documentsResult.value;
+      else {
+        failures++;
+        if (failureExamples.length < 10) {
+          failureExamples.push(`${sourceId}/documentos: ${documentsResult.reason}`);
+        }
+      }
+
+      const principal = proponents.find((proponent) => proponent.principal === true);
+      const representation = principal?.representacion;
+      const sourceUrl = `https://www.diputadosrd.gob.do/sil/iniciativa/${sourceId}`;
       const record: NewInitiative = {
-        source: "sil-diputados",
-        sourceId: id,
+        source: adapter.source,
+        sourceId,
         kind: "LEGISLATIVE",
-        code: d.numero ?? null,
-        title: String(d.descripcion ?? ""),
-        type: d.tipo ?? null,
-        status: d.estado ?? d.condicion ?? null,
+        code: deposit.numero?.trim() || null,
+        title,
+        type: deposit.tipo?.trim() || null,
+        status: deposit.estado?.trim() || null,
         chamber: "DIPUTADOS",
-        sourceCategory: d.grupo ?? d.materia ?? null,
-        sponsor: proponenteName(principal),
-        sponsorRole: rep?.funcion ?? null,
-        sponsorCount: props.length || null,
-        party: rep?.partido?.siglas ?? rep?.partido?.nombre ?? null,
-        province: rep?.provincia ?? null,
-        filedAt: isoDay(d.fechaDeposito),
-        sourceUrl: `https://www.diputadosrd.gob.do/sil/iniciativa/${id}`,
-        raw: d as object,
+        sourceCategory: deposit.grupo?.trim() || deposit.materia?.trim() || null,
+        category: null,
+        // A rejected/failed proponent request means "not observed in this run", not
+        // "the source explicitly reports no sponsor". Undefined preserves prior facts.
+        sponsor: proponentsObserved ? proponenteName(principal) : undefined,
+        sponsorRole: proponentsObserved ? representation?.funcion?.trim() || null : undefined,
+        sponsorCount: proponentsObserved ? proponents.length || null : undefined,
+        party: proponentsObserved
+          ? representation?.partido?.siglas?.trim() ||
+            representation?.partido?.nombre?.trim() ||
+            null
+          : undefined,
+        province: proponentsObserved ? representation?.provincia?.trim() || null : undefined,
+        filedAt: extractLeadingISODate(deposit.fechaDeposito),
+        sourceUrl,
+        raw: proponentsObserved
+          ? {
+              payload: { initiative: deposit, proponents },
+              provenance: {
+                sourceUrl,
+                endpoints: [
+                  "iniciativa/iniciativas",
+                  "iniciativa/proponentes",
+                  "iniciativa/documentos",
+                ],
+                explicitStatusField: "estado",
+              },
+            }
+          : undefined,
       };
-      const res = await upsertInitiative(db, record);
-      if (res.inserted) inserted++;
+      const result = await upsertInitiative(db, record);
+      if (result.inserted) inserted++;
+      else updated++;
+      if (result.statusChanged) statusChanges++;
 
       let anyUploaded = false;
       for (const doc of docs) {
-        const uploadedAt = isoDay(doc.cargado);
+        const uploadedAt = extractLeadingISODate(doc.cargado);
         if (uploadedAt) anyUploaded = true;
         const isNew = await upsertDocument(db, {
-          source: "sil-diputados",
-          initiativeId: res.id,
-          initiativeCode: doc.documento ?? d.numero ?? null,
-          docType: doc.descripcion ?? null,
-          extension: doc.extension ?? null,
+          source: adapter.source,
+          initiativeId: result.id,
+          initiativeCode: doc.documento?.trim() || deposit.numero?.trim() || null,
+          docType: doc.descripcion?.trim() || null,
+          extension: doc.extension?.trim() || null,
           url: adapter.documentUrl(doc.id),
           uploadedAt,
           sourceDocId: String(doc.id),
@@ -156,79 +226,215 @@ export async function ingestDeposits(
         if (isNew) documents++;
       }
       if (anyUploaded) withDocUploaded++;
-      if (delayMs) await new Promise((r) => setTimeout(r, delayMs));
+      if (delayMs) await sleep(delayMs);
     }
 
+    const ok = failures === 0 && rejected === 0 && scan.truncatedSlices === 0;
+    const outcome = ok ? "COMPLETE" : "PARTIAL";
+    const errorParts = [
+      failures ? `${failures} enrichment request(s) failed` : "",
+      rejected ? `${rejected} row(s) lacked an official title` : "",
+      scan.truncatedSlices ? `${scan.truncatedSlices} slice(s) were truncated` : "",
+    ].filter(Boolean);
+    const error = errorParts.join("; ") || undefined;
     await recordIngestionRun(db, {
       source: DEPOSITS_SOURCE,
+      runId,
       seen: deposits.length,
       inserted,
-      ok: true,
-      details: deposits.length === 0 ? { gaps: [`Sin depósitos desde ${since} (¿receso o día sin actividad?).`] } : null,
+      updated,
+      statusChanges,
+      ok,
+      outcome,
+      error,
+      details: { interval: { since, until: today }, failures, rejected, gaps, failureExamples },
     });
-    log(`  ✔ ${deposits.length} deposits (${inserted} new), ${documents} new docs, ${withDocUploaded} con PDF cargado`);
-    return { source: DEPOSITS_SOURCE, ok: true, windowFrom: since, deposits: deposits.length, inserted, documents, withDocUploaded };
-  } catch (err) {
-    const error = (err as Error).message;
-    await recordIngestionRun(db, { source: DEPOSITS_SOURCE, ok: false, error });
-    log(`  ✖ FAILED: ${error}`);
-    return { source: DEPOSITS_SOURCE, ok: false, windowFrom: since, deposits: 0, inserted: 0, documents: 0, withDocUploaded: 0, error };
+    gaps.forEach((gap) => log(`    ⚠ ${gap}`));
+    return {
+      source: DEPOSITS_SOURCE,
+      ok,
+      outcome,
+      windowFrom: since,
+      deposits: deposits.length,
+      inserted,
+      updated,
+      statusChanges,
+      documents,
+      withDocUploaded,
+      failures,
+      rejected,
+      gaps,
+      ...(error ? { error } : {}),
+    };
+  } catch (error) {
+    const message = (error as Error).message;
+    await recordIngestionRun(db, {
+      runId,
+      source: DEPOSITS_SOURCE,
+      ok: false,
+      error: message,
+    });
+    return failedDepositSummary(DEPOSITS_SOURCE, since, message);
   }
 }
 
-/**
- * Senate deposits sync. The Senate publishes deposited initiatives in the legacy
- * MasterLex SIL (no documents/sponsor metadata in the list), so we upsert the lighter
- * record (code, type, title, status, filing date) with chamber = "SENADO". Isolated
- * from the Diputados sync so a legacy-site blip can't take down the main feed.
- */
 export async function ingestSenateDeposits(
   db: Database,
-  opts: { sinceDays?: number; today?: string; log?: (m: string) => void } = {},
+  opts: {
+    sinceDays?: number;
+    today?: string;
+    /** Read the complete configured legislative collection instead of a date window. */
+    fullCollection?: boolean;
+    log?: (message: string) => void;
+  } = {},
 ): Promise<DepositsSummary> {
   const log = opts.log ?? (() => {});
-  const today = opts.today ?? new Date().toISOString().slice(0, 10);
-  const since = shiftISO(today, -(opts.sinceDays ?? 21));
+  const today = extractLeadingISODate(opts.today ?? new Date().toISOString());
+  if (!today) throw new Error("today must begin with a valid ISO date");
+  const since = opts.fullCollection ? null : shiftISO(today, -(opts.sinceDays ?? 21));
+  const source = opts.fullCollection ? SENADO_CORPUS_SOURCE : SENADO_DEPOSITS_SOURCE;
   const adapter = new SenadoSilAdapter();
 
-  log(`\n▶ ${SENADO_DEPOSITS_SOURCE} — Senate deposits since ${since}`);
+  log(`\n▶ ${source} — ${since ? `${since}..${today}` : "complete configured collection"}`);
+  const runId = await beginIngestionRun(db, source, {
+    interval: since ? { since, until: today } : null,
+    collection: opts.fullCollection ? "FULL_CONFIGURED_COLLECTION" : "DATE_WINDOW",
+  });
   try {
-    const rows = await adapter.listDeposits({ since, until: today });
-    log(`  ${rows.length} Senate initiatives deposited in window`);
-
-    let inserted = 0;
-    for (const r of rows) {
-      const record: NewInitiative = {
-        source: "senado-sil",
-        sourceId: r.idExpediente ?? r.code,
-        kind: "LEGISLATIVE",
-        code: r.code,
-        title: r.title ?? `${r.type ?? "Iniciativa"} ${r.code}`,
-        type: r.type,
-        status: r.status,
-        chamber: "SENADO",
-        sourceCategory: null,
-        filedAt: r.filedAt,
-        sourceUrl: r.sourceUrl,
-        raw: r as object,
-      };
-      const res = await upsertInitiative(db, record);
-      if (res.inserted) inserted++;
+    const rows = await adapter.listDeposits(since ? { since, until: today } : {});
+    const gaps: string[] = [];
+    if (rows.length === 0) {
+      gaps.push(
+        since
+          ? `La fuente devolvió 0 depósitos en el intervalo ${since}..${today}.`
+          : "La fuente devolvió 0 iniciativas para la colección configurada.",
+      );
+    }
+    const truncatedTitles = rows.filter((row) => row.title?.trim().endsWith("...")).length;
+    if (truncatedTitles > 0) {
+      gaps.push(
+        `${truncatedTitles} título(s) terminan en "..." en el listado oficial del Senado; se conservaron literalmente y no se completaron por inferencia.`,
+      );
     }
 
+    let inserted = 0;
+    let updated = 0;
+    let statusChanges = 0;
+    let rejected = 0;
+    const rejectedCodes: string[] = [];
+    for (const row of rows) {
+      const title = row.title?.trim() ?? "";
+      if (!title) {
+        rejected++;
+        if (rejectedCodes.length < 10) rejectedCodes.push(row.code);
+        continue;
+      }
+      const record: NewInitiative = {
+        source: adapter.source,
+        sourceId: row.idExpediente ?? row.code,
+        kind: "LEGISLATIVE",
+        code: row.code,
+        title,
+        type: row.type?.trim() || null,
+        status: row.status?.trim() || null,
+        chamber: "SENADO",
+        sourceCategory: null,
+        category: null,
+        filedAt: row.filedAt,
+        sourceUrl: row.sourceUrl,
+        raw: {
+          payload: row,
+          provenance: {
+            sourceUrl: row.sourceUrl,
+            endpoint: "wfilemaster/lista_expedientes.aspx",
+            explicitStatusColumn: 5,
+          },
+        },
+      };
+      const result = await upsertInitiative(db, record);
+      if (result.inserted) inserted++;
+      else updated++;
+      if (result.statusChanged) statusChanges++;
+    }
+
+    if (rejected) {
+      gaps.push(
+        `${rejected} fila(s) sin título oficial fueron descartadas: ${rejectedCodes.join(", ")}`,
+      );
+    }
+    const collectionEmpty = opts.fullCollection === true && rows.length === 0;
+    const ok = rejected === 0 && !collectionEmpty;
+    const outcome = ok && truncatedTitles === 0 ? "COMPLETE" : "PARTIAL";
+    const error = collectionEmpty
+      ? "complete configured collection returned zero initiatives"
+      : ok
+        ? undefined
+        : `${rejected} row(s) lacked an official title`;
     await recordIngestionRun(db, {
-      source: SENADO_DEPOSITS_SOURCE,
+      source,
+      runId,
       seen: rows.length,
       inserted,
-      ok: true,
-      details: rows.length === 0 ? { gaps: [`Sin depósitos del Senado desde ${since}.`] } : null,
+      updated,
+      statusChanges,
+      ok,
+      outcome,
+      error,
+      details: {
+        interval: since ? { since, until: today } : null,
+        collection: opts.fullCollection ? "FULL_CONFIGURED_COLLECTION" : "DATE_WINDOW",
+        rejected,
+        truncatedTitles,
+        gaps,
+      },
     });
-    log(`  ✔ ${rows.length} Senate deposits (${inserted} new)`);
-    return { source: SENADO_DEPOSITS_SOURCE, ok: true, windowFrom: since, deposits: rows.length, inserted, documents: 0, withDocUploaded: 0 };
-  } catch (err) {
-    const error = (err as Error).message;
-    await recordIngestionRun(db, { source: SENADO_DEPOSITS_SOURCE, ok: false, error });
-    log(`  ✖ FAILED: ${error}`);
-    return { source: SENADO_DEPOSITS_SOURCE, ok: false, windowFrom: since, deposits: 0, inserted: 0, documents: 0, withDocUploaded: 0, error };
+    gaps.forEach((gap) => log(`    ⚠ ${gap}`));
+    return {
+      source,
+      ok,
+      outcome,
+      windowFrom: since,
+      deposits: rows.length,
+      inserted,
+      updated,
+      statusChanges,
+      documents: 0,
+      withDocUploaded: 0,
+      failures: 0,
+      rejected,
+      gaps,
+      ...(error ? { error } : {}),
+    };
+  } catch (error) {
+    const message = (error as Error).message;
+    await recordIngestionRun(db, { runId, source, ok: false, error: message });
+    return failedDepositSummary(source, since, message);
   }
+}
+
+function failedDepositSummary(
+  source: string,
+  since: string | null,
+  error: string,
+): DepositsSummary {
+  return {
+    source,
+    ok: false,
+    outcome: "FAILED",
+    windowFrom: since,
+    deposits: 0,
+    inserted: 0,
+    updated: 0,
+    statusChanges: 0,
+    documents: 0,
+    withDocUploaded: 0,
+    failures: 1,
+    rejected: 0,
+    gaps: [],
+    error,
+  };
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }

@@ -22,9 +22,30 @@ export interface FetchOptions {
   body?: string;
 }
 
+const PERMANENT_TLS_CODES = new Set([
+  "CERT_HAS_EXPIRED",
+  "DEPTH_ZERO_SELF_SIGNED_CERT",
+  "ERR_TLS_CERT_ALTNAME_INVALID",
+  "SELF_SIGNED_CERT_IN_CHAIN",
+  "UNABLE_TO_GET_ISSUER_CERT",
+  "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+]);
+
+function nestedErrorCode(err: unknown): string | null {
+  let current = err;
+  for (let depth = 0; depth < 4 && current && typeof current === "object"; depth++) {
+    const code = (current as { code?: unknown }).code;
+    if (typeof code === "string") return code;
+    current = (current as { cause?: unknown }).cause;
+  }
+  return null;
+}
+
 function retryable(err: unknown): boolean {
   // HttpError carries a status; 5xx/429 are transient. Network/abort errors retry too.
   if (err instanceof HttpError) return err.status >= 500 || err.status === 429;
+  const code = nestedErrorCode(err);
+  if (code && PERMANENT_TLS_CODES.has(code)) return false;
   return true;
 }
 
@@ -37,18 +58,19 @@ function isTimeout(err: unknown): boolean {
 function describeError(err: unknown): string {
   if (err instanceof HttpError) return `HTTP ${err.status}`;
   if (isTimeout(err)) return "timeout";
-  return `network (${(err as Error)?.message ?? "error"})`;
+  const error = err as Error & { cause?: unknown };
+  const cause = error?.cause as Error | undefined;
+  const causeDetail = nestedErrorCode(error) ?? cause?.message;
+  return `network (${error?.message ?? "error"}${causeDetail ? `: ${causeDetail}` : ""})`;
 }
 
 /** Core fetch-with-retry; returns the raw Response (already status-checked). */
-async function fetchResilient(
-  url: string,
-  accept: string,
-  opts: FetchOptions,
-): Promise<Response> {
+async function fetchResilient(url: string, accept: string, opts: FetchOptions): Promise<Response> {
   const { timeoutMs = 30_000, retries = 3, headers = {}, method, body } = opts;
   let lastErr: unknown;
+  let attempts = 0;
   for (let attempt = 0; attempt <= retries; attempt++) {
+    attempts++;
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), timeoutMs);
     try {
@@ -62,7 +84,10 @@ async function fetchResilient(
       return res;
     } catch (err) {
       lastErr = err;
-      if (!retryable(err)) throw err;
+      if (!retryable(err)) {
+        if (err instanceof HttpError) throw err;
+        break;
+      }
       if (attempt < retries) {
         await sleep(250 * 2 ** attempt);
         continue;
@@ -75,12 +100,12 @@ async function fetchResilient(
   // 5xx/network failure so callers' health/gap messages name the real failure mode. The
   // original error is preserved as `cause` for stack-level debugging.
   if (isTimeout(lastErr)) {
-    throw new Error(`timeout after ${timeoutMs}ms over ${retries + 1} attempt(s) for ${url}`, {
+    throw new Error(`timeout after ${timeoutMs}ms over ${attempts} attempt(s) for ${url}`, {
       cause: lastErr,
     });
   }
   if (!(lastErr instanceof HttpError)) {
-    throw new Error(`${describeError(lastErr)} over ${retries + 1} attempt(s) for ${url}`, {
+    throw new Error(`${describeError(lastErr)} over ${attempts} attempt(s) for ${url}`, {
       cause: lastErr,
     });
   }

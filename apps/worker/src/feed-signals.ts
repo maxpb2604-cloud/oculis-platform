@@ -12,7 +12,7 @@ import {
   listRecentStatusEvents,
   type Database,
 } from "@oculis/db";
-import { extractCodes, type RawFeedItem } from "@oculis/scrapers";
+import type { RawFeedItem } from "@oculis/scrapers";
 
 export async function buildLegislativeSignals(
   db: Database,
@@ -22,25 +22,32 @@ export async function buildLegislativeSignals(
   const fromDate = new Date(Date.now() - sinceDays * 86_400_000).toISOString().slice(0, 10);
   const items: RawFeedItem[] = [];
 
-  // 1. Recent deposits → "Nueva iniciativa"
-  const deposits = await listRecentInitiatives(db, { limit: 60 });
+  // 1. Recent deposits. A filing date is date-only, so it stays in the factual
+  // summary instead of being converted into an invented publication timestamp.
+  const deposits = await listRecentInitiatives(db, { limit: 60, dateFrom: fromDate });
   for (const d of deposits) {
     items.push({
       source: "feed-legislative",
       sourceId: `deposit:${d.id}`,
       kind: "LEGISLATIVE",
-      title: `Nueva iniciativa: ${d.title}`,
-      summary: [d.code, d.category, d.status].filter(Boolean).join(" · ") || null,
+      title: `Iniciativa: ${d.title}`,
+      summary:
+        [d.code, d.filedAt ? `Fecha de depósito: ${d.filedAt}` : null, d.status]
+          .filter(Boolean)
+          .join(" · ") || null,
       imageUrl: null,
       url: d.sourceUrl ?? null,
       author: d.sponsor ?? null,
       handle: null,
       platform: "WEB",
-      category: d.category ?? null,
-      publishedAt: d.filedAt ? `${d.filedAt}T08:00:00.000Z` : null,
-      chamber: null,
+      category: null,
+      publishedAt: null,
+      chamber: d.chamber,
       initiativeCodes: d.code ? [d.code] : [],
-      raw: d,
+      raw: {
+        payload: d,
+        provenance: { process: "feed-legislative", evidence: "initiative row" },
+      },
     });
   }
 
@@ -53,18 +60,24 @@ export async function buildLegislativeSignals(
       source: "feed-legislative",
       sourceId: `activity:${a.id}`,
       kind: "LEGISLATIVE",
-      title: `${scopeLabel}: ${a.body ?? a.description.slice(0, 80)}`,
-      summary: a.description,
+      title: `${scopeLabel}: ${a.body ?? a.description}`,
+      summary:
+        [a.eventDate ? `Fecha oficial: ${a.eventDate}` : null, a.description]
+          .filter(Boolean)
+          .join(" · ") || null,
       imageUrl: null,
       url: a.agendaUrl ?? null,
       author: null,
       handle: null,
       platform: "WEB",
       category: null,
-      publishedAt: a.eventDate ? `${a.eventDate}T09:00:00.000Z` : null,
+      publishedAt: null,
       chamber: a.chamber ?? null,
-      initiativeCodes: extractCodes(a.description),
-      raw: a,
+      initiativeCodes: a.initiatives.map((initiative) => initiative.code),
+      raw: {
+        payload: a,
+        provenance: { process: "feed-legislative", evidence: "activity event" },
+      },
     });
   }
 
@@ -76,17 +89,33 @@ export async function buildLegislativeSignals(
       sourceId: `status:${s.id}`,
       kind: "LEGISLATIVE",
       title: `${s.title} → ${s.status}`,
-      summary: [s.code, s.status].filter(Boolean).join(" · ") || null,
+      summary:
+        [
+          s.code,
+          s.status,
+          s.eventDate ? `Fecha oficial: ${s.eventDate}` : `Observado por Oculis: ${s.observedAt}`,
+        ]
+          .filter(Boolean)
+          .join(" · ") || null,
       imageUrl: null,
-      url: null,
+      url: s.sourceUrl,
       author: null,
       handle: null,
       platform: "WEB",
-      category: s.category ?? null,
-      publishedAt: s.createdAt ?? (s.eventDate ? `${s.eventDate}T10:00:00.000Z` : null),
+      category: null,
+      publishedAt: null,
       chamber: s.chamber ?? null,
       initiativeCodes: s.code ? [s.code] : [],
-      raw: s,
+      raw: {
+        payload: s,
+        provenance: {
+          process: "feed-legislative",
+          evidence: s.evidenceType,
+          source: s.source,
+          sourceUrl: s.sourceUrl,
+          observedAt: s.observedAt,
+        },
+      },
     });
   }
 

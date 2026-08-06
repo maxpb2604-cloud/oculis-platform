@@ -2,7 +2,8 @@
  * Pluggable document storage backend.
  *
  * The official initiative PDFs ultimately live in the Ferdinand Herrera SharePoint
- * "DataBank", named `{code}.pdf`. To avoid blocking on SharePoint credentials, the
+ * "DataBank". Each archived filename includes the initiative code and source document
+ * id so several official files for one initiative remain distinct. To avoid blocking on SharePoint credentials, the
  * default backend writes to a local archive (app/.data/docs/) — and a SharePoint/Graph
  * backend can be dropped in later behind the same interface without touching callers.
  */
@@ -17,7 +18,7 @@ export interface DocStorage {
   has(code: string, ext: string): Promise<boolean>;
 }
 
-/** Local-filesystem backend (default). Files land in <dir>/{code}.{ext}. */
+/** Local-filesystem backend (default). Files land in <dir>/{document-key}.{ext}. */
 export class LocalDocStorage implements DocStorage {
   readonly kind = "local";
   constructor(private readonly dir: string = resolve(process.cwd(), ".data/docs")) {}

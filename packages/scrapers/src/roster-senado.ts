@@ -12,7 +12,7 @@
  * so province comes straight from the card's slug — no geocoding needed.
  */
 import { browserHeaders, fetchText } from "./http.js";
-import { normalizeCargo, type RawCommissionMembership, type RawLegislator, type RosterResult } from "./roster.js";
+import type { RawCommissionMembership, RawLegislator, RosterResult } from "./roster.js";
 
 const ORIGIN = "https://www.senadord.gob.do";
 const H = browserHeaders({ Referer: `${ORIGIN}/` });
@@ -61,8 +61,10 @@ interface Card {
 
 export class SenadoRosterAdapter {
   readonly source = "roster-senado";
+  private readonly profileCache = new Map<string, string>();
 
   async collect(): Promise<RosterResult> {
+    this.profileCache.clear();
     const gaps: string[] = [];
     const cards = await this.collectCards(gaps);
     const legislators: RawLegislator[] = [];
@@ -74,18 +76,19 @@ export class SenadoRosterAdapter {
       let photoUrl: string | null = null;
       let email: string | null = null;
       let phone: string | null = null;
-      let profession: string | null = null;
       try {
-        const html = await fetchText(url, { headers: H });
+        const html = this.profileCache.get(card.slug) ?? (await fetchText(url, { headers: H }));
+        this.profileCache.set(card.slug, html);
         const p = this.parseParty(html);
         party = p.party;
         partyShort = p.partyShort;
         photoUrl = parsePhoto(html);
         email = parseEmail(html);
         phone = parsePhone(html);
-        profession = parseProfession(html);
       } catch (e) {
-        gaps.push(`roster-senado: no se pudo leer la ficha de ${card.name} (${(e as Error).message}).`);
+        gaps.push(
+          `roster-senado: no se pudo leer la ficha de ${card.name} (${(e as Error).message}).`,
+        );
       }
       legislators.push({
         sourceId: card.slug,
@@ -97,31 +100,39 @@ export class SenadoRosterAdapter {
         party,
         partyShort,
         role: card.role,
-        representationLevel: "Provincial",
-        period: "2024-2028",
+        representationLevel: null,
+        period: null,
         photoUrl,
         email,
         phone,
-        profession,
+        profession: null,
         sourceUrl: url,
+        raw: {
+          provenance: {
+            sourceUrl: url,
+            rosterUrl: `${ORIGIN}/senadores/`,
+            provinceFromOfficialUrlSlug: card.slug,
+          },
+          explicit: { party, partyShort, role: card.role, email, phone, photoUrl },
+        },
       });
     }
     if (legislators.length < 32) {
-      gaps.push(`roster-senado: ${legislators.length} senadores (se esperan 32) — revisar la página /senadores/.`);
+      gaps.push(
+        `roster-senado: ${legislators.length} senadores; referencia constitucional esperada: 32.`,
+      );
     }
     const memberships = await this.collectMemberships(gaps);
-    // The committee page lists members by FULL legal name ("Ricardo De Los Santos Polanco")
-    // while the roster cards use a shorter form ("Ricardo De Los Santos"). Resolve each
-    // member to its senator card so the profile page can join committees by source id
-    // (a plain normalized-name match fails on the extra surnames). Senate committees are
-    // composed solely of senators, so every membership should resolve to one of the 32.
+    // A membership is linked to a profile only on one exact normalized full-name match.
     let unresolved = 0;
     for (const m of memberships) {
       m.legislatorSourceId = matchCardSlug(m.legislatorName, cards);
       if (!m.legislatorSourceId) unresolved++;
     }
     if (unresolved > 0) {
-      gaps.push(`roster-senado: ${unresolved} de ${memberships.length} membresías de comisión sin senador resuelto (revisar coincidencia de nombres).`);
+      gaps.push(
+        `roster-senado: ${unresolved} de ${memberships.length} membresías no tienen una coincidencia exacta y única de nombre; legislatorSourceId queda null.`,
+      );
     }
     return { legislators, memberships, gaps };
   }
@@ -151,7 +162,57 @@ export class SenadoRosterAdapter {
       }
       cards.push({ slug, name, role });
     }
-    if (cards.length === 0) gaps.push("roster-senado: 0 cards parseadas de /senadores/ — el selector pudo cambiar.");
+    if (cards.length >= 30) return cards;
+
+    gaps.push(
+      `roster-senado: ${cards.length} cards parseadas de /senadores/; usando respaldo de 32 fichas provinciales.`,
+    );
+    const fallback = await this.collectCardsFromProfiles(gaps);
+    const merged = new Map(fallback.map((card) => [card.slug, card]));
+    // Preserve directive-board roles from the index wherever that page still supplied one.
+    for (const card of cards) {
+      const recovered = merged.get(card.slug);
+      merged.set(card.slug, recovered ? { ...recovered, role: card.role ?? recovered.role } : card);
+    }
+    return [...merged.values()];
+  }
+
+  /**
+   * Stable fallback when the Divi cards index is broken: every Senate seat has a fixed
+   * province URL. Fetch those 32 official profiles in small batches and derive the name
+   * from their headings. The HTML is cached so the main enrichment pass does not refetch.
+   */
+  private async collectCardsFromProfiles(gaps: string[]): Promise<Card[]> {
+    const slugs = Object.keys(SLUG_TO_PROVINCE);
+    const cards: Card[] = [];
+    const failures: string[] = [];
+    const concurrency = 4;
+    for (let index = 0; index < slugs.length; index += concurrency) {
+      const batch = slugs.slice(index, index + concurrency);
+      const rows = await Promise.all(
+        batch.map(async (slug): Promise<Card | null> => {
+          try {
+            const html = await fetchText(`${ORIGIN}/provincia/${slug}/`, { headers: H });
+            this.profileCache.set(slug, html);
+            const name = parseProfileName(html);
+            if (!name) {
+              failures.push(`${slug}: nombre no encontrado`);
+              return null;
+            }
+            return { slug, name, role: null };
+          } catch (error) {
+            failures.push(`${slug}: ${(error as Error).message}`);
+            return null;
+          }
+        }),
+      );
+      cards.push(...rows.filter((row): row is Card => row !== null));
+    }
+    if (failures.length) {
+      gaps.push(
+        `roster-senado: fallaron ${failures.length} fichas del respaldo (${failures.slice(0, 3).join("; ")}${failures.length > 3 ? "; …" : ""}).`,
+      );
+    }
     return cards;
   }
 
@@ -185,15 +246,43 @@ export class SenadoRosterAdapter {
           commissionSourceId: null,
           legislatorName: memberName,
           legislatorSourceId: null,
-          cargo: normalizeCargo(lm[2] ?? null) ?? "Miembro",
+          cargo: lm[2]?.trim() || null,
           party: null,
           sourceUrl: url,
         });
       }
     }
-    if (out.length === 0) gaps.push("roster-senado: 0 miembros de comisión parseados — revisar la página de comisiones.");
+    if (out.length === 0)
+      gaps.push("roster-senado: la página devolvió 0 membresías de comisión parseables.");
     return out;
   }
+}
+
+/** Extract the senator's full name from a province profile without relying on Divi classes. */
+export function parseProfileName(html: string): string | null {
+  const candidates = [...html.matchAll(/<h[1-4]\b[^>]*>([\s\S]*?)<\/h[1-4]>/gi)]
+    .map((match) => {
+      const raw = stripTags(match[1]!).replace(/\s+/g, " ").trim();
+      const after = stripTags(
+        html.slice(
+          (match.index ?? 0) + match[0].length,
+          (match.index ?? 0) + match[0].length + 700,
+        ),
+      );
+      return { raw, after };
+    })
+    .filter(
+      ({ raw }) =>
+        raw.length >= 7 &&
+        raw.length <= 100 &&
+        raw.trim().split(/\s+/).length >= 2 &&
+        /^[\p{L}.'\- ]+$/u.test(raw) &&
+        !/senado|senador|república|provincia|oficina|partido|comisión|transparencia/i.test(raw),
+    );
+  const contextual = candidates.filter(({ after }) =>
+    /SENADOR(?:A)? DE LA REP[\u00daU]BLICA/i.test(after),
+  );
+  return contextual.length === 1 ? titleCase(contextual[0]!.raw) : null;
 }
 
 /**
@@ -206,7 +295,8 @@ function parsePhoto(html: string): string | null {
   let m: RegExpExecArray | null;
   while ((m = re.exec(html))) {
     const u = m[1]!;
-    if (/logo|bandera|escudo|placeholder|default|avatar|[/-]dsc[_-]|-\d+x\d+\.[a-z]+$/i.test(u)) continue;
+    if (/logo|bandera|escudo|placeholder|default|avatar|[/-]dsc[_-]|-\d+x\d+\.[a-z]+$/i.test(u))
+      continue;
     return u;
   }
   return null;
@@ -214,7 +304,7 @@ function parsePhoto(html: string): string | null {
 
 /** Province contact email (e.g. "santiago@senado.gob.do"), skipping the generic info@. */
 function parseEmail(html: string): string | null {
-  const re = /mailto:([A-Za-z0-9._%+\-]+@senado\.gob\.do)/gi;
+  const re = /mailto:([A-Za-z0-9._%+-]+@senado\.gob\.do)/gi;
   let m: RegExpExecArray | null;
   while ((m = re.exec(html))) {
     const e = m[1]!;
@@ -227,79 +317,29 @@ function parseEmail(html: string): string | null {
 /** Published contact phone ("Tel: (809) 532-5561"). The Senate publishes one switchboard
  *  number per province ficha — not a private line — so it is safe to surface. */
 function parsePhone(html: string): string | null {
-  const m = html.match(/Tel[:.]?\s*(\(?\d{3}\)?[\s.\-]?\d{3}[\s.\-]?\d{4})/);
+  const m = html.match(/Tel[:.]?\s*(\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4})/);
   return m ? m[1]!.replace(/\s+/g, " ").trim() : null;
 }
 
-/**
- * Profession/biography. The fichas carry no labelled "Profesión" field, only a free-form
- * biography that consistently opens with "Nació el…". We surface a trimmed excerpt of that
- * paragraph (the most reliable signal of background/profession), or null when absent.
- */
-function parseProfession(html: string): string | null {
-  const re = /et_pb_text_inner">([\s\S]*?)<\/div>/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(html))) {
-    const txt = stripTags(m[1]!).replace(/\s+/g, " ").trim();
-    // The bio paragraph reliably opens "Nació …" (note: JS \b is ASCII-only and won't
-    // anchor after the accented "ó", so match the following space explicitly).
-    if (/^Naci[oó]\s/.test(txt) && txt.length > 80) return txt.slice(0, 300).trim();
-  }
-  return null;
-}
-
-/** Connector words dropped when matching names (they carry no identity). */
-const NAME_STOPWORDS = new Set(["de", "del", "la", "las", "los", "y", "da", "do"]);
-
-/** Significant lowercased, accent-folded name tokens (given name + surnames). */
-export function nameTokens(s: string): string[] {
+/** Case/accent/punctuation folding only; no token dropping or fuzzy comparison. */
+export function normalizeRosterName(s: string): string {
   return s
     .toLowerCase()
     .normalize("NFD")
     .replace(/[̀-ͯ]/g, "")
     .replace(/[^a-z\s]/g, " ")
-    .split(/\s+/)
-    .filter((t) => t && !NAME_STOPWORDS.has(t));
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 /**
- * Resolve a committee member's full legal name to one of the senator cards (by slug).
- * Scores on overlapping significant tokens of length ≥3 (ignoring initials and connectors)
- * and requires at least 2 to match — typically a surname pair, which is highly specific
- * across only 32 senators. This tolerates given-name differences (a senator who goes by his
- * second name: card "Secundino Velázquez Pimentel" vs member "Augusto Velázquez Pimentel")
- * and spelling variants ("Ginnette"/"Ginette"). Returns null on an ambiguous tie so a single
- * shared surname can't mis-link.
+ * Resolve a committee membership only when its complete normalized name occurs once.
  */
 export function matchCardSlug(memberName: string, cards: Card[]): string | null {
-  const mTokens = nameTokens(memberName).filter((t) => t.length >= 3);
-  const mSet = new Set(mTokens);
-  if (mSet.size < 1) return null;
-  let best: string | null = null;
-  let bestScore = 0;
-  let tie = false;
-  for (const c of cards) {
-    const overlap = nameTokens(c.name).filter((t) => t.length >= 3 && mSet.has(t)).length;
-    if (overlap < 2) continue;
-    if (overlap > bestScore) {
-      bestScore = overlap;
-      best = c.slug;
-      tie = false;
-    } else if (overlap === bestScore) {
-      tie = true;
-    }
-  }
-  if (best) return tie ? null : best;
-  // Fallback for abbreviated/variant names (e.g. "Ginette A. Bournigal" vs card
-  // "Ginnette Altagracia Bournigal"): a single distinctive SURNAME (≥6 chars) that belongs
-  // to exactly one card is an unambiguous match. Skip the first token (the given name) so a
-  // common given name like "Antonio" can't trigger a false link.
-  for (const t of mTokens.slice(1)) {
-    if (t.length < 6) continue;
-    const owners = cards.filter((c) => nameTokens(c.name).includes(t));
-    if (owners.length === 1) return owners[0]!.slug;
-  }
-  return null;
+  const key = normalizeRosterName(memberName);
+  if (!key) return null;
+  const matches = cards.filter((card) => normalizeRosterName(card.name) === key);
+  return matches.length === 1 ? matches[0]!.slug : null;
 }
 
 function stripTags(s: string): string {
@@ -308,11 +348,21 @@ function stripTags(s: string): string {
 
 function decodeEntities(s: string): string {
   return s
-    .replace(/&aacute;/g, "á").replace(/&eacute;/g, "é").replace(/&iacute;/g, "í")
-    .replace(/&oacute;/g, "ó").replace(/&uacute;/g, "ú").replace(/&ntilde;/g, "ñ")
-    .replace(/&Aacute;/g, "Á").replace(/&Eacute;/g, "É").replace(/&Iacute;/g, "Í")
-    .replace(/&Oacute;/g, "Ó").replace(/&Uacute;/g, "Ú").replace(/&Ntilde;/g, "Ñ")
-    .replace(/&amp;/g, "&").replace(/&nbsp;/g, " ").replace(/&#8217;/g, "'");
+    .replace(/&aacute;/g, "á")
+    .replace(/&eacute;/g, "é")
+    .replace(/&iacute;/g, "í")
+    .replace(/&oacute;/g, "ó")
+    .replace(/&uacute;/g, "ú")
+    .replace(/&ntilde;/g, "ñ")
+    .replace(/&Aacute;/g, "Á")
+    .replace(/&Eacute;/g, "É")
+    .replace(/&Iacute;/g, "Í")
+    .replace(/&Oacute;/g, "Ó")
+    .replace(/&Uacute;/g, "Ú")
+    .replace(/&Ntilde;/g, "Ñ")
+    .replace(/&amp;/g, "&")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&#8217;/g, "'");
 }
 
 /** "RICARDO DE LOS SANTOS" → "Ricardo De Los Santos"; leaves already-mixed text alone. */
@@ -322,5 +372,5 @@ function titleCase(s: string): string {
   if (/\p{Ll}/u.test(trimmed)) return trimmed;
   return trimmed
     .toLowerCase()
-    .replace(/(^|[\s/.\-])(\p{L})/gu, (_, sep: string, c: string) => sep + c.toUpperCase());
+    .replace(/(^|[\s/.-])(\p{L})/gu, (_, sep: string, c: string) => sep + c.toUpperCase());
 }

@@ -12,6 +12,7 @@ APP_DIR="$(dirname "$SCRIPT_DIR")"
 cd "$APP_DIR"
 # node/postgres en el PATH cuando launchd corre sin shell interactivo (Mac Intel: /usr/local/bin)
 export PATH="/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:$PATH"
+export OCULIS_ENV="production"
 
 LOG_DIR="$APP_DIR/.data/logs"; mkdir -p "$LOG_DIR"
 LOG="$LOG_DIR/roster-$(date +%Y-%m-%d).log"
@@ -45,11 +46,21 @@ ensure_pg() {
 
 run() {
   log "--- $1 · $(date '+%H:%M:%S') ---"
-  npx tsx apps/worker/src/index.ts "${@:2}" >> "$LOG" 2>&1 \
-    || log "!! $1 terminó con error"
+  if npx --no-install tsx apps/worker/src/index.ts "${@:2}" >> "$LOG" 2>&1; then
+    log "OK: $1"
+  else
+    local status=$?
+    log "ERROR: $1 terminó con código $status"
+    return "$status"
+  fi
 }
 
 log "===== FHC roster run · $(date) ====="
 ensure_pg
-run "roster" --roster
-log "===== fin · $(date) ====="
+if run "roster" --roster; then
+  log "===== fin · $(date) · fallos=0 ====="
+else
+  status=$?
+  log "===== fin · $(date) · fallos=1 ====="
+  exit "$status"
+fi

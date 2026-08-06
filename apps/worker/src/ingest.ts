@@ -1,43 +1,42 @@
 /**
- * Ingestion pipeline: pull initiatives from a source adapter, enrich, categorize,
- * compute a real risk/approval score, and persist (upsert + status-event diff).
+ * Factual SIL ingestion pipeline.
+ *
+ * The worker persists only fields reported by the official source. It deliberately
+ * does not classify, score, predict, or convert agenda appearances into bill status.
  */
-import { score } from "@oculis/core";
 import {
-  countApprovedBySponsor,
+  beginIngestionRun,
   countInitiatives,
+  recordIngestionRun,
   recordStatusEvents,
-  saveScore,
   upsertInitiative,
   type Database,
   type NewInitiative,
 } from "@oculis/db";
 import type { RawInitiative } from "@oculis/scrapers";
 import { SilDiputadosAdapter } from "@oculis/scrapers";
-import {
-  composeScoreInputs,
-  derivePartyStrength,
-  deriveSponsorRecord,
-} from "./scoring-inputs.js";
-import { createScoreEstimator, type ScoreEstimator } from "./score.js";
-import { createCategorizer, type CategoryResult } from "./categorize.js";
 
 export interface IngestOptions {
-  limit?: number; // cap total records (dev runs)
-  maxPagesPerSlice?: number; // cap pages per (grupo × tipo) — sweep all categories cheaply
-  enrich?: boolean; // fetch sponsor/party/province/history per record
-  concurrency?: number; // records processed in parallel (enrich+categorize+score)
-  delayMs?: number; // politeness delay between record starts
+  limit?: number;
+  maxPagesPerSlice?: number;
+  /** Fetch the official sponsor and status-history endpoints for every row. */
+  enrich?: boolean;
+  concurrency?: number;
+  delayMs?: number;
   log?: (msg: string) => void;
 }
 
 export interface IngestSummary {
+  source: "sil-diputados";
+  ok: boolean;
+  outcome: "COMPLETE" | "PARTIAL" | "FAILED";
   seen: number;
   inserted: number;
   updated: number;
   statusChanges: number;
-  categorized: number;
+  enrichmentFailures: number;
   total: number;
+  error?: string;
 }
 
 export async function ingestSilDiputados(
@@ -53,144 +52,134 @@ export async function ingestSilDiputados(
     log = () => {},
   } = opts;
   const adapter = new SilDiputadosAdapter();
-  const categorizer = createCategorizer();
-  const estimator = createScoreEstimator();
-  log(
-    `  categorizer: ${categorizer.kind} · scorer: ${estimator.kind} · concurrency ${concurrency}`,
-  );
+  log(`  factual mode · concurrency ${concurrency}`);
 
   let seen = 0;
   let inserted = 0;
   let updated = 0;
   let statusChanges = 0;
-  let categorized = 0;
+  let enrichmentFailures = 0;
+  const enrichmentErrors: string[] = [];
+  const inFlight = new Set<Promise<void>>();
 
   async function processOne(base: RawInitiative): Promise<void> {
-    const raw = enrich ? await safeEnrich(adapter, base) : base;
-    const cat = await safeCategorize(categorizer, raw);
-    if (cat?.category) categorized++;
+    let raw = base;
+    let detailObserved = !enrich;
+    if (enrich) {
+      try {
+        raw = await adapter.enrich(base);
+        detailObserved = true;
+      } catch (error) {
+        enrichmentFailures++;
+        const message = `${base.sourceId}: ${(error as Error).message}`;
+        if (enrichmentErrors.length < 10) enrichmentErrors.push(message);
+        log(`    ⚠ enrichment failed ${message}`);
+      }
+    }
 
-    const res = await upsertInitiative(db, toRow(raw, cat));
-    await scoreInitiative(db, estimator, {
-      id: res.id,
-      title: raw.title,
-      purpose: raw.purpose,
-      sponsor: raw.sponsor,
-      party: raw.party,
-      category: cat?.category ?? raw.sourceCategory,
-    });
-
+    const res = await upsertInitiative(
+      db,
+      toInitiativeRow(raw, { preserveDetailFields: enrich && !detailObserved }),
+    );
+    let historyInserted = 0;
     if (raw.history.length) {
-      statusChanges += await recordStatusEvents(
+      historyInserted = await recordStatusEvents(
         db,
         res.id,
-        raw.history.map((h) => ({ status: h.status, date: h.date, note: h.note })),
+        raw.history.map((event) => ({
+          status: event.status,
+          date: event.date,
+          note: event.note,
+          source: raw.source,
+          sourceUrl: raw.sourceUrl,
+          evidenceType: "SOURCE_HISTORY",
+          raw: event.raw,
+        })),
       );
+      statusChanges += historyInserted;
     }
     if (res.inserted) inserted++;
     else {
       updated++;
-      if (res.statusChanged) statusChanges++;
+      if (res.statusChanged && historyInserted === 0) statusChanges++;
     }
   }
 
-  // bounded-concurrency pool over the streamed records
-  const inFlight = new Set<Promise<void>>();
-  for await (const base of adapter.list({ maxPagesPerSlice })) {
-    if (seen >= limit) break;
-    seen++;
-    const p = processOne(base).finally(() => inFlight.delete(p));
-    inFlight.add(p);
-    if (seen % 25 === 0) log(`  …${seen} dispatched`);
-    if (inFlight.size >= concurrency) await Promise.race(inFlight);
-    if (delayMs) await sleep(delayMs);
-  }
-  await Promise.all(inFlight);
-
-  return {
-    seen,
-    inserted,
-    updated,
-    statusChanges,
-    categorized,
-    total: await countInitiatives(db),
-  };
-}
-
-export interface ScorableInput {
-  id: number;
-  title: string;
-  purpose: string | null;
-  sponsor: string | null;
-  party: string | null;
-  category: string | null;
-}
-
-/**
- * Compute and persist a real risk/approval score for one initiative:
- * derive party strength + sponsor track record, estimate the judgment inputs
- * (Claude/heuristic), run the ported Excel formulas, and save score + provenance.
- * Shared by ingestion and the `--rescore` command. Returns the resulting risk level.
- */
-export async function scoreInitiative(
-  db: Database,
-  estimator: ScoreEstimator,
-  row: ScorableInput,
-): Promise<string | null> {
+  const runId = await beginIngestionRun(db, adapter.source, {
+    mode: enrich ? "OFFICIAL_DETAIL_AND_HISTORY" : "OFFICIAL_LIST_ONLY",
+  });
   try {
-    const partyStrength = derivePartyStrength(row.party);
-    const approved = await countApprovedBySponsor(db, row.sponsor);
-    const sponsorRecord = deriveSponsorRecord(approved);
-    const estimate = await estimator.estimate({
-      title: row.title,
-      purpose: row.purpose,
-      sponsor: row.sponsor,
-      party: row.party,
-      category: row.category,
-      partyStrength,
+    for await (const base of adapter.list({ maxPagesPerSlice })) {
+      if (seen >= limit) break;
+      seen++;
+      const task = processOne(base).finally(() => inFlight.delete(task));
+      inFlight.add(task);
+      if (seen % 25 === 0) log(`  …${seen} dispatched`);
+      if (inFlight.size >= concurrency) await Promise.race(inFlight);
+      if (delayMs) await sleep(delayMs);
+    }
+    await Promise.all(inFlight);
+
+    const ok = enrichmentFailures === 0;
+    const outcome = ok ? "COMPLETE" : "PARTIAL";
+    const error = ok ? undefined : `${enrichmentFailures} initiative enrichment request(s) failed`;
+    await recordIngestionRun(db, {
+      source: adapter.source,
+      runId,
+      seen,
+      inserted,
+      updated,
+      statusChanges,
+      ok,
+      outcome,
+      error,
+      details: {
+        mode: enrich ? "OFFICIAL_DETAIL_AND_HISTORY" : "OFFICIAL_LIST_ONLY",
+        maxPagesPerSlice: Number.isFinite(maxPagesPerSlice) ? maxPagesPerSlice : null,
+        enrichmentFailures,
+        failureExamples: enrichmentErrors,
+      },
     });
-    const inputs = composeScoreInputs(partyStrength, sponsorRecord, estimate);
-    const scored = score(inputs);
-    await saveScore(db, row.id, scored, inputs, {
-      ...inputs,
-      sponsorApprovedCount: approved,
-      estimatedBy: estimate.by,
-      rationale: estimate.rationale,
-      confidence: estimate.confidence,
+    return {
+      source: adapter.source,
+      ok,
+      outcome,
+      seen,
+      inserted,
+      updated,
+      statusChanges,
+      enrichmentFailures,
+      total: await countInitiatives(db),
+      ...(error ? { error } : {}),
+    };
+  } catch (error) {
+    await Promise.allSettled(inFlight);
+    const message = (error as Error).message;
+    await recordIngestionRun(db, {
+      source: adapter.source,
+      runId,
+      seen,
+      inserted,
+      updated,
+      statusChanges,
+      ok: false,
+      error: message,
+      details: {
+        mode: enrich ? "OFFICIAL_DETAIL_AND_HISTORY" : "OFFICIAL_LIST_ONLY",
+        enrichmentFailures,
+        failureExamples: enrichmentErrors,
+      },
     });
-    return scored.riskLevel;
-  } catch {
-    return null; // scoring is best-effort; a row simply stays unscored
+    throw error;
   }
 }
 
-async function safeEnrich(
-  adapter: SilDiputadosAdapter,
-  base: RawInitiative,
-): Promise<RawInitiative> {
-  try {
-    return await adapter.enrich(base);
-  } catch {
-    return base; // enrichment is best-effort; never block ingestion on it
-  }
-}
-
-async function safeCategorize(
-  categorizer: ReturnType<typeof createCategorizer>,
+/** Map source fields without deriving a normalized category or prediction. */
+export function toInitiativeRow(
   raw: RawInitiative,
-): Promise<CategoryResult | null> {
-  try {
-    return await categorizer.categorize({
-      title: raw.title,
-      sourceCategory: raw.sourceCategory,
-      purpose: raw.purpose,
-    });
-  } catch {
-    return null; // categorization is best-effort; leave uncategorized for review
-  }
-}
-
-function toRow(raw: RawInitiative, cat: CategoryResult | null): NewInitiative {
+  opts: { preserveDetailFields?: boolean } = {},
+): NewInitiative {
+  const preserve = opts.preserveDetailFields === true;
   return {
     source: raw.source,
     sourceId: raw.sourceId,
@@ -202,22 +191,20 @@ function toRow(raw: RawInitiative, cat: CategoryResult | null): NewInitiative {
     status: raw.status,
     chamber: raw.chamber,
     sourceCategory: raw.sourceCategory,
-    category: cat?.category ?? null,
-    categoryConfidence: cat?.confidence ?? null,
-    sponsor: raw.sponsor,
-    party: raw.party,
-    province: raw.province,
+    category: null,
+    // A failed optional detail request is not evidence that previously observed
+    // sponsor facts disappeared. `undefined` tells the repository to retain them.
+    sponsor: preserve ? undefined : raw.sponsor,
+    party: preserve ? undefined : raw.party,
+    province: preserve ? undefined : raw.province,
     committee: raw.committee,
     filedAt: raw.filedAt,
     expiresAt: raw.expiresAt,
     sourceUrl: raw.sourceUrl,
-    // Score is computed + saved separately (scoreInitiative). Rows stay flagged for
-    // analyst review until the AI-estimated judgment inputs are confirmed.
-    needsReview: true,
-    raw: raw.raw as unknown,
+    raw: preserve ? undefined : (raw.raw as unknown),
   };
 }
 
 function sleep(ms: number) {
-  return new Promise((r) => setTimeout(r, ms));
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }

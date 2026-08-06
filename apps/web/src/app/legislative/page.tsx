@@ -16,9 +16,13 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ l
       <KpiBand lang={lang} data={data} />
       <ChartGrid lang={lang} data={data} />
       <p className="mt-6 text-center text-xs" style={{ color: "var(--text-muted)" }}>
-        {lang === "es"
-          ? "Haga clic en cualquier barra o segmento para ver las iniciativas correspondientes."
-          : "Click any bar or segment to view the matching initiatives."}
+        {data.byStatus.length > 0
+          ? lang === "es"
+            ? "Haga clic en un segmento para ver las iniciativas con ese estado informado."
+            : "Click a segment to view initiatives with that reported status."
+          : lang === "es"
+            ? "Esta conexión todavía no contiene estados informados por una fuente."
+            : "This connection does not yet contain source-reported statuses."}
       </p>
     </AppShell>
   );

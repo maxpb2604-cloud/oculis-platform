@@ -5,6 +5,12 @@ on:
     # 06:15, 14:15 and 22:15 in Santo Domingo (UTC-4).
     # Three short runs per day keep usage inside GitHub Free's monthly allowance.
     - cron: "15 2,10,18 * * *"
+    # 02:45 Santo Domingo: refresh initiative slices, regulations and recent official publications.
+    - cron: "45 6 * * *"
+    # Monday 03:30 Santo Domingo: refresh both congressional rosters.
+    - cron: "30 7 * * 1"
+    # Sunday 04:15 Santo Domingo: sweep histories, both corpora and complete documentary collections.
+    - cron: "15 8 * * 0"
   workflow_dispatch:
     inputs:
       mode:
@@ -14,6 +20,12 @@ on:
         type: choice
         options:
           - daily
+          - maintenance
+          - roster
+          - movements
+          - publications
+          - senate-corpus
+          - documents
           - bootstrap
 
 permissions:
@@ -26,19 +38,18 @@ concurrency:
 jobs:
   ingest:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 120
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
-      OCULIS_USE_CLAUDE: "0"
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       - name: Install dependencies
@@ -48,21 +59,130 @@ jobs:
         run: test -n "$DATABASE_URL"
 
       - name: Run scheduled monitoring
-        if: github.event_name == 'schedule' || inputs.mode == 'daily'
+        if: >-
+          (github.event_name == 'schedule' && github.event.schedule == '15 2,10,18 * * *') ||
+          (github.event_name == 'workflow_dispatch' && inputs.mode == 'daily')
         run: npm run daily -w @oculis/worker
 
-      - name: Bootstrap initiatives
-        if: github.event_name == 'workflow_dispatch' && inputs.mode == 'bootstrap'
-        run: npm run ingest -w @oculis/worker
+      - name: Refresh recent initiative slices
+        id: maintenance_initiatives
+        if: >-
+          (github.event_name == 'schedule' && github.event.schedule == '45 6 * * *') ||
+          (github.event_name == 'workflow_dispatch' && inputs.mode == 'maintenance')
+        run: npm run crawl -w @oculis/worker
 
-      - name: Bootstrap roster
+      - name: Refresh regulatory sources
+        id: maintenance_regulatory
+        if: >-
+          (success() || steps.maintenance_initiatives.outcome == 'failure') &&
+          ((github.event_name == 'schedule' && github.event.schedule == '45 6 * * *') ||
+          (github.event_name == 'workflow_dispatch' && inputs.mode == 'maintenance'))
+        run: npm run ingest -w @oculis/worker -- --regulatory
+
+      - name: Refresh document metadata for recent initiatives
+        id: maintenance_documents
+        if: >-
+          (success() || steps.maintenance_initiatives.outcome == 'failure' || steps.maintenance_regulatory.outcome == 'failure') &&
+          ((github.event_name == 'schedule' && github.event.schedule == '45 6 * * *') ||
+          (github.event_name == 'workflow_dispatch' && inputs.mode == 'maintenance'))
+        run: npm run ingest -w @oculis/worker -- --documents --limit 500
+
+      - name: Refresh official congressional publications
+        id: maintenance_publications
+        if: >-
+          (success() || steps.maintenance_initiatives.outcome == 'failure' || steps.maintenance_regulatory.outcome == 'failure' || steps.maintenance_documents.outcome == 'failure') &&
+          ((github.event_name == 'schedule' && github.event.schedule == '45 6 * * *') ||
+          (github.event_name == 'workflow_dispatch' && (inputs.mode == 'maintenance' || inputs.mode == 'publications')))
+        run: npm run publications -w @oculis/worker -- --limit 3
+
+      - name: Refresh complete Diputados corpus
+        id: weekly_dip_corpus
+        if: >-
+          (github.event_name == 'schedule' && github.event.schedule == '15 8 * * 0') ||
+          (github.event_name == 'workflow_dispatch' && inputs.mode == 'movements')
+        run: npm run crawl:corpus -w @oculis/worker
+
+      - name: Refresh official Diputados status histories
+        id: weekly_movements
+        if: >-
+          (success() || steps.weekly_dip_corpus.outcome == 'failure') &&
+          ((github.event_name == 'schedule' && github.event.schedule == '15 8 * * 0') ||
+          (github.event_name == 'workflow_dispatch' && inputs.mode == 'movements'))
+        run: npm run movements -w @oculis/worker
+
+      - name: Refresh complete configured Senate collection
+        id: weekly_senate_corpus
+        if: >-
+          (success() || steps.weekly_dip_corpus.outcome == 'failure' || steps.weekly_movements.outcome == 'failure') &&
+          ((github.event_name == 'schedule' && github.event.schedule == '15 8 * * 0') ||
+          (github.event_name == 'workflow_dispatch' && inputs.mode == 'senate-corpus'))
+        run: npm run senate:corpus -w @oculis/worker
+
+      - name: Sweep all Diputados document metadata
+        id: weekly_documents
+        if: >-
+          (success() || steps.weekly_dip_corpus.outcome == 'failure' || steps.weekly_movements.outcome == 'failure' || steps.weekly_senate_corpus.outcome == 'failure') &&
+          github.event_name == 'schedule' && github.event.schedule == '15 8 * * 0'
+        run: npm run ingest -w @oculis/worker -- --documents
+
+      - name: Sweep complete official congressional publications
+        id: weekly_publications
+        if: >-
+          (success() || steps.weekly_dip_corpus.outcome == 'failure' || steps.weekly_movements.outcome == 'failure' || steps.weekly_senate_corpus.outcome == 'failure' || steps.weekly_documents.outcome == 'failure') &&
+          github.event_name == 'schedule' && github.event.schedule == '15 8 * * 0'
+        run: npm run publications -w @oculis/worker -- --full
+
+      - name: Bootstrap initiatives
+        id: bootstrap_initiatives
         if: github.event_name == 'workflow_dispatch' && inputs.mode == 'bootstrap'
+        run: npm run crawl:full -w @oculis/worker
+
+      - name: Bootstrap Senate collection
+        id: bootstrap_senate
+        if: >-
+          (success() || steps.bootstrap_initiatives.outcome == 'failure') &&
+          github.event_name == 'workflow_dispatch' && inputs.mode == 'bootstrap'
+        run: npm run senate:corpus -w @oculis/worker
+
+      - name: Refresh all document metadata
+        id: bootstrap_documents
+        if: >-
+          (success() || steps.bootstrap_initiatives.outcome == 'failure' || steps.bootstrap_senate.outcome == 'failure') &&
+          ((github.event_name == 'workflow_dispatch' && inputs.mode == 'bootstrap') ||
+          (github.event_name == 'workflow_dispatch' && inputs.mode == 'documents'))
+        run: npm run ingest -w @oculis/worker -- --documents
+
+      - name: Refresh congressional roster
+        id: roster
+        if: >-
+          (success() || steps.bootstrap_initiatives.outcome == 'failure' || steps.bootstrap_senate.outcome == 'failure' || steps.bootstrap_documents.outcome == 'failure') &&
+          ((github.event_name == 'schedule' && github.event.schedule == '30 7 * * 1') ||
+          (github.event_name == 'workflow_dispatch' && (inputs.mode == 'roster' || inputs.mode == 'bootstrap')))
         run: npm run roster -w @oculis/worker
 
       - name: Bootstrap regulatory sources
-        if: github.event_name == 'workflow_dispatch' && inputs.mode == 'bootstrap'
+        id: bootstrap_regulatory
+        if: >-
+          (success() || steps.bootstrap_initiatives.outcome == 'failure' || steps.bootstrap_senate.outcome == 'failure' || steps.bootstrap_documents.outcome == 'failure' || steps.roster.outcome == 'failure') &&
+          github.event_name == 'workflow_dispatch' && inputs.mode == 'bootstrap'
         run: npm run ingest -w @oculis/worker -- --regulatory
 
+      - name: Seed verified institutional accounts
+        id: bootstrap_accounts
+        if: >-
+          (success() || steps.bootstrap_initiatives.outcome == 'failure' || steps.bootstrap_senate.outcome == 'failure' || steps.bootstrap_documents.outcome == 'failure' || steps.roster.outcome == 'failure' || steps.bootstrap_regulatory.outcome == 'failure') &&
+          github.event_name == 'workflow_dispatch' && inputs.mode == 'bootstrap'
+        run: npm run seed-accounts -w @oculis/worker
+
+      - name: Bootstrap official congressional publications
+        id: bootstrap_publications
+        if: >-
+          (success() || steps.bootstrap_initiatives.outcome == 'failure' || steps.bootstrap_senate.outcome == 'failure' || steps.bootstrap_documents.outcome == 'failure' || steps.roster.outcome == 'failure' || steps.bootstrap_regulatory.outcome == 'failure' || steps.bootstrap_accounts.outcome == 'failure') &&
+          github.event_name == 'workflow_dispatch' && inputs.mode == 'bootstrap'
+        run: npm run publications -w @oculis/worker -- --full
+
       - name: Finish bootstrap with current activity and feed
-        if: github.event_name == 'workflow_dispatch' && inputs.mode == 'bootstrap'
+        if: >-
+          (success() || steps.bootstrap_initiatives.outcome == 'failure' || steps.bootstrap_senate.outcome == 'failure' || steps.bootstrap_documents.outcome == 'failure' || steps.roster.outcome == 'failure' || steps.bootstrap_regulatory.outcome == 'failure' || steps.bootstrap_accounts.outcome == 'failure' || steps.bootstrap_publications.outcome == 'failure') &&
+          github.event_name == 'workflow_dispatch' && inputs.mode == 'bootstrap'
         run: npm run daily -w @oculis/worker

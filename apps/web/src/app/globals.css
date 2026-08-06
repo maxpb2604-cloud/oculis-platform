@@ -6,7 +6,7 @@
 /*
  * Oculis Auribus — Ferdinand Herrera Consultants. Consulting-grade design system.
  * Editorial serif display (Source Serif 4) + clean grotesque (Inter) for data.
- * Restrained ink/paper palette, FHC-blue accent, muted semantic risk tones.
+ * Restrained ink/paper palette, FHC-blue accent, and muted verification tones.
  */
 @theme {
   --font-serif: "Source Serif 4", Georgia, "Times New Roman", serif;
@@ -21,6 +21,7 @@
 }
 
 :root {
+  color-scheme: light;
   --bg: #f5f6f4;
   --surface: #ffffff;
   --surface-2: #f0f2f0;
@@ -31,21 +32,18 @@
   --accent: #1565a8;
   --accent-soft: #e7f1fa;
 
-  --risk-alto: #b23b34;
-  --risk-medio: #b07d2a;
-  --risk-bajo: #2e7d57;
-  --risk-alto-soft: #f6e7e6;
-  --risk-medio-soft: #f6eedb;
-  --risk-bajo-soft: #e4f1ea;
+  --verified: #2e7d57;
+  --verified-soft: #e4f1ea;
 
   --danger: #b23b34;
   --danger-soft: #f6e7e6;
-  --warn: #b07d2a;
+  --warn: #7d5515;
   --warn-soft: #f6eedb;
 
   --modal-overlay: rgba(17, 32, 26, 0.45);
 }
 .dark {
+  color-scheme: dark;
   --bg: #080b0a;
   --surface: #0e1413;
   --surface-2: #141b19;
@@ -56,12 +54,8 @@
   --accent: #4aa3e0;
   --accent-soft: #0e2a42;
 
-  --risk-alto: #d9655d;
-  --risk-medio: #d2a24a;
-  --risk-bajo: #4cb185;
-  --risk-alto-soft: #241715;
-  --risk-medio-soft: #241f12;
-  --risk-bajo-soft: #112019;
+  --verified: #4cb185;
+  --verified-soft: #112019;
 
   --danger: #d9655d;
   --danger-soft: #241715;
@@ -81,6 +75,7 @@
 
 html,
 body {
+  min-height: 100%;
   background: var(--bg);
   color: var(--text);
   font-family: var(--font-sans);
@@ -118,6 +113,20 @@ body {
   box-shadow:
     0 1px 2px rgba(16, 32, 26, 0.04),
     0 8px 24px -16px rgba(16, 32, 26, 0.18);
+}
+
+/* Lightweight background used before hydration and on compact/reduced-motion devices. */
+.mesh-background-fallback {
+  background:
+    radial-gradient(circle at 18% 20%, rgba(255, 255, 255, 0.9), transparent 34%),
+    radial-gradient(circle at 82% 12%, rgba(191, 227, 255, 0.8), transparent 38%),
+    linear-gradient(145deg, #dcefff, #b9dcf5 55%, #eef8ff);
+}
+.dark .mesh-background-fallback {
+  background:
+    radial-gradient(circle at 20% 18%, rgba(20, 82, 160, 0.72), transparent 36%),
+    radial-gradient(circle at 82% 10%, rgba(15, 42, 95, 0.86), transparent 40%),
+    linear-gradient(145deg, #06101f, #0d326f 58%, #07101f);
 }
 
 /* Loading placeholder shimmer (feed pagination skeletons). */

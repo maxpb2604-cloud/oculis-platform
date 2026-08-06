@@ -1,24 +1,16 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { CATEGORY_LABELS, type Category } from "@oculis/core";
 import { type Lang } from "@/lib/i18n";
 import { FeedBillSearch } from "@/components/feed-bill-search";
 
-interface Facets {
-  categories: string[];
-  kinds: string[];
-}
-
-/** Left column: kind / topic / chamber / search filters + the active-entity filter chip. */
+/** Left column: source kind, chamber, and active-entity filters. */
 export function FeedFilters({
   lang,
-  facets,
   active,
   activeLabel,
 }: {
   lang: Lang;
-  facets: Facets;
   active: Record<string, string | undefined>;
   activeLabel?: string;
 }) {
@@ -63,11 +55,11 @@ export function FeedFilters({
               onClick={() =>
                 navigate({ initiativeCode: null, legislatorSourceId: null, commissionName: null })
               }
-              className="shrink-0 rounded px-1.5 text-sm"
+              className="shrink-0 rounded px-2 py-1 text-[11px] font-semibold"
               style={{ color: "var(--text-muted)", cursor: "pointer" }}
               aria-label={es ? "Quitar filtro" : "Clear filter"}
             >
-              ✕
+              {es ? "Quitar" : "Clear"}
             </button>
           </div>
         </div>
@@ -93,7 +85,9 @@ export function FeedFilters({
             return (
               <button
                 key={kd.val || "all"}
+                type="button"
                 onClick={() => navigate({ kind: kd.val || null })}
+                aria-pressed={on}
                 className="rounded-md px-2.5 py-1.5 text-left text-[13px] transition-colors hover:bg-[var(--surface-2)]"
                 style={{
                   background: on ? "var(--accent-soft)" : "transparent",
@@ -110,18 +104,12 @@ export function FeedFilters({
       </div>
 
       <div className="card p-3">
-        <div className="eyebrow mb-2">{es ? "Tema" : "Topic"}</div>
+        <label htmlFor="feed-chamber" className="eyebrow mb-2 block">
+          {es ? "Cámara" : "Chamber"}
+        </label>
         <Select
-          value={sp.get("category") ?? ""}
-          onChange={(v) => navigate({ category: v || null })}
-          all={es ? "Todos" : "All"}
-          options={facets.categories.map((c) => ({
-            value: c,
-            label: CATEGORY_LABELS[c as Category] ?? c,
-          }))}
-        />
-        <div className="eyebrow mb-2 mt-3">{es ? "Cámara" : "Chamber"}</div>
-        <Select
+          id="feed-chamber"
+          label={es ? "Filtrar por cámara" : "Filter by chamber"}
           value={sp.get("chamber") ?? ""}
           onChange={(v) => navigate({ chamber: v || null })}
           all={es ? "Ambas" : "Both"}
@@ -136,11 +124,15 @@ export function FeedFilters({
 }
 
 function Select({
+  id,
+  label,
   value,
   onChange,
   all,
   options,
 }: {
+  id: string;
+  label: string;
   value: string;
   onChange: (v: string) => void;
   all: string;
@@ -148,6 +140,8 @@ function Select({
 }) {
   return (
     <select
+      id={id}
+      aria-label={label}
       value={value}
       onChange={(e) => onChange(e.target.value)}
       className="w-full rounded-lg px-2.5 py-1.5 text-[13px] outline-none"

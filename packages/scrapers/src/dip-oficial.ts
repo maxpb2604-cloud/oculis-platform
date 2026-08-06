@@ -33,7 +33,11 @@ export interface OrdenDelDiaRef {
 /** Parse session type/number/date out of a download filename. */
 export function parseOrdenFileName(url: string): OrdenDelDiaRef {
   const fileName = decodeURIComponent(url.split("/").pop() ?? "");
-  const type = /extraordinaria/i.test(fileName) ? "extraordinaria" : /ordinaria/i.test(fileName) ? "ordinaria" : null;
+  const type = /extraordinaria/i.test(fileName)
+    ? "extraordinaria"
+    : /ordinaria/i.test(fileName)
+      ? "ordinaria"
+      : null;
   const num = fileName.match(/no-?(\d{4,5})/i)?.[1] ?? null;
   const dm = fileName.match(/(\d{1,2})-de-([a-zñ]+)-de-(\d{4})/i);
   let date: string | null = null;
@@ -41,7 +45,13 @@ export function parseOrdenFileName(url: string): OrdenDelDiaRef {
     const mm = spanishMonthToNum(dm[2]);
     if (mm) date = buildISODate(dm[1]!, mm, dm[3]!);
   }
-  return { url, fileName, sessionType: type, sessionNumber: num ? String(Number(num)) : null, date };
+  return {
+    url,
+    fileName,
+    sessionType: type,
+    sessionNumber: num ? String(Number(num)) : null,
+    date,
+  };
 }
 
 export interface DipOficialResult {
@@ -60,9 +70,9 @@ export class DipOficialAdapter {
     const html = await fetchText(this.listUrl, { timeoutMs: 25_000 });
     const urls = [
       ...new Set(
-        [...html.matchAll(/href="(https:\/\/camaradediputados\.gob\.do\/download\/[^"]+\.pdf)"/gi)].map(
-          (m) => m[1]!,
-        ),
+        [
+          ...html.matchAll(/href="(https:\/\/camaradediputados\.gob\.do\/download\/[^"]+\.pdf)"/gi),
+        ].map((m) => m[1]!),
       ),
     ];
     return urls.map(parseOrdenFileName);
@@ -85,14 +95,16 @@ export class DipOficialAdapter {
       try {
         const { text } = await fetchPdfText(ref.url);
         codes = extractCodes(text);
-        statuses = detectReadingStatuses(text);
+        statuses = extractProceduralMentions(text);
       } catch {
         parseFailures++; // keep the agenda item; the PDF link still works for analysts
       }
-      const label = `Pleno — Sesión ${ref.sessionType ?? ""} No. ${ref.sessionNumber ?? "?"}`.replace(/\s+/g, " ").trim();
-      // dedupeKey must distinguish distinct sessions: an extraordinaria and an
-      // ordinaria can share a number, and numbers repeat across legislatures.
-      const dedupeKey = `dip-pleno|${ref.sessionType ?? "?"}|${ref.date ?? ref.fileName}|${ref.sessionNumber ?? "?"}`;
+      const label = `Pleno — Sesión ${ref.sessionType ?? ""} No. ${ref.sessionNumber ?? "?"}`
+        .replace(/\s+/g, " ")
+        .trim();
+      // The official PDF URL is the exact source-record identity. Same-day sessions or
+      // re-uploads remain distinct instead of being merged by parsed date/number.
+      const dedupeKey = `dip-pleno|${ref.url}`;
       events.push({
         source: this.source,
         scope: "PLENARY",
@@ -105,12 +117,20 @@ export class DipOficialAdapter {
         statuses,
         initiativeCodes: codes,
         dedupeKey,
-        raw: { ref, statuses },
+        raw: {
+          payload: { ref, proceduralMentions: statuses },
+          provenance: { sourceUrl: this.listUrl, documentUrl: ref.url },
+        },
       });
     }
 
+    if (refs.length === 0) {
+      throw new Error(`Diputados official agenda page returned 0 PDF links: ${this.listUrl}`);
+    }
     const gaps = parseFailures
-      ? [`Diputados oficial · ${parseFailures} de ${refs.length} PDF(s) de orden del día no se pudieron leer.`]
+      ? [
+          `Diputados oficial · ${parseFailures} de ${refs.length} PDF(s) de orden del día no se pudieron leer.`,
+        ]
       : [];
     return { events, gaps };
   }
@@ -121,12 +141,17 @@ export class DipOficialAdapter {
   }
 }
 
-/** Which reading-statuses appear in an orden-del-día PDF (Spanish labels). */
-export function detectReadingStatuses(text: string): string[] {
+/**
+ * Which procedural mentions appear in an orden-del-día PDF.
+ *
+ * An agenda schedules a reading; it is not evidence that the chamber approved the item.
+ * Keep these labels neutral and reserve "Aprobado" for minutes/vote-result sources.
+ */
+export function extractProceduralMentions(text: string): string[] {
   const found = new Set<string>();
-  if (/primera lectura/i.test(text)) found.add("Aprobado 1ra lectura");
-  if (/segunda lectura/i.test(text)) found.add("Aprobado 2da lectura");
-  if (/única lectura|unica lectura/i.test(text)) found.add("Aprobado única lectura");
+  if (/primera lectura/i.test(text)) found.add("Primera lectura");
+  if (/segunda lectura/i.test(text)) found.add("Segunda lectura");
+  if (/única lectura|unica lectura/i.test(text)) found.add("Única lectura");
   if (/declarad[ao] de urgencia/i.test(text)) found.add("Declarado de urgencia");
   if (/tomad[ao] en consideraci/i.test(text)) found.add("Tomado en consideración");
   return [...found];

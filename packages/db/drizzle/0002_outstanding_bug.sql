@@ -1,0 +1,1 @@
+CREATE INDEX "feed_items_chronology_idx" ON "feed_items" USING btree (coalesce("published_at", "first_seen_at") desc,"id" DESC NULLS LAST);

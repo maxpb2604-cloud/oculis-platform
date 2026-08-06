@@ -1,0 +1,2 @@
+CREATE UNIQUE INDEX "status_events_null_date_uq" ON "status_events" USING btree ("initiative_id","status") WHERE "status_events"."event_date" is null;--> statement-breakpoint
+ALTER TABLE "score_inputs" ADD CONSTRAINT "score_inputs_social_pressure_count_check" CHECK ("score_inputs"."social_pressure_count" is null or "score_inputs"."social_pressure_count" >= 0);

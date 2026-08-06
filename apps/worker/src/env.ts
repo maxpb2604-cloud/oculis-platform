@@ -1,6 +1,6 @@
 /**
  * Minimal .env loader (no dependency). Loads the monorepo-root .env so the worker
- * picks up ANTHROPIC_API_KEY / OCULIS_* / DATABASE_URL without exporting them in the shell.
+ * picks up DATABASE_URL and operational settings without exporting them in the shell.
  * Existing process.env values win (so CLI/env overrides still work).
  */
 import { existsSync, readFileSync } from "node:fs";

@@ -6,8 +6,19 @@
 /** Spanish month → 2-digit number, keyed by the first 3 letters (handles both
  *  "junio" and "jun"). Includes the DR-common "set/setiembre" spelling of Sept. */
 export const MONTHS_ES: Record<string, string> = {
-  ene: "01", feb: "02", mar: "03", abr: "04", may: "05", jun: "06",
-  jul: "07", ago: "08", sep: "09", set: "09", oct: "10", nov: "11", dic: "12",
+  ene: "01",
+  feb: "02",
+  mar: "03",
+  abr: "04",
+  may: "05",
+  jun: "06",
+  jul: "07",
+  ago: "08",
+  sep: "09",
+  set: "09",
+  oct: "10",
+  nov: "11",
+  dic: "12",
 };
 
 /** Resolve a Spanish month name (full or abbreviated) to "01".."12", or null. */
@@ -31,5 +42,19 @@ export function buildISODate(
   const y = Number(year);
   if (!Number.isInteger(d) || !Number.isInteger(m) || !Number.isInteger(y)) return null;
   if (m < 1 || m > 12 || d < 1 || d > 31 || y < 1900 || y > 2100) return null;
+  const exact = new Date(Date.UTC(y, m - 1, d));
+  if (exact.getUTCFullYear() !== y || exact.getUTCMonth() !== m - 1 || exact.getUTCDate() !== d) {
+    return null;
+  }
   return `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+}
+
+/**
+ * Extract a validated date only when the source value starts with an ISO calendar
+ * date. A timestamp separator may follow; arbitrary suffixes and impossible dates
+ * are rejected instead of being truncated into apparently valid evidence.
+ */
+export function extractLeadingISODate(value: string | null | undefined): string | null {
+  const match = value?.match(/^(\d{4})-(\d{2})-(\d{2})(?=$|[T\s])/);
+  return match ? buildISODate(match[3]!, match[2]!, match[1]!) : null;
 }

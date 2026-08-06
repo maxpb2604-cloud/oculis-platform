@@ -18,7 +18,7 @@
     launchctl load   ~/Library/LaunchAgents/com.fhc.monitoring.roster.plist
 
   Correr ahora (prueba manual):  launchctl start com.fhc.monitoring.roster
-  Logs:                          app/.data/logs/ (roster-YYYY-MM-DD.log + launchd.roster.*.log)
+  Logs:                          .data/logs/ (roster-YYYY-MM-DD.log + launchd.roster.*.log)
   Detener:                       launchctl unload ~/Library/LaunchAgents/com.fhc.monitoring.roster.plist
 -->
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -29,7 +29,7 @@
     <key>ProgramArguments</key>
     <array>
         <string>/bin/bash</string>
-        <string>/Users/emilpenabautista/Oculis Auribus/app/scripts/roster-run.sh</string>
+        <string>/Users/maxpena/Documents/Oculis/scripts/roster-run.sh</string>
     </array>
     <key>StartCalendarInterval</key>
     <array>
@@ -38,8 +38,8 @@
     <key>RunAtLoad</key>
     <false/>
     <key>StandardOutPath</key>
-    <string>/Users/emilpenabautista/Oculis Auribus/app/.data/logs/launchd.roster.out.log</string>
+    <string>/Users/maxpena/Documents/Oculis/.data/logs/launchd.roster.out.log</string>
     <key>StandardErrorPath</key>
-    <string>/Users/emilpenabautista/Oculis Auribus/app/.data/logs/launchd.roster.err.log</string>
+    <string>/Users/maxpena/Documents/Oculis/.data/logs/launchd.roster.err.log</string>
 </dict>
 </plist>

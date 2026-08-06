@@ -1,11 +1,170 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
 import { langQuery, type Lang } from "@/lib/i18n";
 
 /** Left module rail — brand, real navigation, user footer. */
 export function Sidebar({ lang }: { lang: Lang }) {
+  return (
+    <aside
+      className="sticky top-0 hidden h-dvh w-[244px] shrink-0 flex-col justify-between border-r px-4 py-5 lg:flex"
+      style={{ background: "var(--surface)" }}
+    >
+      <div>
+        <Brand lang={lang} />
+        <Navigation lang={lang} />
+      </div>
+      <ConsultantCard />
+    </aside>
+  );
+}
+
+/** Compact navigation drawer for tablet and mobile layouts. */
+export function MobileNavigation({ lang }: { lang: Lang }) {
+  const [open, setOpen] = useState(false);
+  const closeRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const previous = document.activeElement as HTMLElement | null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    closeRef.current?.focus();
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setOpen(false);
+        return;
+      }
+      if (event.key !== "Tab") return;
+
+      const focusable = Array.from(
+        panelRef.current?.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ) ?? [],
+      ).filter((element) => !element.hasAttribute("hidden"));
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (!first || !last) return;
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      document.body.style.overflow = previousOverflow;
+      previous?.focus();
+    };
+  }, [open]);
+
+  const label = lang === "es" ? "Menú" : "Menu";
+  return (
+    <>
+      <button
+        type="button"
+        aria-controls="mobile-navigation"
+        aria-expanded={open}
+        onClick={() => setOpen(true)}
+        className="inline-flex min-h-9 items-center justify-center rounded-lg border px-3 text-xs font-semibold transition-colors hover:bg-[var(--surface-2)] lg:hidden"
+      >
+        {label}
+      </button>
+
+      {open && (
+        <div className="fixed inset-0 z-[60] lg:hidden">
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/55"
+            aria-label={lang === "es" ? "Cerrar navegación" : "Close navigation"}
+            onClick={() => setOpen(false)}
+          />
+          <aside
+            ref={panelRef}
+            id="mobile-navigation"
+            role="dialog"
+            aria-modal="true"
+            aria-label={lang === "es" ? "Navegación principal" : "Main navigation"}
+            className="relative flex h-dvh w-[min(88vw,340px)] flex-col justify-between overflow-y-auto border-r px-4 py-5 shadow-2xl"
+            style={{ background: "var(--surface)" }}
+          >
+            <div>
+              <div className="mb-4 flex items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <Brand lang={lang} compact />
+                </div>
+                <button
+                  ref={closeRef}
+                  type="button"
+                  onClick={() => setOpen(false)}
+                  className="min-h-9 shrink-0 rounded-lg border px-3 text-xs font-semibold transition-colors hover:bg-[var(--surface-2)]"
+                >
+                  {lang === "es" ? "Cerrar" : "Close"}
+                </button>
+              </div>
+              <Navigation lang={lang} onNavigate={() => setOpen(false)} />
+            </div>
+            <ConsultantCard />
+          </aside>
+        </div>
+      )}
+    </>
+  );
+}
+
+function Brand({ lang, compact = false }: { lang: Lang; compact?: boolean }) {
+  const q = langQuery(lang);
+  return (
+    <div className="px-1">
+      {!compact && (
+        <Link href={`/${q}`} className="block">
+          <div className="rounded-lg bg-white p-2.5 ring-1 ring-black/5">
+            <Image
+              src="/fhc-logo.jpg"
+              alt="Ferdinand Herrera Consultants"
+              width={2362}
+              height={827}
+              sizes="212px"
+              priority
+              className="h-auto w-full"
+            />
+          </div>
+        </Link>
+      )}
+      <Link
+        href={`/${q}`}
+        className={`${compact ? "mt-0" : "mt-3"} flex items-center gap-2 rounded-lg p-1 transition-colors hover:bg-[var(--surface-2)]`}
+      >
+        <span className="h-9 w-9 shrink-0 overflow-hidden" aria-hidden="true">
+          <Image
+            src="/oculis-mark.png"
+            alt=""
+            width={1119}
+            height={474}
+            sizes="40px"
+            className="h-9 w-[85px] max-w-none object-contain object-left"
+          />
+        </span>
+        <span className="min-w-0 leading-tight">
+          <span className="serif block text-[18px] font-semibold tracking-tight">Oculis Auribus</span>
+          <span className="eyebrow mt-0.5 block">
+            {lang === "es" ? "Monitoreo Legislativo · Regulatorio" : "Legislative · Regulatory Monitoring"}
+          </span>
+        </span>
+      </Link>
+    </div>
+  );
+}
+
+function Navigation({ lang, onNavigate }: { lang: Lang; onNavigate?: () => void }) {
   const pathname = usePathname();
   const q = langQuery(lang);
 
@@ -28,84 +187,70 @@ export function Sidebar({ lang }: { lang: Lang }) {
         { href: "/regulatorio/consultas", label: lang === "es" ? "Consultas públicas" : "Public consultations", icon: IconMegaphone, match: (p: string) => p.startsWith("/regulatorio/consultas") },
       ],
     },
+    {
+      title: lang === "es" ? "Operación" : "Operations",
+      items: [
+        {
+          href: "/estado-fuentes",
+          label: lang === "es" ? "Estado de fuentes" : "Source status",
+          icon: IconDatabase,
+          match: (p: string) => p.startsWith("/estado-fuentes"),
+        },
+      ],
+    },
   ];
 
   return (
-    <aside
-      className="sticky top-0 hidden h-dvh w-[244px] shrink-0 flex-col justify-between border-r px-4 py-5 lg:flex"
-      style={{ background: "var(--surface)" }}
-    >
-      <div>
-        <div className="px-1">
-          {/* Official Ferdinand Herrera Consultants logo → home. White plate so it reads in light + dark. */}
-          <Link href={`/${q}`} className="block" style={{ cursor: "pointer" }}>
-            <div className="rounded-lg bg-white p-2.5 ring-1 ring-black/5">
-              <img src="/fhc-logo.jpg" alt="Ferdinand Herrera Consultants" className="w-full" />
-            </div>
-          </Link>
-          {/* Oculis Auribus — primary platform brand → home. Blue icon adapts to light + dark. */}
-          <Link
-            href={`/${q}`}
-            className="mt-3 flex items-center gap-2 rounded-lg p-1 transition-colors hover:bg-[var(--surface-2)]"
-            style={{ cursor: "pointer" }}
-          >
-            <img src="/oculis-mark.png" alt="Oculis Auribus" className="h-7 w-7 shrink-0 object-contain" />
-            <div className="leading-tight">
-              <div className="serif text-[18px] font-semibold tracking-tight">Oculis Auribus</div>
-              <div className="eyebrow mt-0.5">
-                {lang === "es" ? "Monitoreo Legislativo · Regulatorio" : "Legislative · Regulatory Monitoring"}
-              </div>
-            </div>
-          </Link>
+    <nav className="mt-7 flex flex-col gap-0.5" aria-label={lang === "es" ? "Principal" : "Primary"}>
+      {groups.map((g) => (
+        <div key={g.title} className="mb-3">
+          <div className="eyebrow px-2 pb-2">{g.title}</div>
+          {g.items.map((n) => {
+            const active = n.match(pathname);
+            return (
+              <Link
+                key={n.href}
+                href={`${n.href}${q}`}
+                aria-current={active ? "page" : undefined}
+                onClick={onNavigate}
+                className="group flex min-h-10 items-center gap-3 rounded-lg px-2.5 py-2 text-sm transition-colors hover:bg-[var(--surface-2)]"
+                style={{
+                  color: active ? "var(--text)" : "var(--text-muted)",
+                  background: active ? "var(--accent-soft)" : "transparent",
+                  fontWeight: active ? 600 : 500,
+                  boxShadow: active ? "inset 2px 0 0 var(--accent)" : "none",
+                }}
+              >
+                <n.icon active={active} />
+                {n.label}
+              </Link>
+            );
+          })}
         </div>
+      ))}
+    </nav>
+  );
+}
 
-        <nav className="mt-7 flex flex-col gap-0.5">
-          {groups.map((g) => (
-            <div key={g.title} className="mb-3">
-              <div className="eyebrow px-2 pb-2">{g.title}</div>
-              {g.items.map((n) => {
-                const active = n.match(pathname);
-                return (
-                  <Link
-                    key={n.href}
-                    href={`${n.href}${q}`}
-                    aria-current={active ? "page" : undefined}
-                    className="group flex items-center gap-3 rounded-lg px-2.5 py-2 text-sm transition-colors hover:bg-[var(--surface-2)]"
-                    style={{
-                      cursor: "pointer",
-                      color: active ? "var(--text)" : "var(--text-muted)",
-                      background: active ? "var(--accent-soft)" : "transparent",
-                      fontWeight: active ? 600 : 500,
-                      boxShadow: active ? "inset 2px 0 0 var(--accent)" : "none",
-                    }}
-                  >
-                    <n.icon active={active} />
-                    {n.label}
-                  </Link>
-                );
-              })}
-            </div>
-          ))}
-        </nav>
-      </div>
-
-      <div className="rounded-lg border p-3" style={{ background: "var(--surface-2)" }}>
-        <div className="flex items-center gap-2.5">
-          <div
-            className="flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold text-white"
-            style={{ background: "var(--accent)" }}
-          >
-            FH
-          </div>
-          <div className="min-w-0 leading-tight">
-            <div className="truncate text-sm font-medium">Ferdinand Herrera</div>
-            <div className="truncate text-[11px]" style={{ color: "var(--text-muted)" }}>
-              Consultores
-            </div>
+function ConsultantCard() {
+  return (
+    <div className="rounded-lg border p-3" style={{ background: "var(--surface-2)" }}>
+      <div className="flex items-center gap-2.5">
+        <div
+          className="flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold text-white"
+          style={{ background: "var(--accent)" }}
+          aria-hidden="true"
+        >
+          FH
+        </div>
+        <div className="min-w-0 leading-tight">
+          <div className="truncate text-sm font-medium">Ferdinand Herrera</div>
+          <div className="truncate text-[11px]" style={{ color: "var(--text-muted)" }}>
+            Consultores
           </div>
         </div>
       </div>
-    </aside>
+    </div>
   );
 }
 
@@ -139,4 +284,7 @@ function IconMegaphone({ active }: { active?: boolean }) {
 }
 function IconUsers({ active }: { active?: boolean }) {
   return (<svg {...ico(active)} viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" /></svg>);
+}
+function IconDatabase({ active }: { active?: boolean }) {
+  return (<svg {...ico(active)} viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="8" ry="3" /><path d="M4 5v7c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 12v7c0 1.7 3.6 3 8 3s8-1.3 8-3v-7" /></svg>);
 }

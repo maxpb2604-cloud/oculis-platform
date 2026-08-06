@@ -6,26 +6,52 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  test:
-    name: typecheck & test
+  verify:
+    name: lint, typecheck, test & build
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CI: "true"
+      NEXT_TELEMETRY_DISABLED: "1"
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       - name: Install dependencies
         run: npm ci
 
+      - name: Enforce factual-data policy
+        run: npm run check:factual
+
+      - name: Lint
+        run: npm run lint
+
       - name: Typecheck (all workspaces)
-        run: npm run typecheck --workspaces --if-present
+        run: npm run typecheck
 
       - name: Run tests (all workspaces)
-        run: npm run test --workspaces --if-present
+        run: npm test
+
+      - name: Build
+        env:
+          # Never connect CI builds to a real database. PGlite is isolated, disposable,
+          # and bootstrapped explicitly because Next renders server components at build time.
+          DB_DRIVER: pglite
+          PGLITE_DIR: ${{ github.workspace }}/.next-ci/pglite
+          OCULIS_AUTO_MIGRATE: "1"
+        run: npm run build

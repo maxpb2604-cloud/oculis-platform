@@ -12,6 +12,7 @@ import { drizzle as drizzlePglite } from "drizzle-orm/pglite";
 import { PGlite } from "@electric-sql/pglite";
 import { sql } from "drizzle-orm";
 import { mkdirSync } from "node:fs";
+import { isAbsolute, resolve } from "node:path";
 import pg from "pg";
 import * as schema from "./schema.js";
 
@@ -39,7 +40,15 @@ export interface DbHandle {
 export function createDb(): DbHandle {
   const url = process.env.DATABASE_URL;
   if (url) {
-    const pool = new pg.Pool({ connectionString: url });
+    const configuredMax = Number(process.env.PG_POOL_MAX ?? 5);
+    const pool = new pg.Pool({
+      connectionString: url,
+      max: Number.isSafeInteger(configuredMax) && configuredMax > 0 ? configuredMax : 5,
+      idleTimeoutMillis: 30_000,
+      connectionTimeoutMillis: 10_000,
+      allowExitOnIdle: true,
+      application_name: process.env.OCULIS_DB_APP_NAME ?? "oculis",
+    });
     const db = makeDrizzle("pg", pool);
     return {
       db,
@@ -47,9 +56,17 @@ export function createDb(): DbHandle {
       close: () => pool.end(),
     };
   }
+  const production =
+    process.env.NODE_ENV === "production" || process.env.OCULIS_ENV === "production";
+  if (production && process.env.DB_DRIVER !== "pglite") {
+    throw new Error(
+      "DATABASE_URL is required in production. Set DB_DRIVER=pglite only for an intentional embedded deployment.",
+    );
+  }
   const dir = process.env.PGLITE_DIR;
-  if (dir) mkdirSync(dir, { recursive: true }); // PGlite's own mkdir isn't recursive
-  const client = new PGlite(dir); // undefined => in-memory
+  const resolvedDir = dir ? (isAbsolute(dir) ? dir : resolve(process.cwd(), dir)) : undefined;
+  if (resolvedDir) mkdirSync(resolvedDir, { recursive: true }); // PGlite's own mkdir isn't recursive
+  const client = new PGlite(resolvedDir); // undefined => in-memory
   const db = makeDrizzle("pglite", client);
   return {
     db,
@@ -92,7 +109,7 @@ const DDL: string[] = [
       risk_level text,
       approval_probability text,
       approval_score integer,
-      needs_review boolean NOT NULL DEFAULT true,
+      needs_review boolean NOT NULL DEFAULT false,
       published boolean NOT NULL DEFAULT false,
       raw jsonb,
       first_seen_at timestamp NOT NULL DEFAULT now(),
@@ -100,8 +117,7 @@ const DDL: string[] = [
       updated_at timestamp NOT NULL DEFAULT now()
     )`,
   `CREATE UNIQUE INDEX IF NOT EXISTS initiatives_source_source_id_uq ON initiatives (source, source_id)`,
-  `CREATE INDEX IF NOT EXISTS initiatives_category_idx ON initiatives (category)`,
-  `CREATE INDEX IF NOT EXISTS initiatives_risk_idx ON initiatives (risk_level)`,
+  `CREATE INDEX IF NOT EXISTS initiatives_source_category_idx ON initiatives (source_category)`,
   `CREATE INDEX IF NOT EXISTS initiatives_chamber_idx ON initiatives (chamber)`,
   `CREATE INDEX IF NOT EXISTS initiatives_filed_at_idx ON initiatives (filed_at)`,
   `ALTER TABLE initiatives ADD COLUMN IF NOT EXISTS sponsor_role text`,
@@ -113,9 +129,46 @@ const DDL: string[] = [
       status text NOT NULL,
       event_date text,
       note text,
+      source text NOT NULL,
+      source_url text,
+      evidence_type text NOT NULL DEFAULT 'SOURCE_HISTORY',
+      raw jsonb,
+      observed_at timestamp NOT NULL DEFAULT now(),
       created_at timestamp NOT NULL DEFAULT now()
     )`,
-  `CREATE UNIQUE INDEX IF NOT EXISTS status_events_uq ON status_events (initiative_id, status, event_date)`,
+  `ALTER TABLE status_events ADD COLUMN IF NOT EXISTS source text`,
+  `ALTER TABLE status_events ADD COLUMN IF NOT EXISTS source_url text`,
+  `ALTER TABLE status_events ADD COLUMN IF NOT EXISTS evidence_type text NOT NULL DEFAULT 'SOURCE_HISTORY'`,
+  `ALTER TABLE status_events ADD COLUMN IF NOT EXISTS raw jsonb`,
+  `ALTER TABLE status_events ADD COLUMN IF NOT EXISTS observed_at timestamp`,
+  `UPDATE status_events
+      SET source = 'legacy-unattributed',
+          source_url = NULL,
+          evidence_type = 'LEGACY_UNATTRIBUTED',
+          observed_at = coalesce(observed_at, created_at)
+    WHERE source IS NULL`,
+  `UPDATE status_events
+      SET source = 'legacy-unattributed', source_url = NULL,
+          evidence_type = 'LEGACY_UNATTRIBUTED'
+    WHERE evidence_type = 'SOURCE_HISTORY' AND raw IS NULL`,
+  `ALTER TABLE status_events ALTER COLUMN source SET NOT NULL`,
+  `ALTER TABLE status_events ALTER COLUMN observed_at SET DEFAULT now()`,
+  `ALTER TABLE status_events ALTER COLUMN observed_at SET NOT NULL`,
+  `DROP INDEX IF EXISTS status_events_uq`,
+  `DROP INDEX IF EXISTS status_events_null_date_uq`,
+  `DROP INDEX IF EXISTS status_events_evidence_uq`,
+  `DROP INDEX IF EXISTS status_events_evidence_null_date_uq`,
+  `DROP INDEX IF EXISTS status_events_source_dated_uq`,
+  `DROP INDEX IF EXISTS status_events_source_undated_uq`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS status_events_source_dated_uq
+     ON status_events (initiative_id, status, event_date, evidence_type, source, coalesce(source_url, ''))
+     WHERE evidence_type = 'SOURCE_HISTORY' AND event_date IS NOT NULL`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS status_events_source_undated_uq
+     ON status_events (initiative_id, status, evidence_type, source, coalesce(source_url, ''))
+     WHERE evidence_type = 'SOURCE_HISTORY' AND event_date IS NULL`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS status_events_observed_uq
+     ON status_events (initiative_id, status, observed_at, evidence_type)
+     WHERE evidence_type = 'OBSERVED_CHANGE'`,
   `CREATE INDEX IF NOT EXISTS status_events_initiative_idx ON status_events (initiative_id)`,
   `
     CREATE TABLE IF NOT EXISTS score_inputs (
@@ -138,12 +191,25 @@ const DDL: string[] = [
      END IF;
    END $$`,
   `
+    CREATE TABLE IF NOT EXISTS inference_audit (
+      id serial PRIMARY KEY,
+      entity_type text NOT NULL,
+      entity_id integer NOT NULL,
+      inference_kind text NOT NULL,
+      value jsonb NOT NULL,
+      provenance jsonb,
+      archived_at timestamp NOT NULL DEFAULT now()
+    )`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS inference_audit_entity_kind_uq ON inference_audit (entity_type, entity_id, inference_kind)`,
+  `CREATE INDEX IF NOT EXISTS inference_audit_entity_idx ON inference_audit (entity_type, entity_id)`,
+  `
     CREATE TABLE IF NOT EXISTS activity_events (
       id serial PRIMARY KEY,
       source text NOT NULL,
       scope text NOT NULL,
       chamber text,
       event_date text,
+      event_time text,
       kind text,
       body text,
       description text NOT NULL,
@@ -155,6 +221,7 @@ const DDL: string[] = [
       last_seen_at timestamp NOT NULL DEFAULT now()
     )`,
   `ALTER TABLE activity_events ADD COLUMN IF NOT EXISTS chamber text`,
+  `ALTER TABLE activity_events ADD COLUMN IF NOT EXISTS event_time text`,
   `ALTER TABLE activity_events ADD COLUMN IF NOT EXISTS agenda_url text`,
   `ALTER TABLE activity_events ADD COLUMN IF NOT EXISTS statuses jsonb`,
   `CREATE UNIQUE INDEX IF NOT EXISTS activity_events_dedupe_uq ON activity_events (source, dedupe_key)`,
@@ -201,6 +268,7 @@ const DDL: string[] = [
       phone text,
       profession text,
       source_url text,
+      active boolean NOT NULL DEFAULT true,
       raw jsonb,
       first_seen_at timestamp NOT NULL DEFAULT now(),
       last_seen_at timestamp NOT NULL DEFAULT now(),
@@ -209,6 +277,7 @@ const DDL: string[] = [
   `CREATE UNIQUE INDEX IF NOT EXISTS legislators_source_uq ON legislators (source, source_id)`,
   `CREATE INDEX IF NOT EXISTS legislators_chamber_idx ON legislators (chamber)`,
   `CREATE INDEX IF NOT EXISTS legislators_province_idx ON legislators (province)`,
+  `ALTER TABLE legislators ADD COLUMN IF NOT EXISTS active boolean NOT NULL DEFAULT true`,
   `
     CREATE TABLE IF NOT EXISTS commission_members (
       id serial PRIMARY KEY,
@@ -221,11 +290,13 @@ const DDL: string[] = [
       cargo text,
       party text,
       source_url text,
+      active boolean NOT NULL DEFAULT true,
       updated_at timestamp NOT NULL DEFAULT now()
     )`,
   `CREATE UNIQUE INDEX IF NOT EXISTS commission_members_uq ON commission_members (source, commission_name, legislator_name)`,
   `CREATE INDEX IF NOT EXISTS commission_members_commission_idx ON commission_members (commission_name)`,
   `CREATE INDEX IF NOT EXISTS commission_members_chamber_idx ON commission_members (chamber)`,
+  `ALTER TABLE commission_members ADD COLUMN IF NOT EXISTS active boolean NOT NULL DEFAULT true`,
   `
     CREATE TABLE IF NOT EXISTS documents (
       id serial PRIMARY KEY,
@@ -236,9 +307,19 @@ const DDL: string[] = [
       extension text,
       url text,
       uploaded_at text,
+      modified_at text,
+      source_category text,
+      source_fragment text,
       source_doc_id text,
-      first_seen_at timestamp NOT NULL DEFAULT now()
+      raw jsonb,
+      first_seen_at timestamp NOT NULL DEFAULT now(),
+      last_seen_at timestamp NOT NULL DEFAULT now()
     )`,
+  `ALTER TABLE documents ADD COLUMN IF NOT EXISTS modified_at text`,
+  `ALTER TABLE documents ADD COLUMN IF NOT EXISTS source_category text`,
+  `ALTER TABLE documents ADD COLUMN IF NOT EXISTS source_fragment text`,
+  `ALTER TABLE documents ADD COLUMN IF NOT EXISTS raw jsonb`,
+  `ALTER TABLE documents ADD COLUMN IF NOT EXISTS last_seen_at timestamp NOT NULL DEFAULT now()`,
   `CREATE UNIQUE INDEX IF NOT EXISTS documents_uq ON documents (source, source_doc_id)`,
   `CREATE INDEX IF NOT EXISTS documents_initiative_idx ON documents (initiative_id)`,
   `CREATE INDEX IF NOT EXISTS documents_code_idx ON documents (initiative_code)`,
@@ -252,21 +333,27 @@ const DDL: string[] = [
       title text NOT NULL,
       purpose text,
       status text,
+      source_category text,
       intervention_level text,
       category text,
       province text,
-      is_consulta boolean NOT NULL DEFAULT false,
+      is_consulta boolean,
       published_at text,
       deadline text,
       url text,
-      needs_review boolean NOT NULL DEFAULT true,
+      needs_review boolean NOT NULL DEFAULT false,
       raw jsonb,
       first_seen_at timestamp NOT NULL DEFAULT now(),
-      last_seen_at timestamp NOT NULL DEFAULT now()
+      last_seen_at timestamp NOT NULL DEFAULT now(),
+      updated_at timestamp NOT NULL DEFAULT now()
     )`,
+  `ALTER TABLE regulations ADD COLUMN IF NOT EXISTS updated_at timestamp NOT NULL DEFAULT now()`,
+  `ALTER TABLE regulations ADD COLUMN IF NOT EXISTS source_category text`,
+  `ALTER TABLE regulations ALTER COLUMN is_consulta DROP DEFAULT`,
+  `ALTER TABLE regulations ALTER COLUMN is_consulta DROP NOT NULL`,
   `CREATE UNIQUE INDEX IF NOT EXISTS regulations_source_uq ON regulations (source, source_id)`,
   `CREATE INDEX IF NOT EXISTS regulations_institution_idx ON regulations (institution)`,
-  `CREATE INDEX IF NOT EXISTS regulations_intervention_idx ON regulations (intervention_level)`,
+  `CREATE INDEX IF NOT EXISTS regulations_source_category_idx ON regulations (source_category)`,
   `CREATE INDEX IF NOT EXISTS regulations_consulta_idx ON regulations (is_consulta)`,
   `
     CREATE TABLE IF NOT EXISTS ingestion_runs (
@@ -310,8 +397,8 @@ const DDL: string[] = [
     )`,
   `CREATE UNIQUE INDEX IF NOT EXISTS feed_items_source_uq ON feed_items (source, source_id)`,
   `CREATE INDEX IF NOT EXISTS feed_items_published_idx ON feed_items (published_at DESC)`,
+  `CREATE INDEX IF NOT EXISTS feed_items_chronology_idx ON feed_items (coalesce(published_at, first_seen_at) DESC, id DESC)`,
   `CREATE INDEX IF NOT EXISTS feed_items_kind_idx ON feed_items (kind)`,
-  `CREATE INDEX IF NOT EXISTS feed_items_category_idx ON feed_items (category)`,
   `CREATE INDEX IF NOT EXISTS feed_items_initiative_idx ON feed_items (initiative_id)`,
   `CREATE INDEX IF NOT EXISTS feed_items_legislator_idx ON feed_items (legislator_source_id)`,
   `
@@ -349,4 +436,103 @@ const DDL: string[] = [
   `CREATE INDEX IF NOT EXISTS feed_accounts_kind_idx ON feed_accounts (kind)`,
   `CREATE INDEX IF NOT EXISTS feed_accounts_active_idx ON feed_accounts (active)`,
   `CREATE INDEX IF NOT EXISTS feed_accounts_legislator_idx ON feed_accounts (legislator_source_id)`,
+  `INSERT INTO inference_audit (entity_type, entity_id, inference_kind, value, provenance)
+   SELECT 'initiative', id, 'legacy_inference',
+          jsonb_build_object(
+            'category', category,
+            'categoryConfidence', category_confidence,
+            'riskLevel', risk_level,
+            'approvalProbability', approval_probability,
+            'approvalScore', approval_score,
+            'needsReview', needs_review,
+            'published', published
+          ),
+          jsonb_build_object('source', source, 'sourceCategory', source_category, 'sourceUrl', source_url)
+     FROM initiatives
+    WHERE category IS NOT NULL OR category_confidence IS NOT NULL OR risk_level IS NOT NULL
+       OR approval_probability IS NOT NULL OR approval_score IS NOT NULL
+       OR needs_review = true OR published = true
+   ON CONFLICT (entity_type, entity_id, inference_kind) DO UPDATE
+     SET value = excluded.value, provenance = excluded.provenance, archived_at = now()`,
+  `INSERT INTO inference_audit (entity_type, entity_id, inference_kind, value, provenance)
+   SELECT 'initiative', initiative_id, 'legacy_score_inputs',
+          jsonb_build_object(
+            'party', party,
+            'sponsorRecord', sponsor_record,
+            'executiveSupport', executive_support,
+            'stakeholderSupport', stakeholder_support,
+            'socialPressureCount', social_pressure_count
+          ), provenance
+     FROM score_inputs
+   ON CONFLICT (entity_type, entity_id, inference_kind) DO UPDATE
+     SET value = excluded.value, provenance = excluded.provenance, archived_at = now()`,
+  `INSERT INTO inference_audit (entity_type, entity_id, inference_kind, value, provenance)
+   SELECT 'regulation', id, 'legacy_inference',
+          jsonb_build_object('interventionLevel', intervention_level, 'category', category, 'needsReview', needs_review),
+          jsonb_build_object('source', source, 'sourceUrl', url)
+     FROM regulations
+    WHERE intervention_level IS NOT NULL OR category IS NOT NULL OR needs_review = true
+   ON CONFLICT (entity_type, entity_id, inference_kind) DO UPDATE
+     SET value = excluded.value, provenance = excluded.provenance, archived_at = now()`,
+  `INSERT INTO inference_audit (entity_type, entity_id, inference_kind, value, provenance)
+   SELECT 'feed_item', id, 'legacy_category', jsonb_build_object('category', category),
+          jsonb_build_object('source', source, 'sourceUrl', url)
+     FROM feed_items WHERE category IS NOT NULL
+   ON CONFLICT (entity_type, entity_id, inference_kind) DO UPDATE
+     SET value = excluded.value, provenance = excluded.provenance, archived_at = now()`,
+  `INSERT INTO inference_audit (entity_type, entity_id, inference_kind, value, provenance)
+   SELECT 'feed_account', id, 'legacy_influence_rank', jsonb_build_object('influenceRank', influence_rank),
+          jsonb_build_object('platform', platform, 'handle', handle, 'url', url)
+     FROM feed_accounts WHERE influence_rank IS NOT NULL
+   ON CONFLICT (entity_type, entity_id, inference_kind) DO UPDATE
+     SET value = excluded.value, provenance = excluded.provenance, archived_at = now()`,
+  `UPDATE initiatives
+      SET category = NULL, category_confidence = NULL, risk_level = NULL,
+          approval_probability = NULL, approval_score = NULL,
+          needs_review = false, published = false
+    WHERE category IS NOT NULL OR category_confidence IS NOT NULL OR risk_level IS NOT NULL
+       OR approval_probability IS NOT NULL OR approval_score IS NOT NULL
+       OR needs_review = true OR published = true`,
+  `DELETE FROM score_inputs`,
+  `UPDATE regulations SET intervention_level = NULL, category = NULL, needs_review = false
+    WHERE intervention_level IS NOT NULL OR category IS NOT NULL OR needs_review = true`,
+  `UPDATE feed_items SET category = NULL WHERE category IS NOT NULL`,
+  `UPDATE feed_accounts SET influence_rank = NULL WHERE influence_rank IS NOT NULL`,
+  `ALTER TABLE initiatives ALTER COLUMN needs_review SET DEFAULT false`,
+  `ALTER TABLE regulations ALTER COLUMN needs_review SET DEFAULT false`,
+  `DROP INDEX IF EXISTS initiatives_category_idx`,
+  `DROP INDEX IF EXISTS initiatives_risk_idx`,
+  `DROP INDEX IF EXISTS regulations_intervention_idx`,
+  `DROP INDEX IF EXISTS feed_items_category_idx`,
+  `DO $$ BEGIN
+     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'initiatives_no_inferred_values_check') THEN
+       ALTER TABLE initiatives ADD CONSTRAINT initiatives_no_inferred_values_check
+         CHECK (category IS NULL AND category_confidence IS NULL AND risk_level IS NULL
+                AND approval_probability IS NULL AND approval_score IS NULL
+                AND needs_review = false AND published = false);
+     END IF;
+   END $$`,
+  `DO $$ BEGIN
+     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'regulations_no_inferred_values_check') THEN
+       ALTER TABLE regulations ADD CONSTRAINT regulations_no_inferred_values_check
+         CHECK (intervention_level IS NULL AND category IS NULL AND needs_review = false);
+     END IF;
+   END $$`,
+  `DO $$ BEGIN
+     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'feed_items_no_inferred_category_check') THEN
+       ALTER TABLE feed_items ADD CONSTRAINT feed_items_no_inferred_category_check CHECK (category IS NULL);
+     END IF;
+   END $$`,
+  `DO $$ BEGIN
+     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'feed_accounts_no_influence_rank_check') THEN
+       ALTER TABLE feed_accounts ADD CONSTRAINT feed_accounts_no_influence_rank_check CHECK (influence_rank IS NULL);
+     END IF;
+   END $$`,
+  `DO $$ BEGIN
+     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'score_inputs_no_inferred_values_check') THEN
+       ALTER TABLE score_inputs ADD CONSTRAINT score_inputs_no_inferred_values_check
+         CHECK (party IS NULL AND sponsor_record IS NULL AND executive_support IS NULL
+                AND stakeholder_support IS NULL AND social_pressure_count IS NULL);
+     END IF;
+   END $$`,
 ];

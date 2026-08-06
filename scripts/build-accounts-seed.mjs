@@ -1,76 +1,68 @@
-// Rank verified accounts by relevance (role base + follower reach) and emit the
-// top-N as TypeScript SeedAccount entries to splice into feed-accounts.seed.ts.
-//
-// Usage: node scripts/build-accounts-seed.mjs <verified.json> [limit=100] [startRank=50]
-import { readFileSync } from 'node:fs'
+/**
+ * Validate evidence-backed institutional accounts and emit deterministic seed rows.
+ *
+ * This utility does not discover, rank, classify, or select accounts. Every input row
+ * must already contain the institution name, handle, chamber and a primary-source URL
+ * that explicitly identifies the account. Invalid or incomplete input fails as a whole.
+ *
+ * Usage: node scripts/build-accounts-seed.mjs <accounts.json>
+ */
+import { readFileSync } from "node:fs";
 
-const inPath = process.argv[2]
-const LIMIT = Number(process.argv[3] ?? 100)
-const START_RANK = Number(process.argv[4] ?? 50)
-const excludePath = process.argv[5] // optional JSON array of existing "@handle" to skip
-if (!inPath) {
-  console.error('usage: node build-accounts-seed.mjs <verified.json> [limit] [startRank] [excludeHandles.json]')
-  process.exit(1)
+const inputPath = process.argv[2];
+if (!inputPath) {
+  console.error("usage: node scripts/build-accounts-seed.mjs <accounts.json>");
+  process.exit(1);
 }
-const EXCLUDE = new Set(
-  (excludePath ? JSON.parse(readFileSync(excludePath, 'utf8')) : []).map((h) =>
-    String(h).replace(/^@/, '').toLowerCase(),
-  ),
-)
 
-// Handles that verified as REAL but resolve to the WRONG entity (a different
-// person/brand than intended) — found during name-match review.
-const BLOCK = new Set(['escupolara01', 'teleantillas', 'brendaogando'])
-const rows = JSON.parse(readFileSync(inPath, 'utf8')).filter(
-  (r) =>
-    r.found &&
-    !BLOCK.has(String(r.handle).toLowerCase()) &&
-    !EXCLUDE.has(String(r.handle).toLowerCase()), // already in the curated seed
-)
+const rows = JSON.parse(readFileSync(inputPath, "utf8"));
+if (!Array.isArray(rows)) throw new Error("accounts.json must contain an array");
 
-// Relevance = role weight + reach (log10 followers). Legislators/state bodies are
-// inherently relevant to Congress monitoring; reach breaks ties and lets a very
-// influential journalist/outlet outrank a low-profile back-bencher.
-const ROLE_BASE = {
-  SENADO_OFFICIAL: 7,
-  SENATOR: 6,
-  INSTITUTION: 5.5,
-  DEPUTY: 5,
-  JOURNALIST: 4.5,
-  NEWSPAPER: 4,
+const handlePattern = /^@[A-Za-z0-9_]{1,15}$/;
+const allowedKinds = new Set(["SENADO_OFFICIAL", "INSTITUTION"]);
+const allowedChambers = new Set(["SENADO", "DIPUTADOS"]);
+const seen = new Set();
+
+for (const [index, row] of rows.entries()) {
+  const required = ["name", "handle", "kind", "chamber", "evidenceUrl", "verifiedAt"];
+  for (const key of required) {
+    if (typeof row?.[key] !== "string" || !row[key].trim()) {
+      throw new Error(`row ${index}: ${key} is required and must be explicit`);
+    }
+  }
+  if (!handlePattern.test(row.handle)) throw new Error(`row ${index}: invalid X handle`);
+  if (!allowedKinds.has(row.kind)) throw new Error(`row ${index}: unsupported explicit kind`);
+  if (!allowedChambers.has(row.chamber)) throw new Error(`row ${index}: invalid chamber`);
+  if (!/^https:\/\//.test(row.evidenceUrl)) {
+    throw new Error(`row ${index}: evidenceUrl must be an HTTPS primary-source URL`);
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(row.verifiedAt)) {
+    throw new Error(`row ${index}: verifiedAt must be YYYY-MM-DD`);
+  }
+  const key = row.handle.toLowerCase();
+  if (seen.has(key)) throw new Error(`row ${index}: duplicate handle ${row.handle}`);
+  seen.add(key);
 }
-const score = (r) => (ROLE_BASE[r.kind] ?? 4) + Math.log10((r.followers ?? 0) + 1)
 
-// Selection: sitting legislators + the Senate official account are the CORE
-// subject of a Congress monitor — always include them. Fill the rest of the
-// LIMIT with the highest-relevance institutions / press / analysts by score.
-const scored = rows.map((r) => ({ ...r, _score: score(r) })).sort((a, b) => b._score - a._score)
-const CORE_KINDS = new Set(['SENATOR', 'DEPUTY', 'SENADO_OFFICIAL'])
-const core = scored.filter((r) => CORE_KINDS.has(r.kind))
-const rest = scored.filter((r) => !CORE_KINDS.has(r.kind))
-const ranked = [...core, ...rest.slice(0, Math.max(0, LIMIT - core.length))].sort(
-  (a, b) => b._score - a._score,
-)
+const escapeString = (value) =>
+  JSON.stringify(String(value)).replace(/\u2028/g, "\\u2028").replace(/\u2029/g, "\\u2029");
 
-const esc = (s) => String(s ?? '').replace(/\\/g, '\\\\').replace(/"/g, '\\"')
-const chamberOf = (r) =>
-  r.chamber === 'SENADO' || r.kind === 'SENATOR'
-    ? 'SENADO'
-    : r.chamber === 'DIPUTADOS' || r.kind === 'DEPUTY'
-      ? 'DIPUTADOS'
-      : null
+const sorted = [...rows].sort((a, b) =>
+  a.name.localeCompare(b.name, "es", { sensitivity: "base" }),
+);
 
-const lines = ranked.map((r, i) => {
-  const rank = START_RANK + i
-  const ch = chamberOf(r)
-  const chamber = ch ? `, chamber: "${ch}"` : ''
-  return `  { name: "${esc(r.name)}", handle: "@${r.handle}", platform: "X", url: x("${r.handle}"), kind: "${r.kind}"${chamber}, rank: ${rank} },`
-})
+for (const row of sorted) {
+  const handle = row.handle.slice(1);
+  console.log("  {");
+  console.log(`    name: ${escapeString(row.name)},`);
+  console.log(`    handle: ${escapeString(row.handle)},`);
+  console.log('    platform: "X",');
+  console.log(`    url: ${escapeString(`https://x.com/${handle}`)},`);
+  console.log(`    kind: ${escapeString(row.kind)},`);
+  console.log(`    chamber: ${escapeString(row.chamber)},`);
+  console.log(`    evidenceUrl: ${escapeString(row.evidenceUrl)},`);
+  console.log(`    verifiedAt: ${escapeString(row.verifiedAt)},`);
+  console.log("  },");
+}
 
-// Summary to stderr; TS array body to stdout.
-const byKind = {}
-for (const r of ranked) byKind[r.kind] = (byKind[r.kind] ?? 0) + 1
-console.error(`Selected ${ranked.length} of ${rows.length} verified accounts.`)
-console.error('By kind:', JSON.stringify(byKind))
-console.error('Top 10:', ranked.slice(0, 10).map((r) => `@${r.handle}(${Math.round(r.followers / 1000)}k)`).join(', '))
-console.log(lines.join('\n'))
+console.error(`Validated ${sorted.length} evidence-backed account(s); emitted A→Z.`);

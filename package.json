@@ -2,7 +2,11 @@
   "name": "oculis-auribus",
   "private": true,
   "version": "0.0.0",
+  "type": "module",
   "description": "Automated legislative & regulatory monitoring platform for the Dominican Republic",
+  "engines": {
+    "node": ">=20.9.0"
+  },
   "workspaces": [
     "packages/*",
     "apps/*"
@@ -13,6 +17,7 @@
     "typecheck": "npm run typecheck --workspaces --if-present",
     "daily": "npm run daily -w @oculis/worker",
     "dev": "npm run dev -w @oculis/web",
+    "check:factual": "node scripts/check-factual-policy.mjs",
     "lint": "eslint .",
     "format": "prettier --check \"**/*.{ts,tsx,js,jsx,json,css,md}\"",
     "format:write": "prettier --write \"**/*.{ts,tsx,js,jsx,json,css,md}\""

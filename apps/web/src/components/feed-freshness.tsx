@@ -7,7 +7,7 @@ import { type Lang } from "@/lib/i18n";
 interface SourceStatus {
   source: string;
   label: string;
-  ok: boolean | null;
+  outcome: "RUNNING" | "COMPLETE" | "PARTIAL" | "FAILED" | null;
   seen: number;
   finishedAt: string | null;
   lastSuccessAt: string | null;
@@ -27,17 +27,16 @@ function ago(iso: string | null, es: boolean): string {
 }
 
 /**
- * Slim "última actualización" bar: shows how fresh the feed data is, a per-source
- * status popover, and a refresh that re-reads the latest data from the DB (the
- * scrapers run on a schedule; this reloads what they've ingested).
+ * Shows only stored execution facts for the registered feed sources. Refresh re-reads
+ * the database; it does not run a collector.
  */
 export function FeedFreshness({
   lang,
-  updatedAt,
+  newestSuccessAt,
   sources,
 }: {
   lang: Lang;
-  updatedAt: string | null;
+  newestSuccessAt: string | null;
   sources: SourceStatus[];
 }) {
   const es = lang === "es";
@@ -60,24 +59,27 @@ export function FeedFreshness({
     return () => document.removeEventListener("mousedown", onClick);
   }, []);
 
-  const anyDown = sources.some((s) => s.ok === false);
-  const stale = updatedAt ? Date.now() - new Date(updatedAt).getTime() > 12 * 3600_000 : true;
-  const dot = anyDown ? "#e0654d" : stale ? "#d9a441" : "#3fb950";
-
   return (
-    <div
-      ref={boxRef}
-      className="card relative flex items-center justify-between gap-3 px-3 py-2"
-    >
+    <div ref={boxRef} className="card relative flex items-center justify-between gap-3 px-3 py-2">
       <div className="flex items-center gap-2 text-[13px]">
         <span
           className="inline-block h-2 w-2 shrink-0 rounded-full"
-          style={{ background: dot }}
+          style={{ background: "var(--accent)" }}
           aria-hidden
         />
         <span style={{ color: "var(--text-muted)" }}>
-          {es ? "Actualizado" : "Updated"}{" "}
-          <strong style={{ color: "var(--text)", fontWeight: 600 }}>{ago(updatedAt, es)}</strong>
+          {newestSuccessAt ? (
+            <>
+              {es ? "Éxito más reciente entre las fuentes" : "Newest success among sources"}{" "}
+              <strong style={{ color: "var(--text)", fontWeight: 600 }}>
+                {ago(newestSuccessAt, es)}
+              </strong>
+            </>
+          ) : es ? (
+            "Ninguna fuente del feed tiene una ejecución completa registrada"
+          ) : (
+            "No feed source has a recorded complete run"
+          )}
         </span>
         <button
           onClick={() => setOpen((o) => !o)}
@@ -91,7 +93,7 @@ export function FeedFreshness({
       <button
         onClick={() => startTransition(() => router.refresh())}
         disabled={pending}
-        className="flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[12px] font-medium transition-colors hover:bg-[var(--surface-2)]"
+        className="rounded-lg px-2.5 py-1 text-[12px] font-medium transition-colors hover:bg-[var(--surface-2)]"
         style={{
           border: "1px solid var(--border)",
           color: "var(--text)",
@@ -99,9 +101,6 @@ export function FeedFreshness({
           opacity: pending ? 0.6 : 1,
         }}
       >
-        <span className={pending ? "animate-spin" : ""} aria-hidden>
-          ↻
-        </span>
         {pending ? (es ? "Actualizando…" : "Refreshing…") : es ? "Actualizar" : "Refresh"}
       </button>
 
@@ -113,21 +112,28 @@ export function FeedFreshness({
           <div className="eyebrow mb-1.5 px-1">{es ? "Estado de fuentes" : "Source status"}</div>
           <ul className="flex flex-col">
             {sources.map((s) => {
-              const c = s.ok === false ? "#e0654d" : s.ok ? "#3fb950" : "#d9a441";
+              const outcome = outcomeLabel(s.outcome, es);
               return (
                 <li
                   key={s.source}
                   className="flex items-center justify-between gap-2 rounded px-1 py-1 text-[12px]"
                 >
-                  <span className="flex items-center gap-1.5 truncate" style={{ color: "var(--text)" }}>
+                  <span
+                    className="flex items-center gap-1.5 truncate"
+                    style={{ color: "var(--text)" }}
+                  >
                     <span
                       className="inline-block h-1.5 w-1.5 shrink-0 rounded-full"
-                      style={{ background: c }}
+                      style={{ background: "var(--accent)" }}
                     />
                     <span className="truncate">{s.label}</span>
                   </span>
                   <span className="shrink-0 tabular-nums" style={{ color: "var(--text-muted)" }}>
-                    {s.seen}· {ago(s.lastSuccessAt, es)}
+                    {outcome}
+                    {s.outcome ? ` · ${s.seen} ${es ? "vistos" : "seen"}` : ""}
+                    {s.lastSuccessAt
+                      ? ` · ${es ? "éxito" : "success"} ${ago(s.lastSuccessAt, es)}`
+                      : ""}
                   </span>
                 </li>
               );
@@ -137,4 +143,12 @@ export function FeedFreshness({
       )}
     </div>
   );
+}
+
+function outcomeLabel(outcome: SourceStatus["outcome"], es: boolean): string {
+  if (outcome === "RUNNING") return es ? "En ejecución" : "Running";
+  if (outcome === "COMPLETE") return es ? "Completa" : "Complete";
+  if (outcome === "PARTIAL") return es ? "Parcial" : "Partial";
+  if (outcome === "FAILED") return es ? "Falló" : "Failed";
+  return es ? "Nunca ejecutada" : "Never run";
 }

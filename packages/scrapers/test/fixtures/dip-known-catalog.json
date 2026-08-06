@@ -1,0 +1,20 @@
+{
+  "category": {
+    "term_id": 143,
+    "name": "Orden del día conocida por el pleno",
+    "slug": "orden-del-dia-conocida-por-el-pleno",
+    "count": 0,
+    "ordering": "ordering",
+    "orderingdir": "asc"
+  },
+  "categories": [
+    {
+      "term_id": 1936,
+      "name": "2026-PLO-ÓRDENES DEL DÍA CONOCIDOS POR EL PLENO",
+      "slug": "2026-plo-ordenes-del-dia-conocidos-por-el-pleno",
+      "count": 3,
+      "ordering": "ordering",
+      "orderingdir": "asc"
+    }
+  ]
+}

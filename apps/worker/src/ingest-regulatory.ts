@@ -3,16 +3,18 @@
  * table (the regulatory twin of initiatives). Per-source isolation + health rows so a
  * single institution's failure never aborts the run.
  */
-import { recordIngestionRun, upsertRegulation, type Database } from "@oculis/db";
+import { beginIngestionRun, recordIngestionRun, upsertRegulation, type Database } from "@oculis/db";
 import { regulatoryAdapters } from "@oculis/scrapers";
 
 export interface RegulatorySummary {
   source: string;
   institution: string;
   ok: boolean;
+  outcome: "COMPLETE" | "PARTIAL" | "FAILED";
   count: number;
   inserted: number;
   consultas: number;
+  gaps: string[];
   error?: string;
 }
 
@@ -25,6 +27,9 @@ export async function ingestRegulatory(
 
   for (const adapter of regulatoryAdapters()) {
     log(`\n▶ ${adapter.source} (${adapter.institution})`);
+    const runId = await beginIngestionRun(db, adapter.source, {
+      institution: adapter.institution,
+    });
     try {
       const { regulations, gaps } = await adapter.collect();
       let inserted = 0;
@@ -38,8 +43,7 @@ export async function ingestRegulatory(
           regType: r.regType,
           title: r.title,
           status: r.status,
-          interventionLevel: r.interventionLevel,
-          category: r.category,
+          sourceCategory: r.sourceCategory,
           isConsulta: r.isConsulta,
           publishedAt: r.publishedAt,
           deadline: r.deadline,
@@ -48,20 +52,51 @@ export async function ingestRegulatory(
         });
         if (res.inserted) inserted++;
       }
+      const outcome = gaps.length ? "PARTIAL" : "COMPLETE";
+      const ok = outcome === "COMPLETE";
       await recordIngestionRun(db, {
         source: adapter.source,
+        runId,
         seen: regulations.length,
         inserted,
-        ok: true,
+        ok,
+        outcome,
         details: gaps.length ? { gaps } : null,
       });
-      log(`  ✔ ${regulations.length} norms (${inserted} new, ${consultas} consultas)`);
-      out.push({ source: adapter.source, institution: adapter.institution, ok: true, count: regulations.length, inserted, consultas });
+      log(
+        `  ${ok ? "✔" : "⚠"} ${regulations.length} norms (${inserted} new, ${consultas} consultas)`,
+      );
+      gaps.forEach((gap) => log(`    ⚠ ${gap}`));
+      out.push({
+        source: adapter.source,
+        institution: adapter.institution,
+        ok,
+        outcome,
+        count: regulations.length,
+        inserted,
+        consultas,
+        gaps,
+      });
     } catch (err) {
       const error = (err as Error).message;
-      await recordIngestionRun(db, { source: adapter.source, ok: false, error });
+      await recordIngestionRun(db, {
+        runId,
+        source: adapter.source,
+        ok: false,
+        error,
+      });
       log(`  ✖ FAILED: ${error}`);
-      out.push({ source: adapter.source, institution: adapter.institution, ok: false, count: 0, inserted: 0, consultas: 0, error });
+      out.push({
+        source: adapter.source,
+        institution: adapter.institution,
+        ok: false,
+        outcome: "FAILED",
+        count: 0,
+        inserted: 0,
+        consultas: 0,
+        gaps: [],
+        error,
+      });
     }
   }
   return out;

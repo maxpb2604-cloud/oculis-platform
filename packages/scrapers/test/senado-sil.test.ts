@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { parseExpedientesList, SENADO_PORTAL_INICIATIVAS } from "../src/senado-sil.js";
+import {
+  buildSenadoListResetBody,
+  buildSenadoNextPageBody,
+  parseExpedientesList,
+  parseSenadoListPageInfo,
+  SENADO_PORTAL_INICIATIVAS,
+} from "../src/senado-sil.js";
 
 // Real row shapes from lista_expedientes.aspx?coleccion=53 (trimmed).
 const SAMPLE_HTML = `
@@ -21,9 +27,75 @@ const SAMPLE_HTML = `
 </table>`;
 
 describe("senado-sil: parseExpedientesList", () => {
-  it("parses one deposited initiative per data row, skipping non-date rows", () => {
+  it("parses one deposited initiative per source row, skipping non-record rows", () => {
     const rows = parseExpedientesList(SAMPLE_HTML, 53);
     expect(rows).toHaveLength(2);
+  });
+
+  it("retains an official record with no parseable date for full-corpus mode", () => {
+    const rows = parseExpedientesList(
+      `<tr>
+        <td><a href='Ficha.aspx?IdExpediente=40000&numeropagina=2&ContExpedientes=2559&Coleccion=53'>01800-2026-PLO-SE</a></td>
+        <td>Proyecto de Ley</td><td>Título oficial</td><td></td><td>Depositada</td>
+      </tr>`,
+      53,
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.filedAt).toBeNull();
+  });
+
+  it("reads page, total and collection from exact official link metadata", () => {
+    expect(parseSenadoListPageInfo(SAMPLE_HTML)).toEqual({
+      page: 1,
+      total: 2451,
+      collection: 53,
+    });
+  });
+
+  it("submits only postback state and the full-corpus checkbox when requesting the next page", () => {
+    const body = buildSenadoNextPageBody(
+      `<form>
+        <input id="__VIEWSTATE" value="state+value" />
+        <input id="__VIEWSTATEGENERATOR" value="generator" />
+        <input id="__EVENTVALIDATION" value="validation" />
+        <input type="radio" name="Orden" value="RBOrdenAsc" />
+        <input checked="checked" type="radio" name="Orden" value="RBOrdenDes" />
+        <select name="cmbEstado"><option value="0">Abiertos</option><option selected value="-1">Todos</option></select>
+        <select name="cmbOrden"><option value="fc">Fecha</option><option value="co">Código</option></select>
+        <input name="txtBuscar" value="" />
+        <input type="checkbox" name="CBExpCerrados" checked />
+      </form>`,
+      "btSumaPaginacion",
+    );
+    expect(Object.fromEntries(new URLSearchParams(body))).toMatchObject({
+      __VIEWSTATE: "state+value",
+      __VIEWSTATEGENERATOR: "generator",
+      __EVENTVALIDATION: "validation",
+      CBExpCerrados: "on",
+      "btSumaPaginacion.x": "10",
+      "btSumaPaginacion.y": "10",
+    });
+    expect(body).not.toContain("Orden=");
+    expect(body).not.toContain("cmbEstado=");
+    expect(body).not.toContain("cmbOrden=");
+    expect(body).not.toContain("txtBuscar=");
+  });
+
+  it("resets the public grid to an explicit newest-first full collection before paging", () => {
+    const body = buildSenadoListResetBody(
+      `<input id="__VIEWSTATE" value="state" />
+       <input id="__VIEWSTATEGENERATOR" value="generator" />
+       <input id="__EVENTVALIDATION" value="validation" />`,
+    );
+    expect(Object.fromEntries(new URLSearchParams(body))).toMatchObject({
+      Orden: "RBOrdenDes",
+      cmbEstado: "-1",
+      cmbOrden: "fc",
+      txtBuscar: "",
+      CBExpCerrados: "on",
+      "IBOrdenar.x": "10",
+      "IBOrdenar.y": "10",
+    });
   });
 
   it("extracts code, type, title, ISO date, status, and source URL", () => {

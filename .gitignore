@@ -8,3 +8,7 @@ dist/
 coverage/
 .data/
 .pgdata/
+.next-ci/
+*.tsbuildinfo
+.pnpm-store/
+.artifacts/
