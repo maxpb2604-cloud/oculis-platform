@@ -6,7 +6,11 @@ import { EmptyState } from "@/components/ui/empty-state";
 
 export const dynamic = "force-dynamic";
 
-export default async function CongresoPage({ searchParams }: { searchParams: Promise<{ lang?: string }> }) {
+export default async function CongresoPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ lang?: string }>;
+}) {
   const lang: Lang = (await searchParams).lang === "en" ? "en" : "es";
   const es = lang === "es";
   const { legislators, commissions, parties, provinces } = await getCongreso();
@@ -24,7 +28,11 @@ export default async function CongresoPage({ searchParams }: { searchParams: Pro
       {legislators.length === 0 ? (
         <EmptyState
           lang={lang}
-          title={es ? "El directorio legislativo aún no está disponible" : "The legislative directory is not available yet"}
+          title={
+            es
+              ? "El directorio legislativo aún no está disponible"
+              : "The legislative directory is not available yet"
+          }
           description={
             es
               ? "La composición del Congreso aparecerá aquí cuando termine una sincronización exitosa del roster. Los datos existentes no se eliminan si una fuente falla."

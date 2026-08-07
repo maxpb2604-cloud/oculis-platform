@@ -9,20 +9,17 @@
     "./schema": "./src/schema.ts"
   },
   "scripts": {
-    "generate": "drizzle-kit generate",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@electric-sql/pglite": "*",
-    "@oculis/core": "*",
-    "drizzle-orm": "*",
-    "pg": "*"
+    "@electric-sql/pglite": "^0.5.3",
+    "drizzle-orm": "^0.45.2",
+    "pg": "^8.22.0"
   },
   "devDependencies": {
-    "@types/pg": "*",
-    "drizzle-kit": "*",
+    "@types/pg": "^8.20.0",
     "typescript": "^5.6.0",
-    "vitest": "^2.1.0"
+    "vitest": "^4.1.10"
   }
 }

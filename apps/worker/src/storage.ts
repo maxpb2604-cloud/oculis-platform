@@ -19,7 +19,7 @@ export interface DocStorage {
 }
 
 /** Local-filesystem backend (default). Files land in <dir>/{document-key}.{ext}. */
-export class LocalDocStorage implements DocStorage {
+class LocalDocStorage implements DocStorage {
   readonly kind = "local";
   constructor(private readonly dir: string = resolve(process.cwd(), ".data/docs")) {}
 

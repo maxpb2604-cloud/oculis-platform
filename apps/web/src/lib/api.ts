@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 const REQUEST_ID = /^[A-Za-z0-9._:-]{1,100}$/;
 
-export function requestId(req: NextRequest): string {
+function requestId(req: NextRequest): string {
   const supplied = req.headers.get("x-request-id");
   return supplied && REQUEST_ID.test(supplied) ? supplied : crypto.randomUUID();
 }
@@ -20,5 +20,4 @@ export function apiError(
   );
 }
 
-export const PRIVATE_READ_CACHE =
-  "private, max-age=0, must-revalidate";
+export const PRIVATE_READ_CACHE = "private, max-age=0, must-revalidate";

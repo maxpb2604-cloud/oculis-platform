@@ -69,10 +69,25 @@ export function ProvinceBubbleMap({
             type: "circle",
             source: "prov",
             paint: {
-              "circle-radius": ["interpolate", ["linear"], ["get", "iniciativas"], 0, 5, maxVal, 46],
+              "circle-radius": [
+                "interpolate",
+                ["linear"],
+                ["get", "iniciativas"],
+                0,
+                5,
+                maxVal,
+                46,
+              ],
               "circle-color": [
-                "interpolate", ["linear"], ["get", "iniciativas"],
-                0, "#274b6b", maxVal * 0.4, "#5aa8e6", maxVal, "#bfe3ff",
+                "interpolate",
+                ["linear"],
+                ["get", "iniciativas"],
+                0,
+                "#274b6b",
+                maxVal * 0.4,
+                "#5aa8e6",
+                maxVal,
+                "#bfe3ff",
               ],
               "circle-opacity": 0.88,
               "circle-stroke-width": 1.2,
@@ -85,19 +100,36 @@ export function ProvinceBubbleMap({
             source: "prov",
             filter: [">", ["get", "iniciativas"], labelThreshold],
             layout: {
-              "text-field": ["concat", ["get", "nombre"], "\n", ["to-string", ["get", "iniciativas"]]],
+              "text-field": [
+                "concat",
+                ["get", "nombre"],
+                "\n",
+                ["to-string", ["get", "iniciativas"]],
+              ],
               "text-size": 11,
               "text-allow-overlap": false,
             },
-            paint: { "text-color": "#eaf2fb", "text-halo-color": "#06121f", "text-halo-width": 1.4 },
+            paint: {
+              "text-color": "#eaf2fb",
+              "text-halo-color": "#06121f",
+              "text-halo-width": 1.4,
+            },
           });
 
           const onClick = (e: mapboxgl.MapLayerMouseEvent) => {
             const f = e.features?.[0];
             if (!f) return;
             const p = f.properties as { nombre: string; iniciativas: number };
-            const legs = legislators?.[resolveProvince(p.nombre)] ?? { diputados: [], senadores: [] };
-            setSel({ nombre: p.nombre, iniciativas: p.iniciativas, diputados: legs.diputados, senadores: legs.senadores });
+            const legs = legislators?.[resolveProvince(p.nombre)] ?? {
+              diputados: [],
+              senadores: [],
+            };
+            setSel({
+              nombre: p.nombre,
+              iniciativas: p.iniciativas,
+              diputados: legs.diputados,
+              senadores: legs.senadores,
+            });
           };
           map!.on("click", "prov-circles", onClick);
           map!.on("mouseenter", "prov-circles", () => (map!.getCanvas().style.cursor = "pointer"));
@@ -121,7 +153,10 @@ export function ProvinceBubbleMap({
         aria-label={t(lang, "mapAriaLabel")}
         style={{ height, width: "100%", background: "#0a0f14" }}
       />
-      <div className="absolute left-3 top-3 z-10 rounded-lg p-2" style={{ background: "rgba(8,11,10,0.82)" }}>
+      <div
+        className="absolute left-3 top-3 z-10 rounded-lg p-2"
+        style={{ background: "rgba(8,11,10,0.82)" }}
+      >
         <label htmlFor="province-map-select" className="sr-only">
           {lang === "es" ? "Seleccionar provincia" : "Select province"}
         </label>
@@ -162,48 +197,77 @@ export function ProvinceBubbleMap({
         </select>
       </div>
       {err && (
-        <div role="status" className="absolute inset-0 flex items-center justify-center p-4 text-center text-[12px]"
-          style={{ background: "rgba(8,11,10,0.85)", color: "var(--text-muted)" }}>
+        <div
+          role="status"
+          className="absolute inset-0 flex items-center justify-center p-4 text-center text-[12px]"
+          style={{ background: "rgba(8,11,10,0.85)", color: "var(--text-muted)" }}
+        >
           {err}
         </div>
       )}
 
       {/* Legend (decorative colour scale) */}
-      <div aria-hidden className="absolute bottom-3 left-3 flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-[10px] font-medium text-white/85"
-        style={{ background: "rgba(8,11,10,0.7)", backdropFilter: "blur(4px)" }}>
+      <div
+        aria-hidden
+        className="absolute bottom-3 left-3 flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-[10px] font-medium text-white/85"
+        style={{ background: "rgba(8,11,10,0.7)", backdropFilter: "blur(4px)" }}
+      >
         <span>{t(lang, "mapLess")}</span>
-        <span className="h-2 w-24 rounded-full" style={{ background: "linear-gradient(90deg,#274b6b,#5aa8e6,#bfe3ff)" }} />
+        <span
+          className="h-2 w-24 rounded-full"
+          style={{ background: "linear-gradient(90deg,#274b6b,#5aa8e6,#bfe3ff)" }}
+        />
         <span>{t(lang, "mapMore")}</span>
       </div>
 
       {/* Click panel — readable list of legislators for the selected province */}
       {sel && (
-        <div className="absolute right-3 top-3 bottom-3 flex w-[270px] flex-col rounded-xl text-white shadow-xl"
-          style={{ background: "rgba(10,15,20,0.94)", backdropFilter: "blur(8px)", border: "1px solid rgba(255,255,255,0.12)" }}>
+        <div
+          className="absolute right-3 top-3 bottom-3 flex w-[270px] flex-col rounded-xl text-white shadow-xl"
+          style={{
+            background: "rgba(10,15,20,0.94)",
+            backdropFilter: "blur(8px)",
+            border: "1px solid rgba(255,255,255,0.12)",
+          }}
+        >
           {/* Scrollable content */}
           <div className="min-h-0 flex-1 overflow-y-auto p-4">
             <div className="flex items-start justify-between gap-2">
               <div>
                 <div className="serif text-[15px] font-semibold leading-tight">{sel.nombre}</div>
                 <div className="mt-0.5 text-[11px] text-white/60">
-                  {sel.iniciativas} {t(lang, sel.iniciativas === 1 ? "initiative" : "initiativePlural")}
+                  {sel.iniciativas}{" "}
+                  {t(lang, sel.iniciativas === 1 ? "initiative" : "initiativePlural")}
                 </div>
               </div>
-              <button onClick={() => setSel(null)}
-                className="rounded-md px-2 py-1 text-[11px] font-semibold text-white/70 hover:text-white" style={{ background: "rgba(255,255,255,0.08)" }}>
+              <button
+                onClick={() => setSel(null)}
+                className="rounded-md px-2 py-1 text-[11px] font-semibold text-white/70 hover:text-white"
+                style={{ background: "rgba(255,255,255,0.08)" }}
+              >
                 {t(lang, "close")}
               </button>
             </div>
 
-            <LegGroup title={t(lang, "senators")} legs={sel.senadores} empty={t(lang, "noSenator")} />
-            <LegGroup title={t(lang, "deputies")} legs={sel.diputados} empty={t(lang, "noDeputies")} />
+            <LegGroup
+              title={t(lang, "senators")}
+              legs={sel.senadores}
+              empty={t(lang, "noSenator")}
+            />
+            <LegGroup
+              title={t(lang, "deputies")}
+              legs={sel.diputados}
+              empty={t(lang, "noDeputies")}
+            />
           </div>
 
           {/* Sticky close button at the bottom */}
           <div className="border-t p-3" style={{ borderColor: "rgba(255,255,255,0.12)" }}>
-            <button onClick={() => setSel(null)}
+            <button
+              onClick={() => setSel(null)}
               className="w-full rounded-lg py-2 text-[13px] font-semibold text-white transition hover:brightness-110"
-              style={{ background: "rgba(255,255,255,0.12)" }}>
+              style={{ background: "rgba(255,255,255,0.12)" }}
+            >
               {t(lang, "close")}
             </button>
           </div>

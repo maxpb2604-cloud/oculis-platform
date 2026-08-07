@@ -51,11 +51,11 @@ export const dict: Record<Lang, Record<string, string>> = {
     noDeputies: "Sin diputados registrados para esta provincia.",
     mapMissingToken: "Falta NEXT_PUBLIC_MAPBOX_TOKEN",
     mapError: "Error de Mapbox",
-    mapAriaLabel: "Mapa de iniciativas por provincia. Cada círculo representa una provincia; su tamaño es proporcional al número de iniciativas. Use el panel lateral para ver los legisladores.",
+    mapAriaLabel:
+      "Mapa de iniciativas por provincia. Cada círculo representa una provincia; su tamaño es proporcional al número de iniciativas. Use el panel lateral para ver los legisladores.",
 
     // Charts
     total: "Total",
-
   },
   en: {
     appName: "Oculis Auribus",
@@ -106,15 +106,13 @@ export const dict: Record<Lang, Record<string, string>> = {
     noDeputies: "No deputies on record for this province.",
     mapMissingToken: "Missing NEXT_PUBLIC_MAPBOX_TOKEN",
     mapError: "Mapbox error",
-    mapAriaLabel: "Map of initiatives by province. Each circle represents a province; its size is proportional to the number of initiatives. Use the side panel to view legislators.",
+    mapAriaLabel:
+      "Map of initiatives by province. Each circle represents a province; its size is proportional to the number of initiatives. Use the side panel to view legislators.",
 
     // Charts
     total: "Total",
-
   },
 };
-
-export type Dict = Record<string, string>;
 
 /** Dictionary getter. Falls back to the key itself if missing (so nothing renders blank). */
 export function t(lang: Lang, key: string): string {

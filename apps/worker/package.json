@@ -17,11 +17,11 @@
     "activity": "tsx src/index.ts --activity",
     "feed": "tsx src/index.ts --feed",
     "seed-accounts": "tsx src/index.ts --seed-accounts",
+    "migrate:pglite-to-postgres": "tsx src/migrate-to-postgres.ts",
     "test": "node --import tsx --test test/*.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@oculis/core": "*",
     "@oculis/db": "*",
     "@oculis/scrapers": "*"
   },

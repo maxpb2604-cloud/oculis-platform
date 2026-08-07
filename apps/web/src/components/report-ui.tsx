@@ -1,13 +1,5 @@
 /** Small, dependency-free report primitives shared across server and client views. */
-export function Kpi({
-  label,
-  value,
-  accent,
-}: {
-  label: string;
-  value: number;
-  accent: string;
-}) {
+export function Kpi({ label, value, accent }: { label: string; value: number; accent: string }) {
   return (
     <div className="card elev p-5">
       <div className="eyebrow">{label}</div>

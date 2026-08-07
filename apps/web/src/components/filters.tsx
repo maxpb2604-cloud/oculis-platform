@@ -38,7 +38,9 @@ export function Filters({ lang, facets }: { lang: Lang; facets: Facets }) {
         className="relative flex-1 min-w-[200px]"
       >
         <label htmlFor="initiative-search" className="sr-only">
-          {lang === "es" ? "Buscar iniciativas por título o código" : "Search initiatives by title or code"}
+          {lang === "es"
+            ? "Buscar iniciativas por título o código"
+            : "Search initiatives by title or code"}
         </label>
         <input
           id="initiative-search"
@@ -51,10 +53,20 @@ export function Filters({ lang, facets }: { lang: Lang; facets: Facets }) {
         />
       </form>
 
-      <Select label={lang === "es" ? "Partido" : "Party"} value={sel("party")} onChange={(v) => navigate({ party: v })}
-        options={facets.parties.map((p) => ({ value: p, label: p }))} allLabel={lang === "es" ? "Todos" : "All"} />
-      <Select label={lang === "es" ? "Estado" : "Status"} value={sel("status")} onChange={(v) => navigate({ status: v })}
-        options={facets.statuses.map((s) => ({ value: s, label: s }))} allLabel={lang === "es" ? "Todos" : "All"} />
+      <Select
+        label={lang === "es" ? "Partido" : "Party"}
+        value={sel("party")}
+        onChange={(v) => navigate({ party: v })}
+        options={facets.parties.map((p) => ({ value: p, label: p }))}
+        allLabel={lang === "es" ? "Todos" : "All"}
+      />
+      <Select
+        label={lang === "es" ? "Estado" : "Status"}
+        value={sel("status")}
+        onChange={(v) => navigate({ status: v })}
+        options={facets.statuses.map((s) => ({ value: s, label: s }))}
+        allLabel={lang === "es" ? "Todos" : "All"}
+      />
 
       {anyFilter && (
         <button
@@ -88,9 +100,15 @@ function Select({
       value={value}
       onChange={(e) => onChange(e.target.value)}
       className="rounded-lg border bg-transparent px-2.5 py-2 text-sm outline-none"
-      style={{ borderColor: "var(--border)", cursor: "pointer", color: value ? "var(--text)" : "var(--text-muted)" }}
+      style={{
+        borderColor: "var(--border)",
+        cursor: "pointer",
+        color: value ? "var(--text)" : "var(--text-muted)",
+      }}
     >
-      <option value="">{label}: {allLabel}</option>
+      <option value="">
+        {label}: {allLabel}
+      </option>
       {options.map((o) => (
         <option key={o.value} value={o.value} style={{ color: "var(--text)" }}>
           {o.label}

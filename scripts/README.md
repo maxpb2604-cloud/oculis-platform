@@ -32,10 +32,11 @@ ejecutadas, fallos, respuestas con cero elementos, conteos y último éxito.
 ## Utilidades de auditoría
 
 - `check-factual-policy.mjs` bloquea en CI dependencias y campos de inferencia retirados.
+- `build-accounts-seed.mjs` valida entradas institucionales respaldadas por evidencia.
 - `verify-x-handles.mjs` comprueba que un identificador responde en la API de X; esa
   comprobación no demuestra por sí sola la identidad de la cuenta.
-- `capture-sil-request.mjs` y `weekly-activity.mjs` ayudan a inspeccionar endpoints
-  oficiales sin alterar estados en la base.
+- `capture-sil-request.mjs` ayuda a inspeccionar endpoints oficiales sin alterar estados
+  en la base.
 
 Consulta [`FACTUAL_DATA_POLICY.md`](../FACTUAL_DATA_POLICY.md) antes de agregar un parser,
 una fuente o un campo derivado.

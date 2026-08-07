@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-type MeshGradientComponent = typeof import("@paper-design/shaders-react")["MeshGradient"];
+type MeshGradientComponent = (typeof import("@paper-design/shaders-react"))["MeshGradient"];
 
 /**
  * Themed mesh-gradient background (Paper Design shaders).
@@ -84,5 +84,3 @@ export function MeshBackground() {
     </div>
   );
 }
-
-export default MeshBackground;

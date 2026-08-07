@@ -38,6 +38,12 @@ jobs:
       - name: Enforce factual-data policy
         run: npm run check:factual
 
+      - name: Check formatting
+        run: npm run format
+
+      - name: Detect unused code and dependencies
+        run: npm run audit:dead-code
+
       - name: Lint
         run: npm run lint
 

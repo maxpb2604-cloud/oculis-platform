@@ -11,6 +11,9 @@ clasifica temas por cuenta propia y no deduce estados legislativos. Un dato ause
 permanece como `null` y se presenta como «No informado». La regla completa está en
 [`FACTUAL_DATA_POLICY.md`](./FACTUAL_DATA_POLICY.md).
 
+El resumen operativo para transferencia al equipo técnico está en
+[`HANDOFF.md`](./HANDOFF.md).
+
 El repositorio es un monorepo npm. La recolección y la interfaz son procesos separados:
 la web **lee** la base de datos y el worker **ingiere y actualiza** los datos. En la nube,
 GitHub Actions ejecuta el worker y una base PostgreSQL administrada, como Neon, conserva
@@ -33,7 +36,7 @@ flowchart LR
 
 | Ruta                | Responsabilidad                                                     |
 | ------------------- | ------------------------------------------------------------------- |
-| `apps/web`          | Next.js 15 y React 19; páginas, componentes y rutas API de lectura. |
+| `apps/web`          | Next.js 16 y React 19; páginas, componentes y rutas API de lectura. |
 | `apps/worker`       | CLI de ingesta factual y actualización programada.                  |
 | `packages/core`     | Tipos de dominio y utilidades que preservan valores de fuente.      |
 | `packages/db`       | Esquema Drizzle, clientes PostgreSQL/PGlite y repositorios.         |

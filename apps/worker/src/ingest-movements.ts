@@ -13,7 +13,7 @@ import {
 } from "@oculis/db";
 import { extractLeadingISODate, SilDiputadosAdapter } from "@oculis/scrapers";
 
-export const MOVEMENTS_SOURCE = "sil-movements";
+const MOVEMENTS_SOURCE = "sil-movements";
 
 export interface MovementSummary {
   source: typeof MOVEMENTS_SOURCE;

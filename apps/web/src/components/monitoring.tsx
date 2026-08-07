@@ -112,7 +112,7 @@ export function ProceduralMentionChip({ raw }: { raw: string }) {
 
 /** One agenda/activity row. Composes structured fields — body (title), status chips,
  *  count chip, date — instead of re-printing a pre-baked description string. */
-export function ActivityRow({ item, lang = "es" }: { item: ActivityItem; lang?: Lang }) {
+function ActivityRow({ item, lang = "es" }: { item: ActivityItem; lang?: Lang }) {
   const statuses = item.statuses ?? [];
   const agendaUrl = safeHttpUrl(item.agendaUrl);
   // show description only when it adds detail beyond the body title
@@ -278,7 +278,7 @@ function DocStatus({
  * party/province), and whether its official document is uploaded — linked to the SIL
  * page where it appears. Nothing more.
  */
-export function DepositCard({ item, lang = "es" }: { item: DepositItem; lang?: Lang }) {
+function DepositCard({ item, lang = "es" }: { item: DepositItem; lang?: Lang }) {
   const sponsorMeta = [item.party, item.province].filter(Boolean).join(" · ");
   const others = (item.sponsorCount ?? 1) - 1;
   const isSenado = item.chamber === "SENADO";
@@ -423,7 +423,7 @@ export interface RegulationItem {
   url: string | null;
 }
 
-export function RegulationRow({ item, lang = "es" }: { item: RegulationItem; lang?: Lang }) {
+function RegulationRow({ item, lang = "es" }: { item: RegulationItem; lang?: Lang }) {
   const sourceUrl = safeHttpUrl(item.url);
   const missing = lang === "es" ? "No informado" : "Not reported";
   const consultation =
@@ -515,31 +515,5 @@ export function RegulationList({
         <RegulationRow key={i.id} item={i} lang={lang} />
       ))}
     </div>
-  );
-}
-
-// --- Health (Estado de monitoreo) building blocks ---
-
-/** OK / WARN / ERROR pill using design tokens (dark-mode safe). */
-export function HealthPill({
-  state,
-  children,
-}: {
-  state: "ok" | "warn" | "error";
-  children: React.ReactNode;
-}) {
-  const map = {
-    ok: { bg: "var(--accent-soft)", fg: "var(--accent)" },
-    warn: { bg: "var(--warn-soft)", fg: "var(--warn)" },
-    error: { bg: "var(--danger-soft)", fg: "var(--danger)" },
-  }[state];
-  return (
-    <span
-      className="inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[11px] font-semibold"
-      style={{ background: map.bg, color: map.fg }}
-    >
-      <span aria-hidden className="h-1.5 w-1.5 rounded-full" style={{ background: map.fg }} />
-      {children}
-    </span>
   );
 }

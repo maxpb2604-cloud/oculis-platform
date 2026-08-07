@@ -50,9 +50,7 @@ export function RangePicker({
   const [start, setStart] = useState<string | null>(initialFrom ?? null);
   const [end, setEnd] = useState<string | null>(initialTo ?? null);
   const [hover, setHover] = useState<string | null>(null);
-  const [view, setView] = useState<Date>(() =>
-    startOfMonth(fromISO(initialFrom ?? todayInDR())),
-  );
+  const [view, setView] = useState<Date>(() => startOfMonth(fromISO(initialFrom ?? todayInDR())));
   const ref = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const dialogId = useId();
@@ -131,7 +129,11 @@ export function RangePicker({
     const now = fromISO(t);
     return [
       { label: es ? "Hoy" : "Today", from: t, to: t },
-      { label: es ? "Ayer" : "Yesterday", from: toISO(addDays(now, -1)), to: toISO(addDays(now, -1)) },
+      {
+        label: es ? "Ayer" : "Yesterday",
+        from: toISO(addDays(now, -1)),
+        to: toISO(addDays(now, -1)),
+      },
       { label: es ? "Últimos 7 días" : "Last 7 days", from: toISO(addDays(now, -6)), to: t },
       { label: es ? "Últimos 30 días" : "Last 30 days", from: toISO(addDays(now, -29)), to: t },
       { label: es ? "Este mes" : "This month", from: toISO(startOfMonth(now)), to: t },
@@ -140,7 +142,9 @@ export function RangePicker({
 
   const fmt = (iso: string) =>
     new Intl.DateTimeFormat(locale, { day: "numeric", month: "short" }).format(fromISO(iso));
-  const monthLabel = new Intl.DateTimeFormat(locale, { month: "long", year: "numeric" }).format(view);
+  const monthLabel = new Intl.DateTimeFormat(locale, { month: "long", year: "numeric" }).format(
+    view,
+  );
   const weekdays = es ? ["L", "M", "M", "J", "V", "S", "D"] : ["M", "T", "W", "T", "F", "S", "S"];
   const hasActive = !!(initialFrom && initialTo);
 
@@ -154,10 +158,18 @@ export function RangePicker({
         aria-haspopup="dialog"
         aria-controls={dialogId}
         className="inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm transition-colors hover:bg-[var(--surface-2)]"
-        style={{ cursor: "pointer", color: hasActive ? "var(--accent)" : "var(--text)", borderColor: hasActive ? "var(--accent)" : "var(--border)" }}
+        style={{
+          cursor: "pointer",
+          color: hasActive ? "var(--accent)" : "var(--text)",
+          borderColor: hasActive ? "var(--accent)" : "var(--border)",
+        }}
       >
         <CalIcon />
-        {hasActive ? `${fmt(initialFrom!)} – ${fmt(initialTo!)}` : es ? "Personalizar período" : "Custom range"}
+        {hasActive
+          ? `${fmt(initialFrom!)} – ${fmt(initialTo!)}`
+          : es
+            ? "Personalizar período"
+            : "Custom range"}
         <ChevronDown open={open} />
       </button>
 
@@ -177,7 +189,11 @@ export function RangePicker({
                 key={p.label}
                 onClick={() => apply(p.from, p.to)}
                 className="rounded-md px-2 py-1 text-[11px] font-medium transition-colors hover:bg-[var(--accent-soft)]"
-                style={{ cursor: "pointer", background: "var(--surface-2)", color: "var(--text-muted)" }}
+                style={{
+                  cursor: "pointer",
+                  background: "var(--surface-2)",
+                  color: "var(--text-muted)",
+                }}
               >
                 {p.label}
               </button>
@@ -186,21 +202,38 @@ export function RangePicker({
 
           {/* Month header */}
           <div className="mb-2 flex items-center justify-between">
-            <button type="button" onClick={() => setView(addMonths(view, -1))} aria-label={es ? "Mes anterior" : "Previous month"}
-              className="flex h-7 w-7 items-center justify-center rounded-md hover:bg-[var(--surface-2)]" style={{ cursor: "pointer" }}>
+            <button
+              type="button"
+              onClick={() => setView(addMonths(view, -1))}
+              aria-label={es ? "Mes anterior" : "Previous month"}
+              className="flex h-7 w-7 items-center justify-center rounded-md hover:bg-[var(--surface-2)]"
+              style={{ cursor: "pointer" }}
+            >
               <Chevron dir="left" />
             </button>
-            <span id={monthLabelId} className="text-sm font-semibold first-letter:uppercase">{monthLabel}</span>
-            <button type="button" onClick={() => setView(addMonths(view, 1))} aria-label={es ? "Mes siguiente" : "Next month"}
-              className="flex h-7 w-7 items-center justify-center rounded-md hover:bg-[var(--surface-2)]" style={{ cursor: "pointer" }}>
+            <span id={monthLabelId} className="text-sm font-semibold first-letter:uppercase">
+              {monthLabel}
+            </span>
+            <button
+              type="button"
+              onClick={() => setView(addMonths(view, 1))}
+              aria-label={es ? "Mes siguiente" : "Next month"}
+              className="flex h-7 w-7 items-center justify-center rounded-md hover:bg-[var(--surface-2)]"
+              style={{ cursor: "pointer" }}
+            >
               <Chevron dir="right" />
             </button>
           </div>
 
           {/* Weekday row */}
-          <div className="mb-1 grid grid-cols-7 text-center text-[10px] font-semibold uppercase" style={{ color: "var(--text-muted)" }}>
+          <div
+            className="mb-1 grid grid-cols-7 text-center text-[10px] font-semibold uppercase"
+            style={{ color: "var(--text-muted)" }}
+          >
             {weekdays.map((w, i) => (
-              <div key={i} aria-hidden="true">{w}</div>
+              <div key={i} aria-hidden="true">
+                {w}
+              </div>
             ))}
           </div>
 
@@ -225,7 +258,11 @@ export function RangePicker({
                   className="flex h-9 items-center justify-center text-[13px] transition-colors"
                   style={{
                     cursor: "pointer",
-                    background: isEdge ? "var(--accent)" : within ? "var(--accent-soft)" : "transparent",
+                    background: isEdge
+                      ? "var(--accent)"
+                      : within
+                        ? "var(--accent-soft)"
+                        : "transparent",
                     color: isEdge ? "#fff" : inMonth ? "var(--text)" : "var(--text-muted)",
                     borderRadius: isEdge ? 8 : within ? 0 : 8,
                     boxShadow: isToday && !isEdge ? "inset 0 0 0 1px var(--accent)" : "none",
@@ -239,13 +276,27 @@ export function RangePicker({
           </div>
 
           {/* Footer */}
-          <div className="mt-3 flex items-center justify-between border-t pt-3" style={{ borderColor: "var(--border)" }}>
+          <div
+            className="mt-3 flex items-center justify-between border-t pt-3"
+            style={{ borderColor: "var(--border)" }}
+          >
             <span className="text-[12px]" aria-live="polite" style={{ color: "var(--text-muted)" }}>
-              {start ? (end ? `${fmt(start)} – ${fmt(end)}` : fmt(start)) : es ? "Selecciona un rango" : "Pick a range"}
+              {start
+                ? end
+                  ? `${fmt(start)} – ${fmt(end)}`
+                  : fmt(start)
+                : es
+                  ? "Selecciona un rango"
+                  : "Pick a range"}
             </span>
             <div className="flex items-center gap-2">
               {hasActive && (
-                <button type="button" onClick={clearRange} className="text-[12px] font-medium underline" style={{ cursor: "pointer", color: "var(--text-muted)" }}>
+                <button
+                  type="button"
+                  onClick={clearRange}
+                  className="text-[12px] font-medium underline"
+                  style={{ cursor: "pointer", color: "var(--text-muted)" }}
+                >
                   {es ? "limpiar" : "clear"}
                 </button>
               )}
@@ -268,22 +319,53 @@ export function RangePicker({
 
 function CalIcon() {
   return (
-    <svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="3" y="4" width="18" height="17" rx="2" /><path d="M3 9h18M8 2v4M16 2v4" />
+    <svg
+      aria-hidden="true"
+      width="15"
+      height="15"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.7"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <rect x="3" y="4" width="18" height="17" rx="2" />
+      <path d="M3 9h18M8 2v4M16 2v4" />
     </svg>
   );
 }
 function ChevronDown({ open }: { open: boolean }) {
   return (
-    <svg aria-hidden="true" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-      style={{ transition: "transform .15s", transform: open ? "rotate(180deg)" : "none" }}>
+    <svg
+      aria-hidden="true"
+      width="13"
+      height="13"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      style={{ transition: "transform .15s", transform: open ? "rotate(180deg)" : "none" }}
+    >
       <path d="m6 9 6 6 6-6" />
     </svg>
   );
 }
 function Chevron({ dir }: { dir: "left" | "right" }) {
   return (
-    <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      aria-hidden="true"
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <path d={dir === "left" ? "m15 18-6-6 6-6" : "m9 18 6-6-6-6"} />
     </svg>
   );

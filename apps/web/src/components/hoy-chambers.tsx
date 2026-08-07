@@ -44,7 +44,13 @@ export function HoyChambers({
   const shownDeposits = isDip ? deposits : senDeposits;
   const docsUp = shownDeposits.filter((d) => d.docUploaded).length;
 
-  const chamberLabel = isDip ? (es ? "Cámara de Diputados" : "Chamber of Deputies") : (es ? "Senado" : "Senate");
+  const chamberLabel = isDip
+    ? es
+      ? "Cámara de Diputados"
+      : "Chamber of Deputies"
+    : es
+      ? "Senado"
+      : "Senate";
   // Senate deposits AND activity use a 7-day lookback in the single-day view (its SIL
   // publishes with lag). Diputados is exact-date. Disclose the window so a count of Senate
   // committee/plenary activity isn't mistaken for "today only".
@@ -60,7 +66,8 @@ export function HoyChambers({
         <span className="eyebrow">{es ? "Cámara" : "Chamber"}</span>
         <ChamberToggle value={chamber} onChange={setChamber} lang={lang} />
         <span className="text-[12px]" style={{ color: "var(--text-muted)" }}>
-          {es ? "Mostrando actividad de" : "Showing activity from"} <strong style={{ color: "var(--text)" }}>{chamberLabel}</strong>
+          {es ? "Mostrando actividad de" : "Showing activity from"}{" "}
+          <strong style={{ color: "var(--text)" }}>{chamberLabel}</strong>
         </span>
       </div>
 
@@ -70,8 +77,16 @@ export function HoyChambers({
           value={shownDeposits.length}
           label={es ? "Iniciativas depositadas" : "Initiatives deposited"}
         />
-        <StatTile value={committee.length} label={`${es ? "Movimientos en comisión" : "Committee movements"}${windowTag}`} accent="var(--accent)" />
-        <StatTile value={`${docsUp}/${shownDeposits.length || 0}`} label={es ? "Con documento oficial" : "With official document"} accent="var(--accent)" />
+        <StatTile
+          value={committee.length}
+          label={`${es ? "Movimientos en comisión" : "Committee movements"}${windowTag}`}
+          accent="var(--accent)"
+        />
+        <StatTile
+          value={`${docsUp}/${shownDeposits.length || 0}`}
+          label={es ? "Con documento oficial" : "With official document"}
+          accent="var(--accent)"
+        />
       </div>
 
       {/* 1 — Iniciativas depositadas */}
@@ -89,7 +104,12 @@ export function HoyChambers({
           <DepositList
             items={shownDeposits}
             lang={lang}
-            empty={<>{es ? "No se depositaron iniciativas" : "No initiatives deposited"} {depWhen}. {isDip ? prevDayLink : null}</>}
+            empty={
+              <>
+                {es ? "No se depositaron iniciativas" : "No initiatives deposited"} {depWhen}.{" "}
+                {isDip ? prevDayLink : null}
+              </>
+            }
           />
         </Panel>
       </div>
@@ -99,17 +119,39 @@ export function HoyChambers({
         <Panel
           title={`${es ? "Movimientos en comisiones" : "Committee movements"} · ${committee.length}`}
           flush
-          action={<span className="text-[11px]" style={{ color: "var(--text-muted)" }}>{chamberLabel}{windowTag}</span>}
+          action={
+            <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>
+              {chamberLabel}
+              {windowTag}
+            </span>
+          }
         >
           <ActivityList
             items={committee}
             lang={lang}
-            empty={<>{es ? "Sin movimientos de comisión" : "No committee movements"} {actWhen}. {prevDayLink}</>}
+            empty={
+              <>
+                {es ? "Sin movimientos de comisión" : "No committee movements"} {actWhen}.{" "}
+                {prevDayLink}
+              </>
+            }
           />
         </Panel>
-        <Panel title={`${es ? "Pleno y Asamblea" : "Floor & Assembly"} · ${plenary.length}`} flush
-          action={<span className="text-[11px]" style={{ color: "var(--text-muted)" }}>{chamberLabel}{windowTag}</span>}>
-          <ActivityList items={plenary} lang={lang} empty={`${es ? "Sin sesiones de pleno/asamblea" : "No floor/assembly sessions"} ${actWhen}.`} />
+        <Panel
+          title={`${es ? "Pleno y Asamblea" : "Floor & Assembly"} · ${plenary.length}`}
+          flush
+          action={
+            <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>
+              {chamberLabel}
+              {windowTag}
+            </span>
+          }
+        >
+          <ActivityList
+            items={plenary}
+            lang={lang}
+            empty={`${es ? "Sin sesiones de pleno/asamblea" : "No floor/assembly sessions"} ${actWhen}.`}
+          />
         </Panel>
       </div>
     </>

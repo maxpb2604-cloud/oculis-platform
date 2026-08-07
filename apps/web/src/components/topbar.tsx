@@ -46,8 +46,13 @@ export function TopBar({
     >
       <div className="min-w-0">
         <div className="eyebrow">{dateLabel}</div>
-        <h1 className="serif mt-1 text-[24px] font-semibold leading-tight sm:text-[26px]">{title}</h1>
-        <p className="mt-1 text-[13px] leading-snug sm:mt-1.5 sm:text-sm" style={{ color: "var(--text-muted)" }}>
+        <h1 className="serif mt-1 text-[24px] font-semibold leading-tight sm:text-[26px]">
+          {title}
+        </h1>
+        <p
+          className="mt-1 text-[13px] leading-snug sm:mt-1.5 sm:text-sm"
+          style={{ color: "var(--text-muted)" }}
+        >
           {subtitle}
         </p>
       </div>
