@@ -504,8 +504,7 @@ async function ingestSenateKind(
             });
           }
         } catch (error) {
-          const message =
-            `Senado · ${registry.label} · archivo ${document.fileId}: ${(error as Error).message}`;
+          const message = `Senado · ${registry.label} · archivo ${document.fileId}: ${(error as Error).message}`;
           technicalFailures++;
           if (failureExamples.length < 10) failureExamples.push(message);
           gaps.push(message);

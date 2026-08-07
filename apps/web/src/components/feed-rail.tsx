@@ -48,8 +48,13 @@ export function FeedRail({ lang, accounts }: { lang: Lang; accounts: FeedAccount
                       {account.name.slice(0, 2).toUpperCase()}
                     </span>
                     <span className="min-w-0 leading-tight">
-                      <span className="block truncate text-[12.5px] font-medium">{account.name}</span>
-                      <span className="block truncate text-[11px]" style={{ color: "var(--text-muted)" }}>
+                      <span className="block truncate text-[12.5px] font-medium">
+                        {account.name}
+                      </span>
+                      <span
+                        className="block truncate text-[11px]"
+                        style={{ color: "var(--text-muted)" }}
+                      >
                         {account.handle} · {es ? kind.es : kind.en}
                       </span>
                     </span>

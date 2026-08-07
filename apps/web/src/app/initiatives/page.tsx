@@ -47,7 +47,10 @@ export default async function Page({ searchParams }: { searchParams: Promise<SP>
     >
       <Filters lang={lang} facets={result.facets} />
 
-      <div className="mb-3 flex items-center justify-between text-xs" style={{ color: "var(--text-muted)" }}>
+      <div
+        className="mb-3 flex items-center justify-between text-xs"
+        style={{ color: "var(--text-muted)" }}
+      >
         <span className="tnum">
           {lang === "es"
             ? `${result.total.toLocaleString()} iniciativas · mostrando ${from}–${to}`

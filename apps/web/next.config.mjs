@@ -19,8 +19,6 @@ const nextConfig = {
   transpilePackages: ["@oculis/db", "@oculis/core", "@oculis/scrapers"],
   poweredByHeader: false,
   reactStrictMode: true,
-  // CI runs the monorepo ESLint config explicitly before build.
-  eslint: { ignoreDuringBuilds: true },
   async headers() {
     return [
       {

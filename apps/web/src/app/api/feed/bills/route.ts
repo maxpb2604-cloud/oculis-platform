@@ -15,16 +15,10 @@ export async function GET(req: NextRequest) {
     }
     const q = optionalText(raw, 160) ?? "";
     if (q.length < 2) {
-      return NextResponse.json(
-        { items: [] },
-        { headers: { "cache-control": PRIVATE_READ_CACHE } },
-      );
+      return NextResponse.json({ items: [] }, { headers: { "cache-control": PRIVATE_READ_CACHE } });
     }
     const items = await searchBills(q);
-    return NextResponse.json(
-      { items },
-      { headers: { "cache-control": PRIVATE_READ_CACHE } },
-    );
+    return NextResponse.json({ items }, { headers: { "cache-control": PRIVATE_READ_CACHE } });
   } catch (error) {
     return apiError(req, error, "feed-bills");
   }

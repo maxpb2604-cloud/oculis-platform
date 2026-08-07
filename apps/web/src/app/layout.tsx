@@ -6,7 +6,8 @@ export const metadata: Metadata = {
     default: "Oculis Auribus — Monitoreo Legislativo y Regulatorio",
     template: "%s | Oculis Auribus",
   },
-  description: "Ferdinand Herrera Consultants — seguimiento experto de legislación y regulaciones en República Dominicana.",
+  description:
+    "Ferdinand Herrera Consultants — seguimiento experto de legislación y regulaciones en República Dominicana.",
   applicationName: "Oculis Auribus",
   category: "business intelligence",
   icons: { icon: "/oculis-mark.png", apple: "/oculis-mark.png" },

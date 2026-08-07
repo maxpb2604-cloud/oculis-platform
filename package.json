@@ -18,26 +18,22 @@
     "daily": "npm run daily -w @oculis/worker",
     "dev": "npm run dev -w @oculis/web",
     "check:factual": "node scripts/check-factual-policy.mjs",
+    "audit:dead-code": "knip --no-progress",
+    "audit:capture-sil": "node scripts/capture-sil-request.mjs",
+    "accounts:build-seed": "node scripts/build-accounts-seed.mjs",
+    "accounts:verify-x": "node scripts/verify-x-handles.mjs",
     "lint": "eslint .",
     "format": "prettier --check \"**/*.{ts,tsx,js,jsx,json,css,md}\"",
     "format:write": "prettier --write \"**/*.{ts,tsx,js,jsx,json,css,md}\""
   },
   "devDependencies": {
     "@eslint/js": "^9.13.0",
-    "@types/pg": "^8.20.0",
-    "drizzle-kit": "^0.31.10",
     "eslint": "^9.13.0",
     "eslint-plugin-react-hooks": "^5.0.0",
     "globals": "^15.11.0",
+    "knip": "^6.32.0",
     "playwright": "^1.61.0",
     "prettier": "^3.3.0",
-    "tsx": "^4.22.4",
     "typescript-eslint": "^8.10.0"
-  },
-  "dependencies": {
-    "@electric-sql/pglite": "^0.5.3",
-    "drizzle-orm": "^0.45.2",
-    "pg": "^8.22.0",
-    "unpdf": "^1.6.2"
   }
 }

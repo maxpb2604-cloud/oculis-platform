@@ -16,9 +16,9 @@ import {
   type SilIniciativa,
 } from "@oculis/scrapers";
 
-export const DEPOSITS_SOURCE = "sil-deposits";
-export const SENADO_DEPOSITS_SOURCE = "senado-sil-deposits";
-export const SENADO_CORPUS_SOURCE = "senado-sil-corpus";
+const DEPOSITS_SOURCE = "sil-deposits";
+const SENADO_DEPOSITS_SOURCE = "senado-sil-deposits";
+const SENADO_CORPUS_SOURCE = "senado-sil-corpus";
 
 export interface DepositsSummary {
   source: string;
@@ -239,9 +239,7 @@ export async function ingestDeposits(
     }
     const ok = failures === 0;
     const outcome =
-      failures === 0 && rejected === 0 && scan.truncatedSlices === 0
-        ? "COMPLETE"
-        : "PARTIAL";
+      failures === 0 && rejected === 0 && scan.truncatedSlices === 0 ? "COMPLETE" : "PARTIAL";
     const error = failures ? `${failures} enrichment request(s) failed` : undefined;
     await recordIngestionRun(db, {
       source: DEPOSITS_SOURCE,

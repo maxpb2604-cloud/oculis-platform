@@ -3,7 +3,7 @@
  * No counts or inferred values live in this static geometry file.
  */
 
-export interface ProvinciaProps {
+interface ProvinciaProps {
   nombre: string;
 }
 
@@ -48,18 +48,11 @@ const RAW: Array<[string, number, number]> = [
   ["Pedernales", -71.74, 18.04],
 ];
 
-export const PROVINCIAS: ProvinciaFeature[] = RAW.map(
-  ([nombre, lng, lat]) => ({
-    type: "Feature",
-    properties: { nombre },
-    geometry: { type: "Point", coordinates: [lng, lat] },
-  }),
-);
-
-export const PROVINCIAS_FC = {
-  type: "FeatureCollection" as const,
-  features: PROVINCIAS,
-};
+export const PROVINCIAS: ProvinciaFeature[] = RAW.map(([nombre, lng, lat]) => ({
+  type: "Feature",
+  properties: { nombre },
+  geometry: { type: "Point", coordinates: [lng, lat] },
+}));
 
 /** Map centering for all three sketches. */
 export const DR_CENTER: [number, number] = [-70.3, 18.9];

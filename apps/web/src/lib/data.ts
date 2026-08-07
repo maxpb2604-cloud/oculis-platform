@@ -13,10 +13,8 @@ import {
 } from "@oculis/scrapers";
 import { normProvince, resolveProvince } from "./provinces";
 import { safeHttpUrl } from "./input";
-export { normProvince, resolveProvince } from "./provinces";
 import {
   createDb,
-  activityCountsByDate,
   countByProvince,
   countByStatus,
   listLegislators,
@@ -29,7 +27,6 @@ import {
   getInitiativeById,
   latestRunsBySource,
   listActivity,
-  listCommissions,
   listDeposits,
   listDocuments,
   listInitiatives,
@@ -217,7 +214,7 @@ export async function getLegislatorsByProvince(): Promise<LegislatorsByProvince>
   return out;
 }
 
-export type { RosterMember, CommissionWithMembers };
+export type { CommissionWithMembers };
 
 /** A legislator plus the committees they sit on (with their cargo) — powers the profile modal. */
 export interface LegislatorProfile extends RosterMember {
@@ -459,17 +456,6 @@ export async function getDepositsRange(
   return listDeposits(d, { dateFrom: from, dateTo: to, limit: 1000, chamber });
 }
 
-/**
- * Senate deposits ending at `date`, looking back `windowDays` (default 7). The Senate's
- * SIL publishes with lag, so a single day is often empty — the short window mirrors the
- * manual playbook ("revisar ese día y los anteriores") and keeps the feed non-empty.
- */
-export async function getSenateDeposits(date: string, windowDays = 7): Promise<DepositItem[]> {
-  const d = await db();
-  const from = shiftISO(date, -(windowDays - 1));
-  return listDeposits(d, { dateFrom: from, dateTo: date, limit: 500, chamber: "SENADO" });
-}
-
 /** Committee/plenary activity (both chambers) within an inclusive [from, to] range. */
 export async function getRangeActivity(from: string, to: string) {
   const d = await db();
@@ -484,12 +470,6 @@ export async function getRangeActivity(from: string, to: string) {
 export async function getChamberActivity(chamber: string, limit = 120) {
   const d = await db();
   return listActivity(d, { chamber, limit });
-}
-
-/** Per-day committee/plenary counts for the activity sparkline/calendar. */
-export async function getActivityCalendar(since?: string) {
-  const d = await db();
-  return activityCountsByDate(d, { since });
 }
 
 export interface SourceHealthFact {
@@ -567,11 +547,6 @@ export async function getFeedFreshness() {
     .sort();
   const newestSuccessAt = times.length ? times[times.length - 1]! : null;
   return { newestSuccessAt, sources };
-}
-
-export async function getCommissions(chamber?: string) {
-  const d = await db();
-  return listCommissions(d, { chamber });
 }
 
 export interface OfficialPublicationDocument {
@@ -657,7 +632,7 @@ export async function getConsultas() {
   return rows.map(toRegulationFact);
 }
 
-export interface RegulationFact {
+interface RegulationFact {
   id: number;
   institution: string;
   regType: string | null;

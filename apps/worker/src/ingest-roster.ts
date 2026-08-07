@@ -29,7 +29,7 @@ export interface RosterSummary {
 type Log = (m: string) => void;
 
 /** Cardinality canaries: reject partial/changed source payloads before they corrupt roster state. */
-export const ROSTER_MINIMUMS: Readonly<Record<string, number>> = {
+const ROSTER_MINIMUMS: Readonly<Record<string, number>> = {
   "roster-diputados": 150,
   "roster-senado": 30,
 };
