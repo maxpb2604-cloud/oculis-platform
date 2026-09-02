@@ -27,8 +27,8 @@ describe("normProvince", () => {
 });
 
 describe("resolveProvince", () => {
-  it("resolves the 'Nacional' alias to 'distrito nacional'", () => {
-    expect(resolveProvince("Nacional")).toBe("distrito nacional");
+  it("does not assign national representation to Distrito Nacional", () => {
+    expect(resolveProvince("Nacional")).toBe("nacional");
   });
 
   it("resolves the 'Santo Domingo de Guzmán' alias to 'distrito nacional'", () => {
@@ -42,6 +42,11 @@ describe("resolveProvince", () => {
   it("resolves aliases case- and accent-insensitively", () => {
     expect(resolveProvince("BAHORUCO")).toBe("baoruco");
     expect(resolveProvince("santo domingo de guzman")).toBe("distrito nacional");
+  });
+
+  it("reconciles the official one-word Montecristi spelling with the map label", () => {
+    expect(resolveProvince("Montecristi")).toBe("monte cristi");
+    expect(resolveProvince("Monte Cristi")).toBe("monte cristi");
   });
 
   it("passes a plain (non-aliased) province through normalized", () => {

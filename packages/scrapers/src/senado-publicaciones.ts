@@ -8,8 +8,9 @@
  */
 import { INITIATIVE_CODE_RE } from "./codes.js";
 import { buildISODate, extractLeadingISODate } from "./dates.js";
-import { browserHeaders, fetchJson, fetchText } from "./http.js";
+import { browserHeaders, fetchBytes, fetchJson, fetchText, type FetchBytesResult } from "./http.js";
 import { fetchPdfText, type PdfText } from "./pdf.js";
+import WordExtractor from "word-extractor";
 
 const SENATE_HOST = "https://www.senadord.gob.do";
 const WPFD_AJAX = `${SENATE_HOST}/wp-admin/admin-ajax.php`;
@@ -113,7 +114,7 @@ export interface SenadoPublishedDocument {
   pageUrl: string;
   /** URL listed verbatim by the official WPFD response. */
   downloadUrl: string | null;
-  /** Deterministic official endpoint used when a PDF body must be read. */
+  /** Deterministic official endpoint used when a document body must be read. */
   directDownloadUrl: string;
   viewerUrl: string | null;
   raw: RawWpfdFile;
@@ -140,13 +141,57 @@ export interface SenadoPublicationTransport {
   json(url: string): Promise<unknown>;
   text(url: string): Promise<string>;
   pdfText(url: string): Promise<PdfText>;
+  bytes(url: string): Promise<FetchBytesResult>;
+  legacyWordText(bytes: Uint8Array): Promise<string>;
 }
 
 const defaultTransport: SenadoPublicationTransport = {
   json: (url) => fetchJson<unknown>(url, { headers: WPFD_HEADERS, timeoutMs: 30_000 }),
   text: (url) => fetchText(url, { timeoutMs: 30_000 }),
   pdfText: (url) => fetchPdfText(url),
+  bytes: (url) => fetchBytes(url, { headers: WPFD_HEADERS, timeoutMs: 45_000 }),
+  legacyWordText: async (bytes) => {
+    const document = await new WordExtractor().extract(Buffer.from(bytes));
+    return document.getBody();
+  },
 };
+
+const OLE_COMPOUND_DOCUMENT_MAGIC = Uint8Array.from([
+  0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1,
+]);
+const LEGACY_WORD_CONTENT_TYPES = new Set(["application/msword", "application/octet-stream"]);
+const MAX_LEGACY_WORD_BYTES = 50 * 1024 * 1024;
+
+function normalizedContentType(contentType: string): string {
+  return contentType.split(";", 1)[0]!.trim().toLowerCase();
+}
+
+function hasMagic(bytes: Uint8Array, magic: Uint8Array): boolean {
+  return bytes.length >= magic.length && magic.every((value, index) => bytes[index] === value);
+}
+
+function validateLegacyWordBody(document: SenadoPublishedDocument, body: FetchBytesResult): void {
+  const contentType = normalizedContentType(body.contentType);
+  if (!LEGACY_WORD_CONTENT_TYPES.has(contentType)) {
+    throw new Error(
+      `Senado · archivo ${document.fileId} DOC con MIME no permitido (${contentType || "ausente"})`,
+    );
+  }
+  if (
+    body.bytes.length < 512 ||
+    body.bytes.length > MAX_LEGACY_WORD_BYTES ||
+    !hasMagic(body.bytes, OLE_COMPOUND_DOCUMENT_MAGIC)
+  ) {
+    throw new Error(
+      `Senado · archivo ${document.fileId} DOC no contiene un documento OLE válido (${body.bytes.length} bytes)`,
+    );
+  }
+  if (document.sizeBytes !== null && document.sizeBytes !== body.bytes.length) {
+    throw new Error(
+      `Senado · archivo ${document.fileId} DOC cambió de tamaño (${document.sizeBytes} declarado, ${body.bytes.length} recibido)`,
+    );
+  }
+}
 
 function wpfdCategoryUrl(categoryId: number, page: number): string {
   const base = `${WPFD_AJAX}?juwpfisadmin=false&action=wpfd&task=files.getFiles&id=${categoryId}`;
@@ -385,10 +430,30 @@ export class SenadoPublicationsAdapter {
   }
 
   async fetchDocumentText(document: SenadoPublishedDocument): Promise<PdfText> {
-    if (document.extension !== "pdf") {
-      throw new Error(`Senado · archivo ${document.fileId} no es PDF (${document.extension})`);
+    if (document.extension === "pdf") {
+      return this.transport.pdfText(document.directDownloadUrl);
     }
-    return this.transport.pdfText(document.directDownloadUrl);
+    if (document.extension === "doc") {
+      const body = await this.transport.bytes(document.directDownloadUrl);
+      validateLegacyWordBody(document, body);
+      let text: string;
+      try {
+        text = await this.transport.legacyWordText(body.bytes);
+      } catch (error) {
+        throw new Error(
+          `Senado · archivo ${document.fileId} DOC no pudo leerse: ${(error as Error).message}`,
+          { cause: error },
+        );
+      }
+      if (!text.trim()) {
+        throw new Error(`Senado · archivo ${document.fileId} DOC no contiene texto legible`);
+      }
+      // Binary Word files do not expose a reliable page count without a rendering engine.
+      return { text, pages: 0 };
+    }
+    throw new Error(
+      `Senado · archivo ${document.fileId} usa un formato no compatible (${document.extension})`,
+    );
   }
 
   async collect(opts: SenadoPublicationCollectOptions = {}): Promise<SenadoPublicationCollection> {

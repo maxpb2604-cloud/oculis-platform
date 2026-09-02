@@ -10,7 +10,7 @@
   },
   "scripts": {
     "generate": "drizzle-kit generate",
-    "test": "vitest run",
+    "test": "vitest run --maxWorkers=1",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -23,6 +23,6 @@
     "@types/pg": "*",
     "drizzle-kit": "*",
     "typescript": "^5.6.0",
-    "vitest": "^2.1.0"
+    "vitest": "4.1.11"
   }
 }

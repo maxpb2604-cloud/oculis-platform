@@ -1,0 +1,582 @@
+.archive {
+  container: congress-movements / inline-size;
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: clamp(20px, 2.4vw, 30px);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.archiveHeader {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: clamp(28px, 5vw, 72px);
+  padding: clamp(28px, 4vw, 56px);
+}
+
+.archiveIntro {
+  min-width: 0;
+}
+
+.archiveIntro h2 {
+  max-width: 21ch;
+  margin-top: 8px;
+  color: var(--text);
+  font-family: var(--font-serif);
+  font-size: clamp(2rem, 4.4vw, 4.8rem);
+  font-weight: 620;
+  line-height: 0.98;
+  letter-spacing: -0.045em;
+}
+
+.archiveIntro > p:last-child {
+  max-width: 68ch;
+  margin-top: 18px;
+  color: var(--text-muted);
+  font-size: 0.95rem;
+  line-height: 1.65;
+}
+
+.summaryStats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(118px, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--border);
+}
+
+.summaryStats > div {
+  display: grid;
+  min-height: 118px;
+  align-content: space-between;
+  gap: 16px;
+  padding: 18px;
+  background: var(--surface-2);
+}
+
+.summaryStats dt {
+  max-width: 14ch;
+  color: var(--text-muted);
+  font-size: 0.68rem;
+  font-weight: 720;
+  letter-spacing: 0.1em;
+  line-height: 1.35;
+  text-transform: uppercase;
+}
+
+.summaryStats dd {
+  color: var(--text);
+  font-size: clamp(2rem, 3vw, 3rem);
+  font-weight: 650;
+  line-height: 0.85;
+}
+
+.controlDeck {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px 24px;
+  padding: 18px clamp(20px, 4vw, 56px) 20px;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface-2) 74%, transparent);
+}
+
+.dateNavigation {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: 44px minmax(0, 1fr) 44px;
+  align-items: center;
+  gap: 10px;
+}
+
+.dateArrow {
+  display: inline-flex;
+  min-width: 44px;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-strong);
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--text);
+}
+
+a.dateArrow:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.dateArrow[aria-disabled="true"] {
+  color: var(--text-subtle);
+  opacity: 0.46;
+}
+
+.dateForm {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: auto minmax(142px, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.dateForm label {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  font-weight: 680;
+}
+
+.dateForm input[type="date"] {
+  min-width: 0;
+  min-height: 44px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  padding: 0 14px;
+  background: var(--surface);
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.dateForm button,
+.quickDates a {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  padding: 0 16px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.78rem;
+  font-weight: 720;
+  cursor: pointer;
+}
+
+.dateForm button:hover,
+.quickDates a:hover,
+.quickDates a[aria-current="date"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.quickDates {
+  display: flex;
+  grid-column: 1;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-left: 54px;
+}
+
+.chamberRail {
+  display: inline-grid;
+  min-width: min(100%, 455px);
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  grid-template-columns: 1.15fr 0.85fr;
+  gap: 5px;
+  padding: 5px;
+  border: 1px solid color-mix(in srgb, white 56%, var(--border-strong));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface) 68%, transparent);
+  box-shadow:
+    0 14px 34px color-mix(in srgb, var(--nav-bg) 10%, transparent),
+    inset 0 1px 0 color-mix(in srgb, white 65%, transparent);
+  -webkit-backdrop-filter: blur(20px) saturate(140%);
+  backdrop-filter: blur(20px) saturate(140%);
+}
+
+.chamberButton {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 8px 18px;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-weight: 760;
+  line-height: 1.15;
+  text-align: center;
+}
+
+.chamberButton[data-active="true"] {
+  border-color: color-mix(in srgb, white 72%, var(--border));
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+  box-shadow:
+    0 5px 14px color-mix(in srgb, var(--nav-bg) 12%, transparent),
+    inset 0 1px 0 color-mix(in srgb, white 85%, transparent);
+  color: var(--text);
+}
+
+.resultsHeader h2 {
+  margin-top: 3px;
+  color: var(--text);
+  font-size: clamp(1.25rem, 1.8vw, 1.6rem);
+  font-weight: 680;
+  letter-spacing: -0.02em;
+}
+
+.results {
+  background: var(--surface);
+}
+
+.resultsHeader {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 24px;
+  padding: clamp(26px, 3.5vw, 46px) clamp(20px, 4vw, 56px) 22px;
+}
+
+.resultsHeader > span {
+  color: var(--text-muted);
+  font-size: 0.74rem;
+  text-align: right;
+}
+
+.movementList {
+  border-top: 1px solid var(--border);
+}
+
+.movementItem {
+  border-bottom: 1px solid var(--border);
+}
+
+.movementItem:last-child {
+  border-bottom: 0;
+}
+
+.movementRow {
+  display: grid;
+  min-height: 116px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.movementPrimaryLink {
+  display: grid;
+  min-width: 0;
+  min-height: 116px;
+  grid-template-columns: minmax(0, 1fr) 44px;
+  align-items: center;
+  gap: clamp(16px, 2vw, 26px);
+  padding: clamp(22px, 3vw, 36px) clamp(18px, 2.5vw, 34px) clamp(22px, 3vw, 36px)
+    clamp(20px, 4vw, 56px);
+  color: inherit;
+}
+
+.movementRow:has(.movementPrimaryLink:hover),
+.movementRow:has(.movementPrimaryLink:focus-visible) {
+  background: var(--surface-2);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.movementPrimaryLink:focus-visible {
+  border-radius: 2px;
+  outline: 3px solid var(--accent);
+  outline-offset: -5px;
+}
+
+.movementCopy {
+  min-width: 0;
+}
+
+.movementHeadline {
+  max-width: 54ch;
+  color: var(--text);
+  font-size: clamp(1.2rem, 2vw, 1.75rem);
+  font-weight: 520;
+  line-height: 1.28;
+  letter-spacing: -0.026em;
+}
+
+.movementAction {
+  color: var(--accent);
+  font-weight: 650;
+}
+
+.movementMeta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px 13px;
+  margin-top: 12px;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+
+.evidence {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--verified);
+}
+
+.movementActions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-right: clamp(20px, 4vw, 56px);
+}
+
+.pdfAvailability {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 720;
+  line-height: 1.15;
+  white-space: nowrap;
+}
+
+.pdfAvailable {
+  min-height: 44px;
+  padding: 0 12px;
+  border-color: color-mix(in srgb, var(--verified) 28%, var(--border));
+  background: var(--verified-soft);
+  color: var(--verified);
+  cursor: pointer;
+}
+
+.pdfAvailable:hover {
+  border-color: var(--verified);
+  box-shadow: 0 6px 16px color-mix(in srgb, var(--verified) 16%, transparent);
+}
+
+.pdfAvailable:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.pdfUnavailable {
+  min-height: 28px;
+  padding: 0 9px;
+  background: var(--surface-3);
+  color: var(--text-muted);
+}
+
+.rowArrow {
+  display: inline-flex;
+  width: 44px;
+  height: 44px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  color: var(--text-muted);
+}
+
+.movementPrimaryLink:hover .rowArrow,
+.movementPrimaryLink:focus-visible .rowArrow {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: white;
+}
+
+.emptyState {
+  display: flex;
+  min-height: 220px;
+  align-items: flex-start;
+  gap: 14px;
+  border-top: 1px solid var(--border);
+  padding: clamp(32px, 5vw, 64px) clamp(20px, 4vw, 56px);
+  color: var(--text-muted);
+}
+
+.emptyState h3 {
+  color: var(--text);
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.emptyState p {
+  max-width: 68ch;
+  margin-top: 5px;
+  font-size: 0.85rem;
+  line-height: 1.6;
+}
+
+@container congress-movements (max-width: 1100px) {
+  .controlDeck {
+    grid-template-columns: 1fr;
+  }
+
+  .chamberRail {
+    width: 100%;
+    grid-column: 1;
+    grid-row: auto;
+    grid-row-start: 1;
+  }
+
+  .dateNavigation {
+    grid-row-start: 2;
+  }
+
+  .quickDates {
+    grid-row-start: 3;
+  }
+}
+
+@container congress-movements (max-width: 880px) {
+  .archiveHeader {
+    grid-template-columns: 1fr;
+  }
+
+  .summaryStats {
+    width: min(100%, 420px);
+  }
+}
+
+@media (max-width: 700px) {
+  .archiveHeader {
+    padding: 26px 20px;
+  }
+
+  .archiveIntro h2 {
+    font-size: clamp(2rem, 11vw, 3.2rem);
+  }
+
+  .dateForm {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .dateForm label {
+    grid-column: 1 / -1;
+  }
+
+  .quickDates {
+    padding-left: 54px;
+  }
+
+  .resultsHeader {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .resultsHeader > span {
+    text-align: left;
+  }
+
+  .movementRow {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .movementPrimaryLink {
+    min-height: 0;
+    padding-bottom: 16px;
+  }
+
+  .movementActions {
+    justify-content: flex-start;
+    padding: 0 20px 22px;
+  }
+}
+
+@media (max-width: 480px) {
+  .summaryStats {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .summaryStats > div {
+    min-height: 100px;
+    padding: 14px;
+  }
+
+  .controlDeck {
+    padding-inline: 14px;
+  }
+
+  .chamberButton {
+    padding-inline: 10px;
+    font-size: 0.72rem;
+  }
+
+  .dateNavigation {
+    gap: 6px;
+  }
+
+  .dateForm {
+    gap: 7px;
+  }
+
+  .dateForm button {
+    padding-inline: 12px;
+  }
+
+  .quickDates {
+    padding-left: 50px;
+  }
+
+  .movementActions {
+    padding-inline: 20px;
+  }
+}
+
+@container congress-movements (max-width: 360px) {
+  .dateForm {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .dateForm label {
+    grid-column: 1;
+  }
+
+  .dateForm input[type="date"],
+  .dateForm button {
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .controlDeck,
+  .chamberRail,
+  .chamberButton[data-active="true"] {
+    background: var(--surface-2);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .chamberRail,
+  .chamberButton,
+  .dateArrow,
+  .dateForm input,
+  .dateForm button,
+  .quickDates a,
+  .pdfAvailability,
+  .rowArrow {
+    border: 1px solid CanvasText;
+  }
+
+  .pdfAvailable:hover,
+  .pdfAvailable:focus-visible,
+  .movementPrimaryLink:hover .rowArrow,
+  .movementPrimaryLink:focus-visible .rowArrow {
+    background: Highlight;
+    color: HighlightText;
+  }
+
+  .chamberButton[data-active="true"] {
+    outline: 2px solid Highlight;
+    outline-offset: -4px;
+  }
+
+  .movementPrimaryLink:focus-visible,
+  .pdfAvailable:focus-visible {
+    outline-color: Highlight;
+  }
+}

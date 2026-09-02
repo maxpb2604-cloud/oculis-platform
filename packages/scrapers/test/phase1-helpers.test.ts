@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { extractCodes, INITIATIVE_CODE_RE } from "../src/codes.js";
-import { buildISODate, extractLeadingISODate, spanishMonthToNum } from "../src/dates.js";
+import {
+  buildISODate,
+  dominicanTodayISO,
+  extractLeadingISODate,
+  spanishMonthToNum,
+} from "../src/dates.js";
 import { parseSenadoDate, parseSenateCommitteeAgenda, SenadoAdapter } from "../src/senado.js";
 import { parseOrdenFileName } from "../src/dip-oficial.js";
 
@@ -78,6 +83,16 @@ describe("dates: extractLeadingISODate", () => {
     expect(extractLeadingISODate("05/08/2026")).toBeNull();
     expect(extractLeadingISODate("2026-08-05garbage")).toBeNull();
     expect(extractLeadingISODate("2026-02-31T00:00:00Z")).toBeNull();
+  });
+});
+
+describe("dates: Dominican source calendar", () => {
+  it("does not cross into tomorrow during the 22:15 local monitoring cycle", () => {
+    expect(dominicanTodayISO(new Date("2026-09-02T02:15:00Z"))).toBe("2026-09-01");
+  });
+
+  it("changes day at Dominican midnight", () => {
+    expect(dominicanTodayISO(new Date("2026-09-02T04:00:00Z"))).toBe("2026-09-02");
   });
 });
 

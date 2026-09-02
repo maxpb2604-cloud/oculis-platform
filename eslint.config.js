@@ -16,6 +16,7 @@ export default tseslint.config(
       "**/build/**",
       "**/.next/**",
       "**/.next-ci/**",
+      "**/.next-dev/**",
       "**/coverage/**",
       "**/*.tsbuildinfo",
       ".data/**",

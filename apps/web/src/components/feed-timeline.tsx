@@ -49,7 +49,7 @@ function dayHeading(
 /** Small day separator between cards. */
 function DayDivider({ label }: { label: string }) {
   return (
-    <div className="flex items-center gap-3 px-1 pb-0.5 pt-1.5 first:pt-0">
+    <div className="flex items-center gap-3 border-b pb-2 pt-6 first:pt-0">
       <span className="eyebrow shrink-0" style={{ color: "var(--text-muted)" }}>
         {label}
       </span>
@@ -61,7 +61,7 @@ function DayDivider({ label }: { label: string }) {
 /** Placeholder card shown while a page of items is being fetched. */
 function SkeletonCard() {
   return (
-    <div className="card flex gap-3 p-3.5" aria-hidden>
+    <div className="flex gap-3 border-b py-5" aria-hidden>
       <div className="hidden h-[84px] w-[112px] shrink-0 rounded-lg sm:block skeleton" />
       <div className="min-w-0 flex-1">
         <div className="mb-2 h-3 w-28 rounded skeleton" />
@@ -184,10 +184,10 @@ export function FeedTimeline({
   }, [loadMore, loading]);
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex flex-col">
       {items.length === 0 ? (
         <div
-          className="card flex flex-col items-center gap-3 p-10 text-center text-sm"
+          className="flex flex-col items-center gap-3 rounded-xl border p-10 text-center text-sm"
           role="status"
           style={{ color: "var(--text-muted)" }}
         >
@@ -206,8 +206,8 @@ export function FeedTimeline({
                 ? "Prueba otra combinación o limpia los filtros para volver al feed completo."
                 : "Try another combination or clear the filters to return to the complete feed."
               : es
-                ? "Las publicaciones aparecerán cuando una ejecución de recolección las guarde en esta base de datos."
-                : "Posts will appear after an ingestion run stores them in this database."}
+                ? "Las publicaciones aparecerán cuando las fuentes seleccionadas informen una actualización."
+                : "Posts will appear when the selected sources report an update."}
           </span>
           {hasFilters && (
             <a
@@ -247,7 +247,10 @@ export function FeedTimeline({
         </>
       )}
       {loadError && (
-        <div className="card flex items-center justify-between gap-3 p-3 text-sm" role="alert">
+        <div
+          className="mt-4 flex items-center justify-between gap-3 rounded-lg border p-3 text-sm"
+          role="alert"
+        >
           <span style={{ color: "var(--danger)" }}>
             {es ? "No se pudieron cargar más publicaciones." : "More posts could not be loaded."}
           </span>

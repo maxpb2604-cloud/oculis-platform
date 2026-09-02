@@ -8,15 +8,18 @@
  * secretary and members), matched from the `commission_members` table by committee name.
  */
 import { useMemo, useState } from "react";
+import { MagnifyingGlass } from "@phosphor-icons/react";
 import { Modal } from "@/components/ui/modal";
 import {
+  ActivityDestinationLink,
   ActivityInitiativeLinks,
   ProceduralMentionChip,
   type ActivityItem,
 } from "@/components/monitoring";
-import { formatISODayMonth } from "@/lib/format";
-import { safeHttpUrl } from "@/lib/input";
+import { formatISODayMonth, formatOfficialTime } from "@/lib/format";
 import type { CommissionWithMembers } from "@/lib/data";
+import { partyColor, partyDisplayLabel } from "@/lib/party-presentation";
+import { LegislatorProfileTrigger } from "@/components/legislator-profile-provider";
 
 interface Group {
   name: string;
@@ -61,11 +64,14 @@ export function CommitteeBubbles({
   lang,
   chamber,
   members,
+  showMembers = true,
 }: {
   items: ActivityItem[];
   lang: "es" | "en";
   chamber: string;
   members?: CommissionWithMembers[];
+  /** Institution pages can omit rosters; /congreso keeps the complete membership view. */
+  showMembers?: boolean;
 }) {
   const es = lang === "es";
   const locale = es ? "es-DO" : "en-US";
@@ -121,24 +127,18 @@ export function CommitteeBubbles({
     <div>
       {/* Search committees */}
       <div className="relative max-w-md">
-        <span
+        <label htmlFor="committee-search" className="sr-only">
+          {es ? "Buscar comisión" : "Search committee"}
+        </label>
+        <MagnifyingGlass
+          size={17}
+          aria-hidden
           className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2"
           style={{ color: "var(--text-muted)" }}
-        >
-          <svg
-            width="15"
-            height="15"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.8"
-            strokeLinecap="round"
-          >
-            <circle cx="11" cy="11" r="7" />
-            <path d="m21 21-4.3-4.3" />
-          </svg>
-        </span>
+        />
         <input
+          id="committee-search"
+          type="search"
           value={q}
           onChange={(e) => setQ(e.target.value)}
           placeholder={es ? "Buscar comisión…" : "Search committee…"}
@@ -200,15 +200,13 @@ export function CommitteeBubbles({
                 <span>
                   {g.initiatives > 0
                     ? `${g.initiatives} ${es ? "iniciativas" : "initiatives"}`
-                    : es
-                      ? "agenda"
-                      : "agenda"}
+                    : `${g.count} ${es ? "reuniones" : "meetings"}`}
                 </span>
                 <span
                   className="font-semibold group-hover:underline"
                   style={{ color: "var(--accent)" }}
                 >
-                  {es ? "Ver más" : "Read more"}
+                  {es ? "Ver reuniones" : "View meetings"}
                 </span>
               </div>
             </button>
@@ -271,7 +269,8 @@ export function CommitteeBubbles({
                       )}
                       {m.eventTime && (
                         <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>
-                          · {es ? "Hora reportada" : "Reported time"}: {m.eventTime}
+                          · {es ? "Hora reportada" : "Reported time"}:{" "}
+                          {formatOfficialTime(m.eventTime, lang)}
                         </span>
                       )}
                     </div>
@@ -296,22 +295,17 @@ export function CommitteeBubbles({
                       </div>
                     )}
                     <ActivityInitiativeLinks initiatives={m.initiatives} lang={es ? "es" : "en"} />
-                    {safeHttpUrl(m.agendaUrl) && (
-                      <a
-                        href={safeHttpUrl(m.agendaUrl)!}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="mt-1.5 inline-block text-[11px] font-semibold underline-offset-2 hover:underline"
-                        style={{ color: "var(--accent)" }}
-                      >
-                        {es ? "Ver agenda" : "View agenda"}
-                      </a>
-                    )}
+                    <ActivityDestinationLink
+                      item={m}
+                      lang={es ? "es" : "en"}
+                      className="mt-1.5 inline-block text-[11px] font-semibold underline-offset-2 hover:underline"
+                      style={{ color: "var(--accent)" }}
+                    />
                   </div>
                 ))}
               </div>
 
-              <CommitteeMembers committee={findMembers(open.name)} es={es} />
+              {showMembers && <CommitteeMembers committee={findMembers(open.name)} lang={lang} />}
             </div>
           </div>
         </Modal>
@@ -323,11 +317,12 @@ export function CommitteeBubbles({
 /** Real committee composition (from the roster), or an honest note if not yet ingested. */
 function CommitteeMembers({
   committee,
-  es,
+  lang,
 }: {
   committee: CommissionWithMembers | null;
-  es: boolean;
+  lang: "es" | "en";
 }) {
+  const es = lang === "es";
   return (
     <>
       <div className="eyebrow mb-2 mt-6">
@@ -336,33 +331,57 @@ function CommitteeMembers({
       </div>
       {committee && committee.members.length > 0 ? (
         <ul className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
-          {committee.members.map((m, i) => (
-            <li
-              key={`${m.name}-${m.cargo ?? ""}-${i}`}
-              className="flex items-center justify-between gap-2 rounded-lg px-3 py-1.5 text-[12.5px]"
-              style={{ background: "var(--surface-2)" }}
-            >
-              <span className="min-w-0 truncate">{m.name}</span>
-              <span className="flex shrink-0 items-center gap-1.5">
-                {m.party && (
-                  <span className="text-[10.5px]" style={{ color: "var(--text-muted)" }}>
-                    {m.party}
-                  </span>
-                )}
-                {m.cargo && m.cargo !== "Miembro" && (
-                  <span
-                    className="rounded px-1.5 py-0.5 text-[10px] font-semibold"
-                    style={{
-                      background: CARGO_SOFT[m.cargo] ?? "var(--surface-2)",
-                      color: CARGO_COLOR[m.cargo] ?? "var(--text-muted)",
-                    }}
-                  >
-                    {m.cargo}
-                  </span>
-                )}
-              </span>
-            </li>
-          ))}
+          {committee.members.map((m, i) => {
+            const party = m.party ? partyDisplayLabel(m.party, null, lang) : null;
+            const color = partyColor(m.party);
+            return (
+              <li
+                key={`${m.name}-${m.cargo ?? ""}-${i}`}
+                className="flex items-center justify-between gap-2 rounded-lg px-3 py-1.5 text-[12.5px]"
+                style={{ background: "var(--surface-2)" }}
+              >
+                <LegislatorProfileTrigger
+                  profileId={m.profileId}
+                  fullName={m.name}
+                  chamber={committee.chamber}
+                  party={m.party}
+                  ariaLabel={
+                    party
+                      ? es
+                        ? `Abrir perfil de ${m.name}, ${party}`
+                        : `Open ${m.name}'s profile, ${party}`
+                      : undefined
+                  }
+                  className="-ml-2 inline-flex min-h-11 min-w-0 items-center rounded-md px-2 text-left font-medium underline-offset-4 hover:text-[var(--accent)] hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
+                >
+                  <span className="min-w-0 truncate">{m.name}</span>
+                </LegislatorProfileTrigger>
+                <span className="flex shrink-0 items-center gap-1.5">
+                  {m.party && (
+                    <span className="inline-flex items-center gap-1.5 text-[10.5px] text-[var(--text-muted)]">
+                      <span
+                        aria-hidden="true"
+                        className="h-1.5 w-1.5 rounded-full"
+                        style={{ background: color }}
+                      />
+                      {party}
+                    </span>
+                  )}
+                  {m.cargo && m.cargo !== "Miembro" && (
+                    <span
+                      className="rounded px-1.5 py-0.5 text-[10px] font-semibold"
+                      style={{
+                        background: CARGO_SOFT[m.cargo] ?? "var(--surface-2)",
+                        color: CARGO_COLOR[m.cargo] ?? "var(--text-muted)",
+                      }}
+                    >
+                      {m.cargo}
+                    </span>
+                  )}
+                </span>
+              </li>
+            );
+          })}
         </ul>
       ) : (
         <div

@@ -1,0 +1,45 @@
+/**
+ * Canonical icon set for Oculis.
+ *
+ * Importing the SSR build keeps these icons safe in both server and client
+ * components while avoiding the hand-drawn SVG drift that existed before.
+ */
+export {
+  ArrowLeft,
+  ArrowRight,
+  ArrowSquareOut,
+  BookOpenText,
+  Broadcast,
+  Buildings,
+  CalendarBlank,
+  CalendarDots,
+  CaretDown,
+  CaretRight,
+  Check,
+  CheckCircle,
+  Clock,
+  Copy,
+  Database,
+  FilePdf,
+  FileMagnifyingGlass,
+  FileText,
+  Folders,
+  Gavel,
+  House,
+  Info,
+  List,
+  MagnifyingGlass,
+  Moon,
+  NewspaperClipping,
+  Shield,
+  ShieldCheck,
+  SidebarSimple,
+  Sun,
+  Translate,
+  UserList,
+  UsersThree,
+  Warning,
+  WarningCircle,
+  X,
+  XCircle,
+} from "@phosphor-icons/react/dist/ssr";

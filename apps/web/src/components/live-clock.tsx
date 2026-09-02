@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { CalendarBlank, Clock } from "@phosphor-icons/react";
 
 const TZ = "America/Santo_Domingo";
 
@@ -15,20 +16,18 @@ export function LiveClock({ lang, initialDate }: { lang: "es" | "en"; initialDat
   const [now, setNow] = useState<Date | null>(null);
   useEffect(() => {
     setNow(new Date());
-    const id = setInterval(() => setNow(new Date()), 1000);
+    const id = setInterval(() => setNow(new Date()), 60_000);
     return () => clearInterval(id);
   }, []);
 
   const time = now
-    ? new Intl.DateTimeFormat("en-GB", {
+    ? new Intl.DateTimeFormat(lang === "es" ? "es-DO" : "en-US", {
         timeZone: TZ,
-        hour: "2-digit",
+        hour: "numeric",
         minute: "2-digit",
-        second: "2-digit",
-        hour12: false,
+        hour12: true,
       }).format(now)
-    : "--:--:--";
-  const [hh = "--", mm = "--", ss = "--"] = time.split(":");
+    : "--:--";
   const date = now
     ? new Intl.DateTimeFormat(lang === "es" ? "es-DO" : "en-US", {
         timeZone: TZ,
@@ -40,33 +39,27 @@ export function LiveClock({ lang, initialDate }: { lang: "es" | "en"; initialDat
     : initialDate;
 
   return (
-    <div className="card elev flex flex-wrap items-center justify-between gap-x-6 gap-y-3 p-5">
-      <div className="min-w-0">
-        <div className="flex items-center gap-2">
-          <span
-            className="inline-flex h-2.5 w-2.5 rounded-full"
-            style={{ background: "var(--accent)" }}
-            aria-hidden
-          />
-          <span className="eyebrow" style={{ color: "var(--accent)" }}>
-            {lang === "es" ? "VISTA DIARIA" : "DAILY VIEW"}
+    <div className="flex flex-wrap items-center justify-between gap-3 border-y py-3">
+      <div className="flex min-w-0 items-center gap-3">
+        <CalendarBlank size={22} style={{ color: "var(--accent)" }} aria-hidden />
+        <div className="min-w-0">
+          <span className="eyebrow block">{lang === "es" ? "Fecha actual" : "Current date"}</span>
+          <span className="serif block truncate text-lg font-semibold first-letter:uppercase">
+            {date}
           </span>
-          <span className="eyebrow">· {lang === "es" ? "Hora RD" : "DR time"}</span>
-        </div>
-        <div className="serif mt-2 text-2xl font-semibold leading-tight first-letter:uppercase sm:text-[30px]">
-          {date}
         </div>
       </div>
 
-      <div
-        className="font-mono text-5xl font-bold leading-none tracking-tight tabular-nums sm:text-6xl"
-        style={{ color: "var(--text)" }}
-        aria-label={`Hora ${time}`}
-      >
-        {hh}
-        <span style={{ color: "var(--text-muted)" }}>:</span>
-        {mm}
-        <span style={{ color: "var(--danger)" }}>:{ss}</span>
+      <div className="flex items-center gap-2 text-sm" style={{ color: "var(--text-muted)" }}>
+        <Clock size={18} aria-hidden />
+        <span>{lang === "es" ? "Hora de República Dominicana" : "Dominican Republic time"}</span>
+        <strong
+          className="tnum text-base"
+          style={{ color: "var(--text)" }}
+          aria-label={`${lang === "es" ? "Hora" : "Time"} ${time}`}
+        >
+          {time}
+        </strong>
       </div>
     </div>
   );

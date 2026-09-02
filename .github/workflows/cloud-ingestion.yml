@@ -3,9 +3,10 @@ name: Cloud data ingestion
 on:
   schedule:
     # 06:15, 14:15 and 22:15 in Santo Domingo (UTC-4).
-    # Three short runs per day keep usage inside GitHub Free's monthly allowance.
+    # Each run discovers late Diputados documents, refreshes current filings/Fichas,
+    # captures changed histories in both chambers, then verifies available PDFs.
     - cron: "15 2,10,18 * * *"
-    # 02:45 Santo Domingo: refresh initiative slices, regulations and recent official publications.
+    # 02:45 Santo Domingo: full document-metadata sweep plus routine maintenance.
     - cron: "45 6 * * *"
     # Monday 03:30 Santo Domingo: refresh both congressional rosters.
     - cron: "30 7 * * 1"
@@ -22,9 +23,14 @@ on:
           - daily
           - maintenance
           - roster
+          - movements-incremental
           - movements
           - publications
+          - publications-full
           - senate-corpus
+          - senate-fichas
+          - link-initiative-proponents
+          - documents-missing
           - documents
           - bootstrap
 
@@ -56,133 +62,307 @@ jobs:
         run: npm ci
 
       - name: Verify database configuration
+        id: database_config
         run: test -n "$DATABASE_URL"
 
-      - name: Run scheduled monitoring
+      # Deposited documents can appear days or weeks after the initiative. This lane
+      # is keyed by exact official initiative id, never by filing date or title.
+      - name: Discover missing deposited document metadata
+        id: daily_missing_documents
         if: >-
-          (github.event_name == 'schedule' && github.event.schedule == '15 2,10,18 * * *') ||
-          (github.event_name == 'workflow_dispatch' && inputs.mode == 'daily')
+          !cancelled() &&
+          steps.database_config.outcome == 'success' &&
+          ((github.event_name == 'schedule' && github.event.schedule == '15 2,10,18 * * *') ||
+          (github.event_name == 'workflow_dispatch' &&
+          (inputs.mode == 'daily' || inputs.mode == 'documents-missing')))
+        timeout-minutes: 30
+        run: npm run ingest -w @oculis/worker -- --documents --missing-deposited
+
+      # Refresh new filings/Fichas before the complete-index movement detector. A
+      # failure here remains visible but does not suppress the independent lanes.
+      - name: Run scheduled monitoring
+        id: daily_monitoring
+        if: >-
+          !cancelled() &&
+          steps.database_config.outcome == 'success' &&
+          ((github.event_name == 'schedule' && github.event.schedule == '15 2,10,18 * * *') ||
+          (github.event_name == 'workflow_dispatch' && inputs.mode == 'daily'))
+        timeout-minutes: 60
         run: npm run daily -w @oculis/worker
+
+      - name: Refresh changed initiative histories (both chambers, eight-hour lane)
+        id: daily_movement_histories
+        if: >-
+          !cancelled() &&
+          steps.database_config.outcome == 'success' &&
+          ((github.event_name == 'schedule' && github.event.schedule == '15 2,10,18 * * *') ||
+          (github.event_name == 'workflow_dispatch' &&
+          (inputs.mode == 'daily' || inputs.mode == 'movements-incremental')))
+        timeout-minutes: 45
+        run: npm run movements:incremental -w @oculis/worker
+
+      # Link availability lasts 24 hours. This runs after metadata discovery and
+      # movement capture, checkpoints every document (including failures), and
+      # receives no AI configuration.
+      - name: Verify deposited bill PDFs (byte-only)
+        id: verify_documents
+        if: >-
+          !cancelled() &&
+          steps.database_config.outcome == 'success' &&
+          github.event_name == 'schedule' &&
+          github.event.schedule == '15 2,10,18 * * *'
+        timeout-minutes: 30
+        run: npm run verify-documents -w @oculis/worker -- --all
+
+      - name: Verify deposited bill PDFs after manual prioritized discovery
+        id: manual_daily_verify_documents
+        if: >-
+          !cancelled() &&
+          steps.database_config.outcome == 'success' &&
+          github.event_name == 'workflow_dispatch' &&
+          (inputs.mode == 'daily' || inputs.mode == 'documents-missing')
+        timeout-minutes: 30
+        run: npm run verify-documents -w @oculis/worker -- --all
 
       - name: Refresh recent initiative slices
         id: maintenance_initiatives
         if: >-
-          (github.event_name == 'schedule' && github.event.schedule == '45 6 * * *') ||
-          (github.event_name == 'workflow_dispatch' && inputs.mode == 'maintenance')
+          !cancelled() &&
+          steps.database_config.outcome == 'success' &&
+          ((github.event_name == 'schedule' && github.event.schedule == '45 6 * * *') ||
+          (github.event_name == 'workflow_dispatch' && inputs.mode == 'maintenance'))
         run: npm run crawl -w @oculis/worker
+
+      # One complete index scan per day detects old initiatives whose official signal
+      # changed; only those candidates incur a historicos/Ficha request. The weekly
+      # full sweeps below remain the reconciliation safety net.
+      - name: Refresh changed initiative histories (both chambers)
+        id: maintenance_movement_histories
+        if: >-
+          !cancelled() &&
+          steps.database_config.outcome == 'success' &&
+          ((github.event_name == 'schedule' && github.event.schedule == '45 6 * * *') ||
+          (github.event_name == 'workflow_dispatch' && inputs.mode == 'maintenance'))
+        timeout-minutes: 45
+        run: npm run movements:incremental -w @oculis/worker
 
       - name: Refresh regulatory sources
         id: maintenance_regulatory
         if: >-
-          (success() || steps.maintenance_initiatives.outcome == 'failure') &&
+          !cancelled() &&
+          steps.database_config.outcome == 'success' &&
           ((github.event_name == 'schedule' && github.event.schedule == '45 6 * * *') ||
           (github.event_name == 'workflow_dispatch' && inputs.mode == 'maintenance'))
         run: npm run ingest -w @oculis/worker -- --regulatory
 
-      - name: Refresh document metadata for recent initiatives
+      # This is the daily complete safety sweep. It deliberately has no --limit:
+      # an old initiative may receive its deposited PDF long after filing.
+      - name: Sweep all Diputados document metadata (daily)
         id: maintenance_documents
         if: >-
-          (success() || steps.maintenance_initiatives.outcome == 'failure' || steps.maintenance_regulatory.outcome == 'failure') &&
+          !cancelled() &&
+          steps.database_config.outcome == 'success' &&
           ((github.event_name == 'schedule' && github.event.schedule == '45 6 * * *') ||
           (github.event_name == 'workflow_dispatch' && inputs.mode == 'maintenance'))
-        run: npm run ingest -w @oculis/worker -- --documents --limit 500
+        timeout-minutes: 45
+        run: npm run ingest -w @oculis/worker -- --documents
+
+      - name: Verify PDFs found by the daily complete metadata sweep
+        id: maintenance_verify_documents
+        if: >-
+          !cancelled() &&
+          steps.database_config.outcome == 'success' &&
+          ((github.event_name == 'schedule' && github.event.schedule == '45 6 * * *') ||
+          (github.event_name == 'workflow_dispatch' && inputs.mode == 'maintenance'))
+        timeout-minutes: 30
+        run: npm run verify-documents -w @oculis/worker -- --all
 
       - name: Refresh official congressional publications
         id: maintenance_publications
         if: >-
-          (success() || steps.maintenance_initiatives.outcome == 'failure' || steps.maintenance_regulatory.outcome == 'failure' || steps.maintenance_documents.outcome == 'failure') &&
+          !cancelled() &&
+          steps.database_config.outcome == 'success' &&
           ((github.event_name == 'schedule' && github.event.schedule == '45 6 * * *') ||
           (github.event_name == 'workflow_dispatch' && (inputs.mode == 'maintenance' || inputs.mode == 'publications')))
         run: npm run publications -w @oculis/worker -- --limit 3
 
+      # Operator-triggered exhaustive recovery. This is deliberately separate from
+      # the three-page maintenance refresh and from the multi-source bootstrap.
+      - name: Recover complete official congressional publications
+        id: manual_full_publications
+        if: >-
+          !cancelled() &&
+          steps.database_config.outcome == 'success' &&
+          github.event_name == 'workflow_dispatch' && inputs.mode == 'publications-full'
+        timeout-minutes: 120
+        run: npm run publications -w @oculis/worker -- --full
+
       - name: Refresh complete Diputados corpus
         id: weekly_dip_corpus
         if: >-
-          (github.event_name == 'schedule' && github.event.schedule == '15 8 * * 0') ||
-          (github.event_name == 'workflow_dispatch' && inputs.mode == 'movements')
+          !cancelled() &&
+          steps.database_config.outcome == 'success' &&
+          ((github.event_name == 'schedule' && github.event.schedule == '15 8 * * 0') ||
+          (github.event_name == 'workflow_dispatch' && inputs.mode == 'movements'))
         run: npm run crawl:corpus -w @oculis/worker
 
       - name: Refresh official Diputados status histories
         id: weekly_movements
         if: >-
-          (success() || steps.weekly_dip_corpus.outcome == 'failure') &&
+          !cancelled() &&
+          steps.database_config.outcome == 'success' &&
           ((github.event_name == 'schedule' && github.event.schedule == '15 8 * * 0') ||
           (github.event_name == 'workflow_dispatch' && inputs.mode == 'movements'))
+        timeout-minutes: 60
         run: npm run movements -w @oculis/worker
 
       - name: Refresh complete configured Senate collection
         id: weekly_senate_corpus
         if: >-
-          (success() || steps.weekly_dip_corpus.outcome == 'failure' || steps.weekly_movements.outcome == 'failure') &&
+          !cancelled() &&
+          steps.database_config.outcome == 'success' &&
           ((github.event_name == 'schedule' && github.event.schedule == '15 8 * * 0') ||
-          (github.event_name == 'workflow_dispatch' && inputs.mode == 'senate-corpus'))
+          (github.event_name == 'workflow_dispatch' &&
+          (inputs.mode == 'senate-corpus' || inputs.mode == 'movements')))
         run: npm run senate:corpus -w @oculis/worker
+
+      - name: Enrich the complete Senate collection from official Fichas
+        id: weekly_senate_fichas
+        if: >-
+          !cancelled() &&
+          steps.database_config.outcome == 'success' &&
+          ((github.event_name == 'schedule' && github.event.schedule == '15 8 * * 0') ||
+          (github.event_name == 'workflow_dispatch' &&
+          (inputs.mode == 'senate-corpus' || inputs.mode == 'senate-fichas' || inputs.mode == 'movements')))
+        # Recurring movement coverage must re-read prior Fichas: their official
+        # history can change after the first verified observation. --resume is only
+        # for operator-controlled bootstrap/recovery runs.
+        run: npm run senate:fichas:full -w @oculis/worker
+
+      - name: Reconcile complete initiative-proponent coverage
+        id: weekly_proponent_links
+        if: >-
+          !cancelled() &&
+          steps.database_config.outcome == 'success' &&
+          ((github.event_name == 'schedule' && github.event.schedule == '15 8 * * 0') ||
+          (github.event_name == 'workflow_dispatch' &&
+          (inputs.mode == 'senate-corpus' || inputs.mode == 'link-initiative-proponents')))
+        run: npm run link:initiative-proponents -w @oculis/worker
 
       - name: Sweep all Diputados document metadata
         id: weekly_documents
         if: >-
-          (success() || steps.weekly_dip_corpus.outcome == 'failure' || steps.weekly_movements.outcome == 'failure' || steps.weekly_senate_corpus.outcome == 'failure') &&
+          !cancelled() &&
+          steps.database_config.outcome == 'success' &&
           github.event_name == 'schedule' && github.event.schedule == '15 8 * * 0'
+        timeout-minutes: 45
         run: npm run ingest -w @oculis/worker -- --documents
+
+      - name: Verify PDFs found by the weekly document safety sweep
+        id: weekly_verify_documents
+        if: >-
+          !cancelled() &&
+          steps.database_config.outcome == 'success' &&
+          github.event_name == 'schedule' && github.event.schedule == '15 8 * * 0'
+        timeout-minutes: 30
+        run: npm run verify-documents -w @oculis/worker -- --all
 
       - name: Sweep complete official congressional publications
         id: weekly_publications
         if: >-
-          (success() || steps.weekly_dip_corpus.outcome == 'failure' || steps.weekly_movements.outcome == 'failure' || steps.weekly_senate_corpus.outcome == 'failure' || steps.weekly_documents.outcome == 'failure') &&
+          !cancelled() &&
+          steps.database_config.outcome == 'success' &&
           github.event_name == 'schedule' && github.event.schedule == '15 8 * * 0'
         run: npm run publications -w @oculis/worker -- --full
 
       - name: Bootstrap initiatives
         id: bootstrap_initiatives
-        if: github.event_name == 'workflow_dispatch' && inputs.mode == 'bootstrap'
+        if: >-
+          !cancelled() &&
+          steps.database_config.outcome == 'success' &&
+          github.event_name == 'workflow_dispatch' && inputs.mode == 'bootstrap'
         run: npm run crawl:full -w @oculis/worker
 
       - name: Bootstrap Senate collection
         id: bootstrap_senate
         if: >-
-          (success() || steps.bootstrap_initiatives.outcome == 'failure') &&
+          !cancelled() &&
+          steps.database_config.outcome == 'success' &&
           github.event_name == 'workflow_dispatch' && inputs.mode == 'bootstrap'
         run: npm run senate:corpus -w @oculis/worker
 
-      - name: Refresh all document metadata
+      - name: Refresh all document metadata (bootstrap or manual recovery)
         id: bootstrap_documents
         if: >-
-          (success() || steps.bootstrap_initiatives.outcome == 'failure' || steps.bootstrap_senate.outcome == 'failure') &&
+          !cancelled() &&
+          steps.database_config.outcome == 'success' &&
           ((github.event_name == 'workflow_dispatch' && inputs.mode == 'bootstrap') ||
           (github.event_name == 'workflow_dispatch' && inputs.mode == 'documents'))
+        timeout-minutes: 45
         run: npm run ingest -w @oculis/worker -- --documents
+
+      - name: Verify PDFs found by bootstrap or manual document recovery
+        id: bootstrap_verify_documents
+        if: >-
+          !cancelled() &&
+          steps.database_config.outcome == 'success' &&
+          github.event_name == 'workflow_dispatch' &&
+          (inputs.mode == 'bootstrap' || inputs.mode == 'documents')
+        timeout-minutes: 30
+        run: npm run verify-documents -w @oculis/worker -- --all
 
       - name: Refresh congressional roster
         id: roster
         if: >-
-          (success() || steps.bootstrap_initiatives.outcome == 'failure' || steps.bootstrap_senate.outcome == 'failure' || steps.bootstrap_documents.outcome == 'failure') &&
+          !cancelled() &&
+          steps.database_config.outcome == 'success' &&
           ((github.event_name == 'schedule' && github.event.schedule == '30 7 * * 1') ||
           (github.event_name == 'workflow_dispatch' && (inputs.mode == 'roster' || inputs.mode == 'bootstrap')))
         run: npm run roster -w @oculis/worker
 
+      - name: Bootstrap complete Senate Ficha evidence
+        id: bootstrap_senate_fichas
+        if: >-
+          !cancelled() &&
+          steps.database_config.outcome == 'success' &&
+          github.event_name == 'workflow_dispatch' && inputs.mode == 'bootstrap'
+        run: npm run senate:fichas:full -w @oculis/worker -- --resume
+
+      - name: Bootstrap exact initiative-proponent relationships
+        id: bootstrap_proponent_links
+        if: >-
+          !cancelled() &&
+          steps.database_config.outcome == 'success' &&
+          github.event_name == 'workflow_dispatch' && inputs.mode == 'bootstrap'
+        run: npm run link:initiative-proponents -w @oculis/worker
+
       - name: Bootstrap regulatory sources
         id: bootstrap_regulatory
         if: >-
-          (success() || steps.bootstrap_initiatives.outcome == 'failure' || steps.bootstrap_senate.outcome == 'failure' || steps.bootstrap_documents.outcome == 'failure' || steps.roster.outcome == 'failure') &&
+          !cancelled() &&
+          steps.database_config.outcome == 'success' &&
           github.event_name == 'workflow_dispatch' && inputs.mode == 'bootstrap'
         run: npm run ingest -w @oculis/worker -- --regulatory
 
       - name: Seed verified institutional accounts
         id: bootstrap_accounts
         if: >-
-          (success() || steps.bootstrap_initiatives.outcome == 'failure' || steps.bootstrap_senate.outcome == 'failure' || steps.bootstrap_documents.outcome == 'failure' || steps.roster.outcome == 'failure' || steps.bootstrap_regulatory.outcome == 'failure') &&
+          !cancelled() &&
+          steps.database_config.outcome == 'success' &&
           github.event_name == 'workflow_dispatch' && inputs.mode == 'bootstrap'
         run: npm run seed-accounts -w @oculis/worker
 
       - name: Bootstrap official congressional publications
         id: bootstrap_publications
         if: >-
-          (success() || steps.bootstrap_initiatives.outcome == 'failure' || steps.bootstrap_senate.outcome == 'failure' || steps.bootstrap_documents.outcome == 'failure' || steps.roster.outcome == 'failure' || steps.bootstrap_regulatory.outcome == 'failure' || steps.bootstrap_accounts.outcome == 'failure') &&
+          !cancelled() &&
+          steps.database_config.outcome == 'success' &&
           github.event_name == 'workflow_dispatch' && inputs.mode == 'bootstrap'
         run: npm run publications -w @oculis/worker -- --full
 
       - name: Finish bootstrap with current activity and feed
         if: >-
-          (success() || steps.bootstrap_initiatives.outcome == 'failure' || steps.bootstrap_senate.outcome == 'failure' || steps.bootstrap_documents.outcome == 'failure' || steps.roster.outcome == 'failure' || steps.bootstrap_regulatory.outcome == 'failure' || steps.bootstrap_accounts.outcome == 'failure' || steps.bootstrap_publications.outcome == 'failure') &&
+          !cancelled() &&
+          steps.database_config.outcome == 'success' &&
           github.event_name == 'workflow_dispatch' && inputs.mode == 'bootstrap'
         run: npm run daily -w @oculis/worker

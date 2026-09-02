@@ -1,0 +1,86 @@
+name: Official source live health
+
+on:
+  schedule:
+    # Every six hours at 23:37, 05:37, 11:37 and 17:37 in Santo Domingo (UTC-4).
+    # The offset avoids both exact-hour congestion and the main ingestion windows.
+    - cron: "37 3,9,15,21 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: oculis-live-source-health
+  cancel-in-progress: false
+
+jobs:
+  verify-official-sources:
+    name: Read-only official source checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      CI: "true"
+      OCULIS_LIVE: "1"
+      # This workflow exercises only the scraper package. No database or AI
+      # credential is referenced or made available to the test process.
+      DATABASE_URL: ""
+      OCULIS_AUTO_MIGRATE: "0"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Confirm isolated read-only runtime
+        shell: bash
+        run: |
+          test -z "$DATABASE_URL"
+          test "$OCULIS_AUTO_MIGRATE" = "0"
+
+      - name: Run all scraper live tests
+        id: live_tests
+        shell: bash
+        run: |
+          set -o pipefail
+          results_dir="$GITHUB_WORKSPACE/artifacts/live-source-health"
+          mkdir -p "$results_dir"
+          npm run test:live -w @oculis/scrapers -- \
+            --no-file-parallelism \
+            --maxWorkers=1 \
+            --reporter=default \
+            --reporter=junit \
+            --outputFile.junit="$results_dir/vitest.junit.xml" \
+            2>&1 | tee "$results_dir/vitest.log"
+
+      - name: Publish live-test summary
+        if: always()
+        shell: bash
+        env:
+          LIVE_TEST_OUTCOME: ${{ steps.live_tests.outcome }}
+        run: |
+          {
+            echo "## Official source live health"
+            echo
+            echo "- Result: **${LIVE_TEST_OUTCOME}**"
+            echo "- Trigger: \`${GITHUB_EVENT_NAME}\`"
+            echo "- Commit: \`${GITHUB_SHA}\`"
+            echo "- Database and AI credentials: **not available to this job**"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Preserve live-test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-source-health-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/live-source-health/
+          if-no-files-found: warn
+          retention-days: 30

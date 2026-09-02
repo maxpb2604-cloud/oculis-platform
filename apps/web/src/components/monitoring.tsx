@@ -3,17 +3,31 @@
  * Pure presentational server components; data comes from lib/data.ts.
  */
 import Link from "next/link";
+import { ArrowRight, ArrowSquareOut } from "@phosphor-icons/react/dist/ssr";
+import type { CSSProperties } from "react";
 import { t, type Lang } from "@/lib/i18n";
-import { formatISODate, formatISODayMonth } from "@/lib/format";
-import { safeHttpUrl, senateRecordId } from "@/lib/input";
+import { formatISODate, formatISODayMonth, formatOfficialTime } from "@/lib/format";
+import { safeHttpUrl } from "@/lib/input";
+import { initiativeDetailHref } from "@/lib/initiative-links";
+import {
+  activityDestinationLabel,
+  activityDetailHref,
+  safeOfficialActivityUrl,
+} from "@/lib/activity-links";
+import { partyDisplayLabel } from "@/lib/party-presentation";
+import { LegislatorProfileTrigger } from "@/components/legislator-profile-provider";
+import { NewTabNotice } from "@/components/ui/primitives";
+import type { PublicHoyDepositItem } from "@/lib/public-initiative-payloads";
 
 export interface ActivityItem {
   id: number;
   source: string;
+  sourceEventId: string | null;
   scope: string;
   chamber: string | null;
   eventDate: string | null;
   eventTime: string | null;
+  location: string | null;
   kind: string | null;
   body: string | null;
   description: string;
@@ -46,7 +60,7 @@ export function ActivityInitiativeLinks({
           <li key={`${initiative.code}-${initiative.initiativeId ?? "unresolved"}`}>
             {initiative.initiativeId ? (
               <Link
-                href={`/initiatives/${initiative.initiativeId}`}
+                href={initiativeDetailHref(initiative.initiativeId, lang)}
                 className="font-medium underline-offset-2 hover:underline"
                 style={{ color: "var(--accent)" }}
               >
@@ -110,11 +124,58 @@ export function ProceduralMentionChip({ raw }: { raw: string }) {
   );
 }
 
+/** Committee rows always open Oculis' exact, shareable event record. External
+ * destinations remain reserved for an exact official document or source record. */
+export function ActivityDestinationLink({
+  item,
+  lang = "es",
+  className,
+  style,
+}: {
+  item: ActivityItem;
+  lang?: Lang;
+  className?: string;
+  style?: CSSProperties;
+}) {
+  if (item.scope === "COMMITTEE" && item.source !== "sen-attendance") {
+    return (
+      <Link href={activityDetailHref(item.id, lang)} className={className} style={style}>
+        <span className="inline-flex items-center gap-1.5">
+          {lang === "es" ? "Ver agenda" : "View agenda"}
+          <ArrowRight size={13} aria-hidden />
+        </span>
+      </Link>
+    );
+  }
+
+  const agendaUrl = safeOfficialActivityUrl(item.agendaUrl, item.source, item.sourceEventId);
+  if (!agendaUrl) return null;
+  const label = activityDestinationLabel(agendaUrl, lang, item.source);
+  return (
+    <a
+      href={agendaUrl}
+      target="_blank"
+      rel="noopener noreferrer"
+      className={className}
+      style={style}
+      aria-label={`${label}. ${
+        lang === "es"
+          ? "Abre la fuente oficial en una pestaña nueva"
+          : "Opens the official source in a new tab"
+      }`}
+    >
+      <span className="inline-flex items-center gap-1.5">
+        {label}
+        <ArrowSquareOut size={13} aria-hidden />
+      </span>
+    </a>
+  );
+}
+
 /** One agenda/activity row. Composes structured fields — body (title), status chips,
  *  count chip, date — instead of re-printing a pre-baked description string. */
 export function ActivityRow({ item, lang = "es" }: { item: ActivityItem; lang?: Lang }) {
   const statuses = item.statuses ?? [];
-  const agendaUrl = safeHttpUrl(item.agendaUrl);
   // show description only when it adds detail beyond the body title
   const showDesc = item.description && item.description.trim() !== (item.body ?? "").trim();
   return (
@@ -154,7 +215,8 @@ export function ActivityRow({ item, lang = "es" }: { item: ActivityItem; lang?: 
           {item.kind && <span>{item.kind}</span>}
           {item.eventTime && (
             <span>
-              {lang === "es" ? "Hora reportada" : "Reported time"}: {item.eventTime}
+              {lang === "es" ? "Hora reportada" : "Reported time"}:{" "}
+              {formatOfficialTime(item.eventTime, lang)}
             </span>
           )}
           {item.initiativeCount > 0 && (
@@ -163,17 +225,12 @@ export function ActivityRow({ item, lang = "es" }: { item: ActivityItem; lang?: 
               {t(lang, item.initiativeCount === 1 ? "initiative" : "initiativePlural")}
             </span>
           )}
-          {agendaUrl && (
-            <a
-              href={agendaUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="font-medium underline-offset-2 hover:underline"
-              style={{ color: "var(--accent)" }}
-            >
-              {t(lang, "viewDocument")}
-            </a>
-          )}
+          <ActivityDestinationLink
+            item={item}
+            lang={lang}
+            className="font-medium underline-offset-2 hover:underline"
+            style={{ color: "var(--accent)" }}
+          />
         </div>
       </div>
       {item.eventDate && (
@@ -217,75 +274,28 @@ export function ActivityList({
 
 // --- Daily deposits building blocks (the "depositadas hoy" feed) ---
 
-export interface DepositItem {
-  id: number;
-  code: string | null;
-  type: string | null;
-  title: string; // SIL descripción — plain-language summary
-  status: string | null;
-  chamber: string | null;
-  sourceId: string | null;
-  sponsor: string | null;
-  sponsorRole: string | null;
-  sponsorCount: number | null;
-  party: string | null;
-  province: string | null;
-  filedAt: string | null;
-  sourceUrl: string | null;
-  docUploaded: boolean;
-  docUrl: string | null;
-  docType: string | null;
-}
-
-/** Document-status pill — the "¿está cargado el PDF?" signal the user asked for. */
-function DocStatus({
-  uploaded,
-  chamber,
-  lang = "es",
-}: {
-  uploaded: boolean;
-  chamber: string | null;
-  lang?: Lang;
-}) {
-  // The Senate's document registry is behind a login, so document availability can't be
-  // verified publicly per-initiative — we flag it as "consult the portal" rather than
-  // claiming pending/uploaded.
-  const m =
-    chamber === "SENADO"
-      ? { bg: "var(--surface-2)", fg: "var(--text-muted)", label: t(lang, "docSenate") }
-      : chamber === "DIPUTADOS" && uploaded
-        ? { bg: "var(--accent-soft)", fg: "var(--accent)", label: t(lang, "docFiled") }
-        : chamber === "DIPUTADOS"
-          ? { bg: "var(--surface-2)", fg: "var(--text-muted)", label: t(lang, "docPending") }
-          : {
-              bg: "var(--surface-2)",
-              fg: "var(--text-muted)",
-              label: lang === "es" ? "Documento: No informado" : "Document: Not reported",
-            };
-  return (
-    <span
-      className="inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[11px] font-semibold"
-      style={{ background: m.bg, color: m.fg }}
-    >
-      <span aria-hidden className="h-1.5 w-1.5 rounded-full" style={{ background: m.fg }} />
-      {m.label}
-    </span>
-  );
-}
-
 /**
  * One deposited-initiative card: summary (descripción), who filed it (name + role +
  * party/province), and whether its official document is uploaded — linked to the SIL
  * page where it appears. Nothing more.
  */
-export function DepositCard({ item, lang = "es" }: { item: DepositItem; lang?: Lang }) {
-  const sponsorMeta = [item.party, item.province].filter(Boolean).join(" · ");
+export function DepositCard({ item, lang = "es" }: { item: PublicHoyDepositItem; lang?: Lang }) {
+  const missing = lang === "es" ? "No informado" : "Not reported";
+  const title = item.title.trim() || missing;
+  const sponsorMeta = [partyDisplayLabel(item.party, null, lang), item.province]
+    .filter(Boolean)
+    .join(" · ");
   const others = (item.sponsorCount ?? 1) - 1;
-  const isSenado = item.chamber === "SENADO";
+  const sponsorIsLegislator = Boolean(
+    item.sponsor &&
+    (item.sponsorProfileId ||
+      item.sponsorLegislatorSourceId ||
+      /\b(?:diputad[oa]|senador(?:a)?)\b/i.test(item.sponsorRole ?? "")),
+  );
   const isDiputados = item.chamber === "DIPUTADOS";
-  const senateId = isSenado ? senateRecordId(item.sourceId) : null;
-  const sourceUrl = safeHttpUrl(item.sourceUrl);
-  const docUrl = safeHttpUrl(item.docUrl);
+  const officialHref = item.officialRecordHref;
+  const detailHref = initiativeDetailHref(item.id, lang);
+  const documentHref = item.officialDocumentOpenHref;
   return (
     <div className="flex flex-col gap-2 border-b px-5 py-4 last:border-0 transition-colors hover:bg-[var(--surface-2)]">
       <div className="flex items-center gap-2">
@@ -305,15 +315,22 @@ export function DepositCard({ item, lang = "es" }: { item: DepositItem; lang?: L
         )}
       </div>
 
-      <button
-        type="button"
-        data-initiative-id={item.id}
-        aria-haspopup="dialog"
-        className="text-left text-sm font-medium leading-snug underline-offset-2 hover:underline"
-        aria-label={`${lang === "es" ? "Abrir detalle de iniciativa" : "Open initiative detail"}: ${item.title}`}
-      >
-        {item.title}
-      </button>
+      <div className="flex items-start gap-2">
+        <Link
+          href={detailHref}
+          className="min-w-0 flex-1 text-left text-sm font-medium leading-snug underline-offset-2 hover:underline"
+        >
+          {title}
+        </Link>
+        <Link
+          href={detailHref}
+          className="inline-flex min-h-9 shrink-0 items-center rounded border px-2.5 py-1 text-[11px] font-medium focus-visible:outline-2 focus-visible:outline-offset-2"
+          style={{ color: "var(--accent)" }}
+          aria-label={`${lang === "es" ? "Ver detalle de la iniciativa" : "View initiative details"}: ${title}`}
+        >
+          {lang === "es" ? "Ver detalle" : "View details"}
+        </Link>
+      </div>
 
       {item.sponsor && (
         <div
@@ -321,9 +338,23 @@ export function DepositCard({ item, lang = "es" }: { item: DepositItem; lang?: L
           style={{ color: "var(--text-muted)" }}
         >
           <span>{t(lang, "filedBy")}</span>
-          <span className="font-semibold" style={{ color: "var(--text)" }}>
-            {item.sponsor}
-          </span>
+          {sponsorIsLegislator ? (
+            <LegislatorProfileTrigger
+              profileId={item.sponsorProfileId}
+              fullName={item.sponsor}
+              chamber={item.chamber}
+              role={item.sponsorRole}
+              party={item.party}
+              province={item.province}
+              className="-my-2 inline-flex min-h-11 items-center rounded-md px-2 font-semibold text-[var(--text)] underline-offset-4 hover:text-[var(--accent)] hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
+            >
+              {item.sponsor}
+            </LegislatorProfileTrigger>
+          ) : (
+            <span className="font-semibold" style={{ color: "var(--text)" }}>
+              {item.sponsor}
+            </span>
+          )}
           {item.sponsorRole && <span>· {item.sponsorRole}</span>}
           {sponsorMeta && <span>· {sponsorMeta}</span>}
           {others > 0 && (
@@ -335,46 +366,48 @@ export function DepositCard({ item, lang = "es" }: { item: DepositItem; lang?: L
       )}
 
       <div className="flex flex-wrap items-center gap-3">
-        <DocStatus uploaded={item.docUploaded} chamber={item.chamber} lang={lang} />
-        {senateId ? (
+        {officialHref ? (
           <a
-            href={`/api/senado/ficha/${senateId}`}
+            href={officialHref}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-[11px] font-medium underline-offset-2 hover:underline"
+            className="inline-flex items-center gap-1.5 text-[11px] font-medium underline-offset-2 hover:underline"
             style={{ color: "var(--accent)" }}
+            aria-label={`${isDiputados ? t(lang, "viewSilRecord") : t(lang, "openSenateRecord")}. ${
+              lang === "es"
+                ? "Abre la fuente oficial en una pestaña nueva"
+                : "Opens the official source in a new tab"
+            }`}
           >
-            {t(lang, "openSenateRecord")}
-          </a>
-        ) : sourceUrl ? (
-          <a
-            href={sourceUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-[11px] font-medium underline-offset-2 hover:underline"
-            style={{ color: "var(--accent)" }}
-          >
-            {isDiputados
-              ? t(lang, "viewSilRecord")
-              : lang === "es"
-                ? "Abrir fuente oficial"
-                : "Open official source"}
+            {isDiputados ? t(lang, "viewSilRecord") : t(lang, "openSenateRecord")}
+            <ArrowSquareOut size={13} aria-hidden />
           </a>
         ) : (
-          <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>
+          <span className="text-[13px]" style={{ color: "var(--text-muted)" }}>
             {lang === "es" ? "Enlace oficial: No informado" : "Official link: Not reported"}
           </span>
         )}
-        {isDiputados && item.docUploaded && docUrl && (
+        {isDiputados && documentHref ? (
           <a
-            href={docUrl}
+            href={documentHref}
             target="_blank"
-            rel="noreferrer"
-            className="text-[11px] font-medium underline-offset-2 hover:underline"
+            rel="noopener noreferrer"
+            className="inline-flex min-h-11 items-center gap-1.5 text-[11px] font-medium underline-offset-2 hover:underline"
             style={{ color: "var(--accent)" }}
+            aria-label={
+              lang === "es"
+                ? `Abrir el PDF oficial de ${item.code || title}. Abre la fuente oficial en una pestaña nueva`
+                : `Open the official PDF for ${item.code || title}. Opens the official source in a new tab`
+            }
           >
-            {t(lang, "openDocument")}
+            {lang === "es" ? "Abrir PDF oficial" : "Open official PDF"}
+            <ArrowSquareOut size={13} aria-hidden />
+            <NewTabNotice lang={lang} />
           </a>
+        ) : (
+          <span className="text-[11px] font-medium" style={{ color: "var(--text-muted)" }}>
+            {lang === "es" ? "PDF no disponible" : "PDF unavailable"}
+          </span>
         )}
       </div>
     </div>
@@ -386,7 +419,7 @@ export function DepositList({
   empty,
   lang = "es",
 }: {
-  items: DepositItem[];
+  items: PublicHoyDepositItem[];
   empty: React.ReactNode;
   lang?: Lang;
 }) {
@@ -443,7 +476,7 @@ export function RegulationRow({ item, lang = "es" }: { item: RegulationItem; lan
           </span>
           {item.isConsulta && (
             <span
-              className="rounded px-1.5 py-0.5 text-[10px] font-bold"
+              className="rounded px-1.5 py-0.5 text-xs font-bold"
               style={{ background: "var(--accent)", color: "#fff" }}
             >
               {t(lang, "publicConsultation")}
@@ -452,7 +485,7 @@ export function RegulationRow({ item, lang = "es" }: { item: RegulationItem; lan
         </div>
         <div className="mt-1 text-sm font-medium leading-snug">{item.title}</div>
         <div
-          className="mt-1.5 flex flex-wrap items-center gap-2 text-[11px]"
+          className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] leading-5"
           style={{ color: "var(--text-muted)" }}
         >
           <span>
@@ -469,8 +502,13 @@ export function RegulationRow({ item, lang = "es" }: { item: RegulationItem; lan
               href={sourceUrl}
               target="_blank"
               rel="noreferrer"
-              className="font-medium underline-offset-2 hover:underline"
+              className="inline-flex min-h-[44px] items-center font-semibold underline-offset-2 hover:underline"
               style={{ color: "var(--accent)" }}
+              aria-label={`${t(lang, "viewDocument")}: ${item.title}, ${item.institution}. ${
+                lang === "es"
+                  ? "Abre la fuente oficial en una pestaña nueva"
+                  : "Opens the official source in a new tab"
+              }`}
             >
               {t(lang, "viewDocument")}
             </a>
@@ -482,7 +520,7 @@ export function RegulationRow({ item, lang = "es" }: { item: RegulationItem; lan
         </div>
       </div>
       <div className="shrink-0 text-right">
-        <div className="tnum text-[11px]" style={{ color: "var(--text-muted)" }}>
+        <div className="tnum text-[13px]" style={{ color: "var(--text-muted)" }}>
           {lang === "es" ? "Fecha" : "Date"}: {item.publishedAt ?? missing}
         </div>
       </div>

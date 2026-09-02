@@ -3,9 +3,9 @@ import {
   explicitRegTypeFromTitle,
   canonicalLink,
   MispasAdapter,
+  parseMispasWpfdCategories,
   parseRichRssXml,
   parseIntrantDocuments,
-  parseMispasCollectionPage,
   rssDateToIso,
   SilDiputadosAdapter,
   SOURCE_REGISTRY,
@@ -53,22 +53,24 @@ describe("factual extraction policy", () => {
     );
   });
 
-  it("parses MISPAS collection HTML without inventing a missing day", () => {
-    const items = parseMispasCollectionPage(`
-      <li class="ds-artifact-item odd">
-        <h4 class="artifact-title">
-          <a href="/handle/123456789/2385">Reglamento t&eacute;cnico de bioseguridad</a>
-        </h4>
-        <span class="date">2025-11</span>
-      </li>
-    `);
-    expect(items).toEqual([
-      {
-        title: "Reglamento técnico de bioseguridad",
-        url: "https://repositorio.msp.gob.do/handle/123456789/2385",
-        dateText: "2025-11",
-      },
-    ]);
+  it("extracts only populated MISPAS categories with exact official ids", () => {
+    expect(
+      parseMispasWpfdCategories({
+        success: true,
+        data: [
+          {
+            term_id: 420,
+            name: "Normas y Reglamentos Técnicos",
+            count: 0,
+            children: [
+              { term_id: 421, name: "Enfermedades No Transmisibles", count: 4 },
+              { term_id: 422, name: "Vacío", count: 0 },
+              { term_id: "unsafe", name: "Inválido", count: 2 },
+            ],
+          },
+        ],
+      }),
+    ).toEqual([{ id: 421, name: "Enfermedades No Transmisibles", count: 4 }]);
   });
 
   it("parses exact INTRANT card title, date, type and URL", () => {
@@ -93,29 +95,61 @@ describe("factual extraction policy", () => {
     ]);
   });
 
-  it("uses MISPAS official HTML as a visible fallback when RSS is unavailable", async () => {
+  it("collects every MISPAS WPFD page without exposing placeholder legends", async () => {
+    const files = Array.from({ length: 11 }, (_, index) => ({
+      ID: 10_000 + index,
+      post_title: index === 0 ? "Leyenda" : "Reglamento Técnico",
+      description:
+        index === 0
+          ? "Este apartado no posee publicaciones oficiales en el mes de octubre 2020"
+          : `Documento sanitario ${index}`,
+      created_time: `2026-08-${String(index + 1).padStart(2, "0")} 12:00:00`,
+      catname: "reglamentos-tecnicos",
+      catid: 421,
+      post_name: `documento-${index}`,
+      ext: "pdf",
+      seouri: "documentos_oai",
+    }));
     const fetchMock = vi.fn(async (input: string | URL | Request) => {
       const url = String(input);
-      if (url.endsWith("/rss")) return new Response("missing", { status: 404 });
-      return new Response(`
-        <li class="ds-artifact-item odd">
-          <h4 class="artifact-title">
-            <a href="/handle/123456789/2385">Reglamento t&eacute;cnico de bioseguridad</a>
-          </h4>
-          <span class="date">2025-11</span>
-        </li>
-      `);
+      if (url.includes("task=categories.getCats")) {
+        return Response.json({
+          success: true,
+          data: [
+            {
+              term_id: 420,
+              name: "Normas y Reglamentos Técnicos",
+              count: 0,
+              children: [{ term_id: 421, name: "Reglamentos Técnicos", count: 11 }],
+            },
+          ],
+        });
+      }
+      const page = new URL(url).searchParams.get("page");
+      return Response.json({
+        files: page === "2" ? files.slice(10) : files.slice(0, 10),
+        pagination:
+          page === "2"
+            ? "<a data-page='1'>Anterior</a><span class='current'>2</span>"
+            : "<span class='current'>1</span><a data-page='2'>2</a>",
+      });
     });
     vi.stubGlobal("fetch", fetchMock);
     try {
-      const result = await new MispasAdapter(
-        "https://official.test/rss",
-        "https://official.test/collection",
-      ).collect();
-      expect(result.regulations).toHaveLength(1);
-      expect(result.regulations[0]?.publishedAt).toBeNull();
-      expect(result.regulations[0]?.status).toBeNull();
-      expect(result.gaps[0]).toContain("MISPAS RSS");
+      const result = await new MispasAdapter("https://official.test", 420, 26).collect();
+      expect(result.regulations).toHaveLength(10);
+      expect(result.gaps).toEqual([]);
+      expect(result.regulations[0]).toMatchObject({
+        source: "reg-mispas",
+        sourceId: "10001",
+        institution: "MISPAS",
+        regType: "Reglamento",
+        title: "Reglamento Técnico: Documento sanitario 1",
+        sourceCategory: "Reglamentos Técnicos",
+        publishedAt: "2026-08-02",
+        url: "https://official.test/documentos_oai/421/reglamentos-tecnicos/10001/documento-1.pdf",
+      });
+      expect(fetchMock).toHaveBeenCalledTimes(3);
     } finally {
       vi.unstubAllGlobals();
     }
@@ -130,12 +164,9 @@ describe("factual extraction policy", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
     try {
-      await expect(
-        new MispasAdapter(
-          "https://official.test/rss",
-          "https://official.test/collection",
-        ).collect(),
-      ).rejects.toThrow(/UNABLE_TO_VERIFY_LEAF_SIGNATURE.*1 attempt/);
+      await expect(new MispasAdapter("https://official.test", 420, 26).collect()).rejects.toThrow(
+        /UNABLE_TO_VERIFY_LEAF_SIGNATURE.*1 attempt/,
+      );
       expect(fetchMock).toHaveBeenCalledTimes(1);
     } finally {
       vi.unstubAllGlobals();
@@ -159,7 +190,13 @@ describe("source registry", () => {
     expect(SOURCE_REGISTRY.find((source) => source.id === "sil-movements")?.status).toBe("ACTIVE");
     expect(SOURCE_REGISTRY.find((source) => source.id === "reg-mispas")).toMatchObject({
       status: "ACTIVE",
-      required: false,
+      required: true,
+      officialUrl: "https://www.msp.gob.do/web/Transparencia/base-legal-otras-normativas/",
+    });
+    expect(SOURCE_REGISTRY.find((source) => source.id === "roster-senado")).toMatchObject({
+      status: "ACTIVE",
+      required: true,
+      officialUrl: "https://www.senadord.gob.do/senadores-2024-2028/",
     });
     for (const id of [
       "dip-known-agenda",

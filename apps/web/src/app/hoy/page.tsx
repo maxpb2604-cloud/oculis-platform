@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { Metadata } from "next";
 import {
   getDayActivity,
   getDeposits,
@@ -6,14 +7,41 @@ import {
   getRangeActivity,
   todayISO,
 } from "@/lib/data";
-import { langParam, langQuery, type Lang } from "@/lib/i18n";
+import { parseLang, type Lang } from "@/lib/i18n";
 import { AppShell } from "@/components/app-shell";
 import { HoyChambers } from "@/components/hoy-chambers";
-import { LiveClock } from "@/components/live-clock";
 import { RangePicker } from "@/components/range-picker";
 import { dateSpanDays, isISODate } from "@/lib/input";
+import { toPublicHoyDepositItem } from "@/lib/public-initiative-payloads";
 
 export const dynamic = "force-dynamic";
+
+type HoySearchParams = {
+  lang?: string;
+  date?: string;
+  from?: string;
+  to?: string;
+  chamber?: string;
+};
+
+export async function generateMetadata({
+  searchParams,
+}: {
+  searchParams: Promise<HoySearchParams>;
+}): Promise<Metadata> {
+  const lang = parseLang((await searchParams).lang);
+  return lang === "es"
+    ? {
+        title: "Agenda",
+        description:
+          "Reuniones, sesiones e iniciativas publicadas por la Cámara de Diputados y el Senado.",
+      }
+    : {
+        title: "Agenda",
+        description:
+          "Meetings, sessions, and initiatives published by the Chamber of Deputies and the Senate.",
+      };
+}
 
 function shift(iso: string, days: number): string {
   const [y, m, d] = iso.split("-").map(Number);
@@ -25,12 +53,23 @@ function shift(iso: string, days: number): string {
 export default async function HoyPage({
   searchParams,
 }: {
-  searchParams: Promise<{ lang?: string; date?: string; from?: string; to?: string }>;
+  searchParams: Promise<HoySearchParams>;
 }) {
   const sp = await searchParams;
-  const lang: Lang = sp.lang === "en" ? "en" : "es";
+  const lang: Lang = parseLang(sp.lang);
   const es = lang === "es";
-  const q = langParam(lang);
+  const chamber = sp.chamber === "senado" ? "senado" : null;
+
+  const hoyHref = (values: Record<string, string | null> = {}) => {
+    const params = new URLSearchParams();
+    if (lang === "en") params.set("lang", "en");
+    if (chamber) params.set("chamber", chamber);
+    for (const [key, value] of Object.entries(values)) {
+      if (value) params.set(key, value);
+    }
+    const query = params.toString();
+    return `/hoy${query ? `?${query}` : ""}`;
+  };
 
   const from = sp.from;
   const to = sp.to;
@@ -43,7 +82,7 @@ export default async function HoyPage({
 
   const date = isISODate(sp.date) ? sp.date : todayISO();
   const isToday = !isRange && date === todayISO();
-  const dlink = (iso: string) => `/hoy?date=${iso}${q}`;
+  const dlink = (iso: string) => hoyHref({ date: iso });
 
   const [activity, deposits, senDeposits] = await Promise.all([
     isRange ? getRangeActivity(from!, to!) : getDayActivity({ date, senateWindowDays: 0 }),
@@ -52,6 +91,10 @@ export default async function HoyPage({
     isRange ? getDepositsRange(from!, to!, "SENADO") : getDeposits(date, "SENADO"),
   ]);
   const { dip, sen } = activity;
+  // Keep official PDF URLs and their source metadata on the server. The client-side
+  // chamber switcher receives only Oculis' guarded local opener.
+  const publicDeposits = deposits.map((item) => toPublicHoyDepositItem(item, lang));
+  const publicSenDeposits = senDeposits.map((item) => toPublicHoyDepositItem(item, lang));
   const isCommittee = (i: { scope: string }) => i.scope === "COMMITTEE";
   const isPlenary = (i: { scope: string }) => i.scope === "PLENARY" || i.scope === "ASAMBLEA";
   // Every persisted source record remains visible. Exact source identifiers provide
@@ -94,30 +137,20 @@ export default async function HoyPage({
   return (
     <AppShell
       lang={lang}
-      title={es ? "Actividad Legislativa" : "Legislative Activity"}
+      title={es ? "Agenda" : "Agenda"}
       subtitle={
         es
-          ? "Cámara de Diputados y Senado · monitoreo diario"
-          : "Chamber of Deputies & Senate · daily monitoring"
+          ? "Reuniones, sesiones e iniciativas publicadas por el Congreso Nacional."
+          : "Meetings, sessions, and initiatives published by the National Congress."
       }
     >
-      {/* Dominican Republic clock for the daily view (date seeded server-side). */}
-      <LiveClock
-        lang={lang}
-        initialDate={new Intl.DateTimeFormat(es ? "es-DO" : "en-US", {
-          timeZone: "America/Santo_Domingo",
-          weekday: "long",
-          day: "numeric",
-          month: "long",
-          year: "numeric",
-        }).format(new Date())}
-      />
-
       {/* Controls — day selector (or active period) + custom range picker */}
-      <div className="mb-5 mt-5 flex flex-wrap items-center gap-2">
+      <div className="mb-6 flex flex-wrap items-center gap-2 border-b pb-5">
         {isRange ? (
           <>
-            <span className="eyebrow mr-1">{es ? "Período" : "Period"}</span>
+            <span className="text-xs font-semibold" style={{ color: "var(--text-muted)" }}>
+              {es ? "Período seleccionado" : "Selected period"}
+            </span>
             <span
               className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold"
               style={{ background: "var(--accent-soft)", color: "var(--accent)" }}
@@ -130,25 +163,24 @@ export default async function HoyPage({
               {fmt(from!)} — {fmt(to!)}
             </span>
             <Link
-              href={`/hoy${langQuery(lang)}`}
-              className="text-[12px] font-medium underline"
+              href={hoyHref()}
+              className="inline-flex min-h-11 items-center px-2 text-[12px] font-medium underline"
               style={{ color: "var(--accent)" }}
             >
-              {es ? "volver a hoy" : "back to today"}
+              {es ? "Volver a hoy" : "Back to today"}
             </Link>
           </>
         ) : (
           <>
-            <span className="eyebrow mr-1">{es ? "Mostrando" : "Showing"}</span>
             <Link
               href={dlink(shift(date, -1))}
-              className="card px-2.5 py-1 text-xs font-medium"
+              className="inline-flex min-h-11 items-center rounded-lg border px-3 text-xs font-semibold hover:bg-[var(--surface-2)]"
               aria-label={es ? "Día anterior" : "Previous day"}
             >
               {es ? "Anterior" : "Previous"}
             </Link>
             <span
-              className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold"
+              className="inline-flex min-h-11 items-center gap-1.5 rounded-lg px-3 text-[12px] font-semibold"
               style={{ background: "var(--accent-soft)", color: "var(--accent)" }}
             >
               <span
@@ -156,11 +188,11 @@ export default async function HoyPage({
                 className="h-1.5 w-1.5 rounded-full"
                 style={{ background: "var(--accent)" }}
               />
-              {isToday ? (es ? "HOY" : "TODAY") : es ? "FECHA" : "DATE"} · {date}
+              {isToday ? (es ? "Hoy" : "Today") : es ? "Fecha" : "Date"} · {date}
             </span>
             <Link
               href={dlink(shift(date, 1))}
-              className="card px-2.5 py-1 text-xs font-medium"
+              className="inline-flex min-h-11 items-center rounded-lg border px-3 text-xs font-semibold hover:bg-[var(--surface-2)]"
               aria-label={es ? "Día siguiente" : "Next day"}
             >
               {es ? "Siguiente" : "Next"}
@@ -168,10 +200,10 @@ export default async function HoyPage({
             {!isToday && (
               <Link
                 href={dlink(todayISO())}
-                className="text-[12px] font-medium underline"
+                className="inline-flex min-h-11 items-center px-2 text-[12px] font-medium underline"
                 style={{ color: "var(--accent)" }}
               >
-                {es ? "volver a hoy" : "back to today"}
+                {es ? "Volver a hoy" : "Back to today"}
               </Link>
             )}
           </>
@@ -190,8 +222,8 @@ export default async function HoyPage({
         es={es}
         when={when}
         prevDayLink={prevLink(es ? "ver día anterior" : "see previous day")}
-        deposits={deposits}
-        senDeposits={senDeposits}
+        deposits={publicDeposits}
+        senDeposits={publicSenDeposits}
         senDepositsWindow={false}
         dipCommittee={dipCommittee}
         senCommittee={senCommittee}
@@ -201,8 +233,8 @@ export default async function HoyPage({
 
       <p className="mt-4 text-[11px]" style={{ color: "var(--text-muted)" }}>
         {es
-          ? "Iniciativas depositadas: Cámara de Diputados (SIL). Cada ficha enlaza a la fuente oficial; “Con documento oficial” se muestra solo cuando existe un documento registrado y, en caso contrario, figura “No informado”."
-          : "Deposited initiatives: Chamber of Deputies (SIL). Each card links to the official source; “With official document” appears only when a document is recorded, otherwise it shows “Not reported”."}
+          ? "Oculis abre un archivo oficial solamente después de comprobar que el enlace corresponde a un PDF disponible."
+          : "Oculis opens an official file only after confirming that the link points to an available PDF."}
       </p>
     </AppShell>
   );

@@ -6,14 +6,15 @@
  * because their titles, dates, or committee names look similar.
  */
 import { useMemo, useState } from "react";
+import Link from "next/link";
+import { ArrowRight, MagnifyingGlass } from "@phosphor-icons/react";
 import {
   ActivityInitiativeLinks,
   ProceduralMentionChip,
   ScopeChip,
   type ActivityItem,
 } from "@/components/monitoring";
-import { formatISODate } from "@/lib/format";
-import { safeHttpUrl } from "@/lib/input";
+import { formatISODate, formatOfficialTime } from "@/lib/format";
 
 export interface AgendaSection {
   key: string;
@@ -27,10 +28,18 @@ function rowTitle(item: ActivityItem, es: boolean): string {
   return es ? "Orden del día — Pleno" : "Order of the day — Floor";
 }
 
+function agendaDetailHref(item: ActivityItem, es: boolean): string {
+  const params = new URLSearchParams();
+  if (!es) params.set("lang", "en");
+  if (item.eventDate) params.set("date", item.eventDate);
+  if (item.chamber === "SENADO") params.set("chamber", "senado");
+  const query = params.toString();
+  return `/agenda/${item.id}${query ? `?${query}` : ""}`;
+}
+
 function AgendaRow({ item, es }: { item: ActivityItem; es: boolean }) {
   const statuses = item.statuses ?? [];
   const date = item.eventDate ? formatISODate(item.eventDate, es ? "es" : "en") : null;
-  const agendaUrl = safeHttpUrl(item.agendaUrl);
   return (
     <div className="flex items-start gap-3 border-b px-4 py-3 last:border-0">
       <div className="pt-0.5">
@@ -49,7 +58,8 @@ function AgendaRow({ item, es }: { item: ActivityItem; es: boolean }) {
           )}
           {item.eventTime && (
             <span>
-              · {es ? "Hora reportada" : "Reported time"}: {item.eventTime}
+              · {es ? "Hora reportada" : "Reported time"}:{" "}
+              {formatOfficialTime(item.eventTime, es ? "es" : "en")}
             </span>
           )}
           {item.kind && <span>· {item.kind}</span>}
@@ -83,17 +93,14 @@ function AgendaRow({ item, es }: { item: ActivityItem; es: boolean }) {
         )}
         <ActivityInitiativeLinks initiatives={item.initiatives} lang={es ? "es" : "en"} />
       </div>
-      {agendaUrl && (
-        <a
-          href={agendaUrl}
-          target="_blank"
-          rel="noreferrer"
-          className="shrink-0 self-center rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold transition-colors hover:bg-[var(--accent-soft)]"
-          style={{ color: "var(--accent)", borderColor: "var(--accent)" }}
-        >
-          {es ? "Ver agenda" : "View agenda"}
-        </a>
-      )}
+      <Link
+        href={agendaDetailHref(item, es)}
+        className="inline-flex min-h-11 shrink-0 self-center items-center gap-1 rounded-lg px-2.5 text-[11px] font-semibold transition-colors hover:bg-[var(--accent-soft)]"
+        style={{ color: "var(--accent)", borderColor: "var(--accent)" }}
+      >
+        {es ? "Ver detalle" : "View details"}
+        <ArrowRight size={14} aria-hidden />
+      </Link>
     </div>
   );
 }
@@ -137,6 +144,12 @@ export function AgendaBrowser({
         <label htmlFor="agenda-search" className="eyebrow mb-1.5 block">
           {es ? "Buscar agenda" : "Search agenda"}
         </label>
+        <MagnifyingGlass
+          size={18}
+          className="pointer-events-none absolute bottom-3 left-3"
+          style={{ color: "var(--text-muted)" }}
+          aria-hidden
+        />
         <input
           id="agenda-search"
           value={q}
@@ -144,7 +157,7 @@ export function AgendaBrowser({
           placeholder={
             es ? "Buscar comisión, fecha o estado…" : "Search committee, date or status…"
           }
-          className="w-full rounded-lg border bg-[var(--surface)] px-3 py-2 text-sm outline-none focus:border-[var(--accent)]"
+          className="min-h-11 w-full rounded-lg border bg-[var(--surface)] py-2 pl-10 pr-3 text-sm outline-none focus:border-[var(--accent)]"
           style={{ borderColor: "var(--border)" }}
         />
       </div>

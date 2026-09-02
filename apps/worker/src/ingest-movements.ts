@@ -8,7 +8,7 @@ import {
   beginIngestionRun,
   listInitiativesForDocuments,
   recordIngestionRun,
-  recordStatusEvents,
+  reconcileStatusHistorySnapshot,
   type Database,
 } from "@oculis/db";
 import { extractLeadingISODate, SilDiputadosAdapter } from "@oculis/scrapers";
@@ -23,6 +23,8 @@ export interface MovementSummary {
   checked: number;
   statusEventsSeen: number;
   statusEventsInserted: number;
+  statusEventsReactivated: number;
+  statusEventsRetired: number;
   failures: number;
   error?: string;
 }
@@ -51,6 +53,8 @@ export async function ingestMovements(
   let checked = 0;
   let statusEventsSeen = 0;
   let statusEventsInserted = 0;
+  let statusEventsReactivated = 0;
+  let statusEventsRetired = 0;
   let failures = 0;
   const failureExamples: string[] = [];
 
@@ -60,19 +64,36 @@ export async function ingestMovements(
       if (!row) return;
       try {
         const history = await adapter.historicos(row.sourceId);
-        const events = history
-          .map((item) => ({
-            status: item.estado?.trim() ?? "",
+        if (history.length === 0) {
+          throw new Error("official history returned an empty snapshot");
+        }
+        const events = history.map((item) => {
+          const status = item.estado?.trim();
+          if (!status) throw new Error("official history row has no literal status");
+          return {
+            sourceEventId:
+              item.id == null || String(item.id).trim() === "" ? null : String(item.id).trim(),
+            status,
             date: extractLeadingISODate(item.inicio),
+            endDate: extractLeadingISODate(item.fin),
             note: null,
             source: adapter.source,
             sourceUrl: `https://www.diputadosrd.gob.do/sil/iniciativa/${row.sourceId}`,
             evidenceType: "SOURCE_HISTORY" as const,
             raw: item,
-          }))
-          .filter((event) => event.status.length > 0);
+          };
+        });
         statusEventsSeen += events.length;
-        statusEventsInserted += await recordStatusEvents(db, row.id, events);
+        const reconciled = await reconcileStatusHistorySnapshot(
+          db,
+          row.id,
+          adapter.source,
+          events,
+          { complete: true },
+        );
+        statusEventsInserted += reconciled.inserted;
+        statusEventsReactivated += reconciled.reactivated;
+        statusEventsRetired += reconciled.retired;
       } catch (error) {
         failures++;
         if (failureExamples.length < 10) {
@@ -105,6 +126,8 @@ export async function ingestMovements(
         initiativeSource: adapter.source,
         officialEndpoint: "iniciativa/historicos",
         statusEventsSeen,
+        statusEventsReactivated,
+        statusEventsRetired,
         failures,
         failureExamples,
       },
@@ -117,6 +140,8 @@ export async function ingestMovements(
       checked,
       statusEventsSeen,
       statusEventsInserted,
+      statusEventsReactivated,
+      statusEventsRetired,
       failures,
       ...(error ? { error } : {}),
     };
@@ -129,7 +154,13 @@ export async function ingestMovements(
       statusChanges: statusEventsInserted,
       ok: false,
       error: message,
-      details: { statusEventsSeen, failures, failureExamples },
+      details: {
+        statusEventsSeen,
+        statusEventsReactivated,
+        statusEventsRetired,
+        failures,
+        failureExamples,
+      },
     });
     throw error;
   }

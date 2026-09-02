@@ -1,34 +1,67 @@
 import type { Metadata } from "next";
+import { Archivo, IBM_Plex_Mono, Manrope } from "next/font/google";
+import { headers } from "next/headers";
+import { LANG_REQUEST_HEADER, parseLang } from "@/lib/i18n";
 import "./globals.css";
 
-export const metadata: Metadata = {
-  title: {
-    default: "Oculis Auribus — Monitoreo Legislativo y Regulatorio",
-    template: "%s | Oculis Auribus",
-  },
-  description: "Ferdinand Herrera Consultants — seguimiento experto de legislación y regulaciones en República Dominicana.",
-  applicationName: "Oculis Auribus",
-  category: "business intelligence",
-  icons: { icon: "/oculis-mark.png", apple: "/oculis-mark.png" },
-};
+const displayFont = Archivo({
+  axes: ["wdth"],
+  display: "swap",
+  subsets: ["latin", "latin-ext"],
+  variable: "--font-oculis-display",
+  weight: "variable",
+});
 
-// Set the theme class before paint to avoid a flash (respects saved choice / OS).
+const interfaceFont = Manrope({
+  display: "swap",
+  subsets: ["latin", "latin-ext"],
+  variable: "--font-oculis-interface",
+  weight: "variable",
+});
+
+const technicalFont = IBM_Plex_Mono({
+  display: "swap",
+  subsets: ["latin", "latin-ext"],
+  variable: "--font-oculis-technical",
+  weight: ["400", "500"],
+});
+
+export async function generateMetadata(): Promise<Metadata> {
+  const lang = parseLang((await headers()).get(LANG_REQUEST_HEADER));
+  return {
+    title: {
+      default:
+        lang === "es"
+          ? "Oculis Auribus — Monitoreo legislativo y regulatorio"
+          : "Oculis Auribus — Legislative and regulatory monitoring",
+      template: "%s | Oculis Auribus",
+    },
+    description:
+      lang === "es"
+        ? "Información legislativa y regulatoria oficial de República Dominicana, organizada para comprender cambios, agendas y evidencia pública."
+        : "Official legislative and regulatory information from the Dominican Republic, organized to understand changes, agendas, and public evidence.",
+    applicationName: "Oculis Auribus",
+    category: "business intelligence",
+    icons: { icon: "/oculis-mark.png", apple: "/oculis-mark.png" },
+  };
+}
+
+// Set the saved theme before paint. The selected editorial system is light by default.
 const themeScript = `
 (function(){try{var t=localStorage.getItem('fhc-theme');
-var d=t?t==='dark':window.matchMedia('(prefers-color-scheme: dark)').matches;
+var d=t?t==='dark':false;
 if(d)document.documentElement.classList.add('dark');}catch(e){}})();
 `;
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const lang = parseLang((await headers()).get(LANG_REQUEST_HEADER));
   return (
-    <html lang="es" suppressHydrationWarning>
+    <html
+      lang={lang}
+      className={`${displayFont.variable} ${interfaceFont.variable} ${technicalFont.variable}`}
+      suppressHydrationWarning
+    >
       <head>
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
-        <link
-          rel="stylesheet"
-          href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600;8..60,700&display=swap"
-        />
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>
       <body>{children}</body>

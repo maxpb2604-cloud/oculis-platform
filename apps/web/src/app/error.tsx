@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 
 /**
  * Route-level error boundary (App Router). Catches render/data errors in any segment
  * without its own boundary and shows a graceful, retryable fallback instead of a hard
- * crash. Bilingual: reads `?lang=en` on the client (after mount, to avoid hydration
- * mismatch) so the fallback honors the active language.
+ * crash. Bilingual: reads the current query through the App Router so the first rendered
+ * fallback already honors the active language instead of flashing Spanish after mount.
  */
 export default function Error({
   error,
@@ -15,10 +16,10 @@ export default function Error({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
-  const [es, setEs] = useState(true);
+  const searchParams = useSearchParams();
+  const es = searchParams.get("lang") !== "en";
   useEffect(() => {
     console.error(error);
-    setEs(new URLSearchParams(window.location.search).get("lang") !== "en");
   }, [error]);
 
   return (

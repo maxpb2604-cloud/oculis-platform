@@ -1,7 +1,12 @@
 import Link from "next/link";
 import Image from "next/image";
+import { headers } from "next/headers";
+import React from "react";
+import { LANG_REQUEST_HEADER, parseLang } from "@/lib/i18n";
 
-export default function NotFound() {
+export default async function NotFound() {
+  const lang = parseLang((await headers()).get(LANG_REQUEST_HEADER));
+  const es = lang === "es";
   return (
     <main className="flex min-h-dvh items-center justify-center p-6">
       <section className="card elev w-full max-w-lg p-8 text-center">
@@ -14,16 +19,20 @@ export default function NotFound() {
           priority
         />
         <p className="eyebrow mt-6">Error 404</p>
-        <h1 className="serif mt-2 text-2xl font-semibold">Página no encontrada</h1>
+        <h1 className="serif mt-2 text-2xl font-semibold">
+          {es ? "Página no encontrada" : "Page not found"}
+        </h1>
         <p className="mt-2 text-sm" style={{ color: "var(--text-muted)" }}>
-          La ruta solicitada no existe o fue movida.
+          {es
+            ? "La ruta solicitada no existe o fue movida."
+            : "The requested page does not exist or has been moved."}
         </p>
         <Link
-          href="/"
+          href={es ? "/" : "/?lang=en"}
           className="mt-6 inline-flex rounded-lg px-4 py-2 text-sm font-semibold"
           style={{ background: "var(--accent)", color: "white" }}
         >
-          Volver al resumen
+          {es ? "Volver al tablero inicial" : "Back to the main dashboard"}
         </Link>
       </section>
     </main>

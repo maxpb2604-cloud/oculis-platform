@@ -5,8 +5,8 @@
  * crucially, **public consultations** of draft norms (where there's still room to
  * intervene). Adapters map each source into a canonical `RawRegulation`.
  *
- * Phase-1 adapters (the two easiest, both reachable over plain HTTP):
- *  - MispasAdapter        — MISPAS (Salud) DSpace RSS feed with an official HTML fallback.
+ * Phase-1 adapters:
+ *  - MispasAdapter        — MISPAS (Salud) official transparency WPFD catalog.
  *  - ProconsumidorAdapter — PROCONSUMIDOR public-consultations page (static HTML).
  *  - IndotelAdapter       — INDOTEL (telecom) WordPress JSON Feed: resoluciones + consulta pública.
  *  - IndocalAdapter       — INDOCAL (calidad/NORDOM) WPFD admin-ajax JSON: norms in consultation + resoluciones.
@@ -139,135 +139,208 @@ export async function readRss(url: string): Promise<RssItem[]> {
   });
 }
 
-interface MispasCollectionItem {
-  title: string;
-  url: string;
-  /** Exact source text. DSpace often exposes only YYYY-MM in this fallback. */
-  dateText: string | null;
+interface MispasWpfdCategory {
+  id: number;
+  name: string;
+  count: number;
 }
 
-/** Parse the official DSpace collection page used when its RSS route is unavailable. */
-export function parseMispasCollectionPage(
-  html: string,
-  host = "https://repositorio.msp.gob.do",
-): MispasCollectionItem[] {
-  const items: MispasCollectionItem[] = [];
-  const blocks = html.split(/<li\b[^>]*class=["'][^"']*\bds-artifact-item\b[^"']*["'][^>]*>/gi);
-  for (const block of blocks.slice(1)) {
-    const titleMatch = block.match(
-      /<h4\b[^>]*class=["'][^"']*\bartifact-title\b[^"']*["'][^>]*>[\s\S]*?<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/i,
-    );
-    if (!titleMatch) continue;
-    const title = strip(titleMatch[2]!);
-    if (!title) continue;
-    const href = decodeHtmlEntities(titleMatch[1]!);
-    let url: string;
-    try {
-      url = new URL(href, host).toString();
-    } catch {
-      continue;
+/** Extract only populated, explicitly identified categories from the official WPFD tree. */
+export function parseMispasWpfdCategories(payload: unknown): MispasWpfdCategory[] {
+  if (!payload || typeof payload !== "object") return [];
+  const data = (payload as { data?: unknown }).data;
+  if (!Array.isArray(data)) return [];
+
+  const categories = new Map<number, MispasWpfdCategory>();
+  const visit = (value: unknown) => {
+    if (!value || typeof value !== "object") return;
+    const category = value as Record<string, unknown>;
+    const id = Number(category.term_id);
+    const count = Number(category.count);
+    const name = typeof category.name === "string" ? cleanTitle(category.name) : "";
+    if (Number.isSafeInteger(id) && id > 0 && Number.isSafeInteger(count) && count > 0 && name) {
+      categories.set(id, { id, name, count });
     }
-    const dateMatch = block.match(
-      /<span\b[^>]*class=["'][^"']*\bdate\b[^"']*["'][^>]*>([\s\S]*?)<\/span>/i,
-    );
-    items.push({ title, url, dateText: dateMatch ? strip(dateMatch[1]!) || null : null });
-  }
-  return items;
+    if (Array.isArray(category.children)) category.children.forEach(visit);
+  };
+  data.forEach(visit);
+  return [...categories.values()];
 }
 
-/** MISPAS (Ministerio de Salud Pública) — DSpace RSS of technical regulations. */
+function wpfdLastPage(pagination: unknown): number {
+  if (typeof pagination !== "string") return 1;
+  let lastPage = 1;
+  for (const match of pagination.matchAll(/\bdata-page=['"](\d+)['"]/gi)) {
+    const page = Number(match[1]);
+    if (Number.isSafeInteger(page) && page > lastPage && page <= 100) lastPage = page;
+  }
+  return lastPage;
+}
+
+function mispasWpfdFileUrl(host: string, file: WpfdFile): string | null {
+  const id = Number(file.ID);
+  const categoryId = Number(file.catid);
+  const categorySlug = file.catname?.trim() ?? "";
+  const fileSlug = file.post_name?.trim() ?? "";
+  const extension = file.ext?.trim() ?? "";
+  if (
+    !Number.isSafeInteger(id) ||
+    id <= 0 ||
+    !Number.isSafeInteger(categoryId) ||
+    categoryId <= 0 ||
+    !/^[a-z0-9][a-z0-9-]*$/i.test(categorySlug) ||
+    !/^[a-z0-9][a-z0-9-]*$/i.test(fileSlug) ||
+    !/^[a-z0-9]{1,8}$/i.test(extension)
+  ) {
+    return null;
+  }
+  return `${host}/${file.seouri ?? "documentos_oai"}/${categoryId}/${categorySlug}/${id}/${fileSlug}.${extension}`;
+}
+
+/**
+ * MISPAS (Ministerio de Salud Pública y Asistencia Social) — the official
+ * Transparency portal's “Normas y Reglamentos Técnicos” category tree.
+ *
+ * The institutional repository omits a verifiable intermediate certificate in
+ * Node's TLS path. The `www.msp.gob.do` origin is the ministry's primary portal,
+ * exposes equivalent/current regulatory files, and validates without a TLS bypass.
+ */
 export class MispasAdapter {
   readonly source = "reg-mispas";
   readonly institution = "MISPAS";
   constructor(
-    private readonly feed = "https://repositorio.msp.gob.do/feed/rss_2.0/123456789/13",
-    private readonly collectionPage = "https://repositorio.msp.gob.do/handle/123456789/13",
+    private readonly host = "https://www.msp.gob.do/web/Transparencia",
+    private readonly rootCategoryId = 420,
+    private readonly topCategoryId = 26,
   ) {}
+
+  private ajax(params: Record<string, string | number>) {
+    const query = new URLSearchParams({
+      juwpfisadmin: "false",
+      action: "wpfd",
+      ...Object.fromEntries(Object.entries(params).map(([key, value]) => [key, String(value)])),
+    });
+    return `${this.host}/wp-admin/admin-ajax.php?${query.toString()}`;
+  }
+
+  private categoriesUrl() {
+    return this.ajax({ task: "categories.getCats", dir: this.rootCategoryId });
+  }
+
+  private filesUrl(categoryId: number, page: number) {
+    return this.ajax({
+      task: "files.display",
+      view: "files",
+      id: categoryId,
+      rootcat: this.topCategoryId,
+      page,
+      orderCol: "ordering",
+      orderDir: "asc",
+    });
+  }
 
   async collect(): Promise<{ regulations: RawRegulation[]; gaps: string[] }> {
     const gaps: string[] = [];
-    try {
-      const items = await readRss(this.feed);
-      const regulations = items
-        .filter((item) => item.title)
-        .map(
-          (item): RawRegulation => ({
-            source: this.source,
-            sourceId: item.link ?? item.title,
-            institution: this.institution,
-            regType: explicitRegTypeFromTitle(item.title),
-            title: item.title,
-            status: null,
-            sourceCategory: null,
-            isConsulta: false,
-            publishedAt: item.date,
-            deadline: null,
-            url: item.link,
-            raw: {
-              payload: item,
-              provenance: { sourceUrl: this.feed, officialSection: "Reglamentos técnicos" },
-            },
-          }),
-        );
-      if (items.length > regulations.length) {
-        gaps.push(
-          `MISPAS RSS: ${items.length - regulations.length} ítem(s) sin título explícito fueron descartados.`,
-        );
+    const treeUrl = this.categoriesUrl();
+    const tree = await fetchJson<unknown>(treeUrl, { timeoutMs: 25_000 });
+    const categories = parseMispasWpfdCategories(tree);
+    if (categories.length === 0) {
+      throw new Error("MISPAS · el catálogo oficial no publicó categorías con documentos.");
+    }
+
+    const filesById = new Map<number, { file: WpfdFile; category: MispasWpfdCategory }>();
+    let successfulCategories = 0;
+    for (const category of categories) {
+      let firstPage: { files?: WpfdFile[]; pagination?: unknown };
+      try {
+        firstPage = await fetchJson(this.filesUrl(category.id, 1), { timeoutMs: 25_000 });
+        successfulCategories++;
+      } catch (error) {
+        gaps.push(`MISPAS ${category.name} · ${(error as Error).message}`);
+        continue;
       }
-      if (regulations.length > 0) return { regulations, gaps };
-      gaps.push("MISPAS RSS: la fuente devolvió 0 ítems con título explícito.");
-    } catch (error) {
-      const message = (error as Error).message;
-      gaps.push(`MISPAS RSS · ${message}`);
-      // RSS and HTML live on the same TLS origin. A certificate-validation failure
-      // affects both routes, so a second request cannot provide a secure fallback.
-      if (
-        /CERT_HAS_EXPIRED|ERR_TLS_CERT_ALTNAME_INVALID|UNABLE_TO_(?:GET_ISSUER_CERT|VERIFY_LEAF_SIGNATURE)/.test(
-          message,
-        )
-      ) {
-        throw new Error(gaps.join(" | "));
+
+      const lastPage = wpfdLastPage(firstPage.pagination);
+      const pages = [{ payload: firstPage }];
+      for (let page = 2; page <= lastPage; page++) {
+        try {
+          pages.push({
+            payload: await fetchJson(this.filesUrl(category.id, page), { timeoutMs: 25_000 }),
+          });
+        } catch (error) {
+          gaps.push(
+            `MISPAS ${category.name} página ${page}/${lastPage} · ${(error as Error).message}`,
+          );
+        }
+      }
+
+      let observedInCategory = 0;
+      for (const { payload } of pages) {
+        const files = Array.isArray(payload.files) ? payload.files : [];
+        observedInCategory += files.length;
+        for (const file of files) {
+          const id = Number(file.ID);
+          if (Number.isSafeInteger(id) && id > 0) filesById.set(id, { file, category });
+        }
+      }
+      if (observedInCategory < category.count) {
+        gaps.push(
+          `MISPAS ${category.name}: ${observedInCategory}/${category.count} archivo(s) publicados fueron observados.`,
+        );
       }
     }
 
-    try {
-      const html = await fetchText(this.collectionPage, { timeoutMs: 25_000 });
-      const items = parseMispasCollectionPage(html, this.collectionPage);
-      if (items.length === 0) {
-        throw new Error("la página de colección devolvió 0 ítems con título explícito");
-      }
-      return {
-        regulations: items.map(
-          (item): RawRegulation => ({
-            source: this.source,
-            sourceId: item.url,
-            institution: this.institution,
-            regType: explicitRegTypeFromTitle(item.title),
-            title: item.title,
-            status: null,
-            sourceCategory: null,
-            isConsulta: false,
-            // The HTML fallback exposes YYYY-MM for some records. Preserve that exact
-            // text in raw instead of inventing a day.
-            publishedAt: extractLeadingISODate(item.dateText),
-            deadline: null,
-            url: item.url,
-            raw: {
-              payload: item,
-              provenance: {
-                sourceUrl: this.collectionPage,
-                officialSection: "Reglamentos técnicos",
-                fallbackFor: this.feed,
-              },
-            },
-          }),
-        ),
-        gaps,
-      };
-    } catch (error) {
-      gaps.push(`MISPAS colección HTML · ${(error as Error).message}`);
-      throw new Error(gaps.join(" | "));
+    if (successfulCategories === 0) {
+      throw new Error(gaps.join(" | ") || "MISPAS categories unavailable");
     }
+
+    const regulations: RawRegulation[] = [];
+    let missingTitles = 0;
+    for (const { file, category } of filesById.values()) {
+      const sourceTitle = cleanTitle(file.post_title ?? "");
+      const description = cleanTitle(file.description ?? "");
+      if (/^leyenda$/i.test(sourceTitle) && /no posee publicaciones oficiales/i.test(description)) {
+        continue;
+      }
+      if (!sourceTitle) {
+        missingTitles++;
+        continue;
+      }
+      const title =
+        description && description.localeCompare(sourceTitle, "es", { sensitivity: "base" }) !== 0
+          ? `${sourceTitle}: ${description}`
+          : sourceTitle;
+      const sourceUrl = this.filesUrl(category.id, 1);
+      regulations.push({
+        source: this.source,
+        sourceId: String(file.ID),
+        institution: this.institution,
+        regType: explicitRegTypeFromTitle(title),
+        title,
+        status: null,
+        sourceCategory: category.name,
+        isConsulta: false,
+        publishedAt: extractLeadingISODate(file.created_time),
+        deadline: null,
+        url: mispasWpfdFileUrl(this.host, file),
+        raw: {
+          payload: file,
+          provenance: {
+            sourceUrl,
+            officialSection: `Normas y Reglamentos Técnicos · ${category.name}`,
+            categoryTree: treeUrl,
+          },
+        },
+      });
+    }
+
+    if (missingTitles > 0) {
+      gaps.push(`MISPAS · ${missingTitles} archivo(s) sin título explícito fueron descartados.`);
+    }
+    if (regulations.length === 0) {
+      throw new Error(gaps.join(" | ") || "MISPAS · el catálogo oficial no publicó documentos.");
+    }
+    return { regulations, gaps };
   }
 }
 
@@ -453,10 +526,11 @@ interface WpfdFile {
   ID: number;
   post_title?: string;
   post_name?: string;
+  description?: string;
   ext?: string;
   created_time?: string;
   catname?: string;
-  catid?: string;
+  catid?: string | number;
   seouri?: string;
 }
 /** INDOCAL — WPFD (WordPress File Download) admin-ajax JSON: NORDOM en consulta + resoluciones.
