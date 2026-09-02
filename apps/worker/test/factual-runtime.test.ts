@@ -317,6 +317,7 @@ describe("cloud monitoring lanes", () => {
       "movements-incremental",
       "movements",
       "documents-missing",
+      "verify-documents-full",
       "documents",
       "publications-full",
       "senate-fichas",
@@ -337,6 +338,27 @@ describe("cloud monitoring lanes", () => {
     assert.match(full, /inputs\.mode == 'publications-full'/);
     assert.match(full, /npm run publications -w @oculis\/worker -- --full/);
     assert.doesNotMatch(full, /--limit|inputs\.mode == 'bootstrap'/);
+    assert.match(full, /!cancelled\(\)/);
+    assert.match(full, /steps\.database_config\.outcome == 'success'/);
+  });
+
+  it("keeps daily ingestion separate from explicit prioritized and full PDF verification", () => {
+    const workflow = cloudWorkflow();
+    const prioritized = workflowStep(workflow, "manual_missing_verify_documents");
+    const full = workflowStep(workflow, "manual_full_verify_documents");
+
+    assert.match(prioritized, /inputs\.mode == 'documents-missing'/);
+    assert.doesNotMatch(prioritized, /inputs\.mode == 'daily'/);
+    assert.match(prioritized, /timeout-minutes: 30/);
+    assert.match(prioritized, /npm run verify-documents -w @oculis\/worker -- --all/);
+
+    assert.match(full, /inputs\.mode == 'verify-documents-full'/);
+    assert.doesNotMatch(full, /inputs\.mode == 'daily'|inputs\.mode == 'documents-missing'/);
+    assert.match(full, /timeout-minutes: 120/);
+    assert.match(
+      full,
+      /npm run verify-documents -w @oculis\/worker -- --all --limit 100 --concurrency 3/,
+    );
     assert.match(full, /!cancelled\(\)/);
     assert.match(full, /steps\.database_config\.outcome == 'success'/);
   });
