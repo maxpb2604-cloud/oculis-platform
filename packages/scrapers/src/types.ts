@@ -22,18 +22,50 @@ export interface RawInitiative {
   type: string | null;
   /** Source-reported status label, preserved without lifecycle remapping. */
   status: string | null;
-  /** Chamber of origin, if legislative. */
+  /** Legacy compatibility chamber. Prefer the explicit source/origin/current fields below. */
   chamber: Chamber | null;
+  /** Chamber whose official corpus produced this record. Kept separate from origin/current. */
+  sourceChamber?: Chamber | null;
+  /** Chamber of origin explicitly stated by the source. */
+  originChamber?: Chamber | null;
+  /** Current chamber explicitly stated by the source; never derived from status or history. */
+  currentChamber?: Chamber | null;
+  /** Current legislative body explicitly stated by the source; never inferred. */
+  currentBody?: string | null;
+  /** Source-reported condition, kept distinct from the procedural status. */
+  condition?: string | null;
   /** Source-reported subject group/category label. */
   sourceCategory: string | null;
+  /** Source-reported subject matter, kept distinct from its broader group/category. */
+  subjectMatter?: string | null;
+  /** Literal source value indicating whether proceedings have started (for example, "SI"). */
+  initiated?: string | null;
+  /** Source-reported initiation date, normalized to ISO yyyy-mm-dd. */
+  initiatedAt?: string | null;
+  /** Source-reported legislature identifier. */
+  legislature?: string | null;
+  /** Source-reported registration period. */
+  registrationPeriod?: string | null;
+  /** Literal source timestamp for the last official principal-status change. */
+  officialStatusChangedAt?: string | null;
+  /** Source-reported promulgation number, when present. */
+  promulgationNumber?: string | null;
+  /** Source-reported promulgation date, normalized to ISO yyyy-mm-dd. */
+  promulgatedAt?: string | null;
   /** Sponsor / proponent full name(s). */
   sponsor: string | null;
+  /** Source-reported role/function of the principal sponsor. */
+  sponsorRole?: string | null;
+  /** Total number of proponents returned by the official source collection. */
+  sponsorCount?: number | null;
   /** Sponsor political party. */
   party: string | null;
   /** Sponsor province. */
   province: string | null;
   /** Reviewing committee. */
   committee: string | null;
+  /** Every explicit commission assignment; no assignment is selected as "current". */
+  commissionAssignments?: RawCommissionAssignment[];
   /** Filing / deposit date (ISO 8601) when available. */
   filedAt: string | null;
   /** Expiration / perención date (ISO 8601) when available. */
@@ -47,12 +79,34 @@ export interface RawInitiative {
 }
 
 export interface RawStatusEvent {
+  /** Stable event id published by the source, when available. */
+  sourceEventId: string | null;
   status: string;
   /** ISO 8601 date of the event. */
   date: string | null;
+  /** ISO 8601 end date explicitly published by the source. */
+  endDate: string | null;
   note: string | null;
   /** Untouched source history row used as evidence. */
   raw?: unknown;
+}
+
+/** One explicit source row assigning an initiative to a commission. */
+export interface RawCommissionAssignment {
+  /** Stable assignment id published by the source, when available. */
+  sourceId: string | null;
+  /** Source's commission-type id, retained separately from its label. */
+  sourceTypeId: string | null;
+  /** Literal assignment type, for example "Permanente" or "Especial". */
+  type: string | null;
+  /** Literal commission name/description. */
+  name: string | null;
+  /** Explicit assignment start date, normalized to ISO yyyy-mm-dd. */
+  startDate: string | null;
+  /** Explicit assignment end date, normalized to ISO yyyy-mm-dd. */
+  endDate: string | null;
+  /** Untouched source assignment row used as evidence. */
+  raw: unknown;
 }
 
 /**

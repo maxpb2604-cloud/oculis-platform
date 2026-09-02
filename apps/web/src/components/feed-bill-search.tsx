@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
+import { MagnifyingGlass } from "@phosphor-icons/react";
 import { type Lang } from "@/lib/i18n";
 
 interface BillOption {
@@ -86,11 +87,17 @@ export function FeedBillSearch({
   };
 
   return (
-    <div className="card p-3">
+    <div className="rounded-lg border p-3">
       <label htmlFor={inputId} className="eyebrow mb-2 block">
-        {es ? "Buscar proyecto (PDL)" : "Search bill (PDL)"}
+        {es ? "Buscar iniciativa" : "Search initiative"}
       </label>
       <div ref={boxRef} className="relative">
+        <MagnifyingGlass
+          size={16}
+          className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2"
+          style={{ color: "var(--text-muted)" }}
+          aria-hidden
+        />
         <input
           id={inputId}
           type="search"
@@ -123,8 +130,8 @@ export function FeedBillSearch({
               setActiveIndex(-1);
             }
           }}
-          placeholder={es ? "Palabra clave del proyecto…" : "Bill keyword…"}
-          className="w-full rounded-lg px-2.5 py-1.5 text-[13px] outline-none"
+          placeholder={es ? "Código o palabra clave…" : "Code or keyword…"}
+          className="min-h-10 w-full rounded-lg py-1.5 pl-8 pr-2.5 text-[13px] outline-none"
           style={{
             background: "var(--surface-2)",
             border: "1px solid var(--border)",
@@ -155,7 +162,7 @@ export function FeedBillSearch({
                 className="px-2.5 py-2 text-[12px]"
                 style={{ color: "var(--text-muted)" }}
               >
-                {es ? "Sin proyectos" : "No bills found"}
+                {es ? "Sin iniciativas" : "No initiatives found"}
               </li>
             )}
             {options.map((o, index) => (
@@ -178,7 +185,7 @@ export function FeedBillSearch({
                     className="line-clamp-2 text-[13px] font-medium"
                     style={{ color: "var(--text)" }}
                   >
-                    {o.title}
+                    {o.title.trim() || (es ? "Título: No informado" : "Title: Not reported")}
                   </span>
                   <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>
                     {o.code}

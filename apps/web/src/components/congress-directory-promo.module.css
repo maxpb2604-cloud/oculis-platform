@@ -1,0 +1,555 @@
+.band {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: stretch;
+  gap: clamp(20px, 2.5vw, 30px);
+}
+
+.promo {
+  container-type: inline-size;
+  display: grid;
+  min-width: 0;
+  min-height: 560px;
+  height: 100%;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: clamp(20px, 2vw, 28px);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.portraitStage {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  min-height: 332px;
+  flex-direction: column;
+  padding: 22px 26px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+}
+
+.portraitHeading {
+  position: relative;
+  z-index: 20;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 14px;
+}
+
+.portraitEyebrow {
+  display: block;
+  font-size: 0.62rem;
+  font-weight: 720;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.portraitHeading h2 {
+  max-width: 25ch;
+  margin-top: 4px;
+  font-size: clamp(1.05rem, 1.45vw, 1.3rem);
+  font-weight: 720;
+  line-height: 1.16;
+  letter-spacing: -0.025em;
+  text-wrap: balance;
+}
+
+.profileHint {
+  flex: 0 0 auto;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 6px 9px;
+  font-size: 0.61rem;
+  font-weight: 680;
+  white-space: nowrap;
+  color: var(--text-muted);
+  background: var(--surface);
+}
+
+.portraitArc {
+  display: grid;
+  min-height: 208px;
+  grid-template-columns: repeat(13, minmax(0, 1fr));
+  align-items: start;
+  gap: 0 4px;
+  margin-top: 10px;
+}
+
+.portraitButton {
+  --portrait-size: 54px;
+  position: relative;
+  z-index: calc(2 + var(--portrait-order));
+  width: var(--portrait-size);
+  height: var(--portrait-size);
+  min-width: 44px;
+  min-height: 44px;
+  justify-self: center;
+  border: 0;
+  border-radius: 50%;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.portraitButton:focus-visible {
+  border-radius: 50%;
+  outline: 3px solid var(--accent);
+  outline-offset: 4px;
+}
+
+.portraitFrame {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  border: 3px solid var(--surface);
+  border-radius: 50%;
+  background: var(--accent-soft);
+  box-shadow:
+    0 14px 26px -18px rgba(5, 15, 34, 0.58),
+    0 0 0 1px color-mix(in srgb, var(--accent) 28%, var(--border));
+}
+
+.portraitFrame img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center top;
+}
+
+.portraitFallback {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.9rem;
+  font-weight: 760;
+  color: var(--accent);
+}
+
+.portraitButton:hover,
+.portraitButton:focus-visible {
+  z-index: 30;
+}
+
+.portraitButton:hover .portraitFrame,
+.portraitButton:focus-visible .portraitFrame {
+  box-shadow:
+    0 16px 28px -18px rgba(5, 15, 34, 0.66),
+    0 0 0 2px var(--accent);
+}
+
+.portraitLabel {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 50%;
+  z-index: 40;
+  display: none;
+  width: max-content;
+  max-width: 190px;
+  transform: translateX(-50%);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 7px 9px;
+  background: var(--surface);
+  box-shadow: var(--shadow-md);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.portraitLabel strong,
+.portraitLabel small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.portraitLabel strong {
+  font-size: 0.72rem;
+}
+
+.portraitLabel small {
+  margin-top: 2px;
+  font-size: 0.62rem;
+  color: var(--text-muted);
+}
+
+.portraitButton:hover .portraitLabel,
+.portraitButton:focus-visible .portraitLabel {
+  opacity: 1;
+}
+
+.portraitOne {
+  --portrait-size: 48px;
+  margin-top: 104px;
+}
+
+.portraitTwo {
+  --portrait-size: 62px;
+  margin-top: 54px;
+}
+
+.portraitThree {
+  --portrait-size: 46px;
+  margin-top: 112px;
+}
+
+.portraitFour {
+  --portrait-size: 72px;
+  margin-top: 20px;
+}
+
+.portraitFive {
+  --portrait-size: 54px;
+  margin-top: 88px;
+}
+
+.portraitSix {
+  --portrait-size: 60px;
+  margin-top: 48px;
+}
+
+.portraitSeven {
+  --portrait-size: 80px;
+  margin-top: 6px;
+}
+
+.portraitEight {
+  --portrait-size: 56px;
+  margin-top: 90px;
+}
+
+.portraitNine {
+  --portrait-size: 68px;
+  margin-top: 44px;
+}
+
+.portraitTen {
+  --portrait-size: 46px;
+  margin-top: 110px;
+}
+
+.portraitEleven {
+  --portrait-size: 74px;
+  margin-top: 18px;
+}
+
+.portraitTwelve {
+  --portrait-size: 58px;
+  margin-top: 58px;
+}
+
+.portraitThirteen {
+  --portrait-size: 48px;
+  margin-top: 104px;
+}
+
+.portraitOne .portraitLabel {
+  left: 0;
+  transform: none;
+}
+
+.portraitThirteen .portraitLabel {
+  right: 0;
+  left: auto;
+  transform: none;
+}
+
+.portraitNote {
+  position: relative;
+  z-index: 20;
+  max-width: 58ch;
+  margin-top: auto;
+  padding-top: 9px;
+  border-top: 1px solid var(--border);
+  font-size: 0.66rem;
+  line-height: 1.43;
+  color: var(--text-muted);
+}
+
+.emptyPortraits {
+  display: flex;
+  min-height: 126px;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  text-align: left;
+  color: var(--text-muted);
+}
+
+.emptyPortraits p {
+  max-width: 30ch;
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+
+.directoryLink {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  min-width: 0;
+  min-height: 292px;
+  flex-direction: column;
+  overflow: hidden;
+  padding: clamp(25px, 2.7vw, 34px);
+  background: var(--nav-bg);
+  color: var(--nav-text);
+  text-decoration: none;
+  transition:
+    background-color 220ms ease,
+    box-shadow 220ms ease;
+}
+
+.directoryLink:hover {
+  background: var(--nav-bg-2);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent);
+}
+
+.backgroundIcon {
+  position: absolute;
+  z-index: -1;
+  right: -30px;
+  bottom: -38px;
+  width: clamp(160px, 18vw, 220px);
+  height: auto;
+  color: var(--accent);
+  opacity: 0.09;
+  transform: rotate(-7deg);
+}
+
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: 8px;
+  font-size: 0.67rem;
+  font-weight: 720;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--accent-strong);
+}
+
+.title {
+  max-width: 18ch;
+  margin-top: 24px;
+  font-family: var(--font-display);
+  font-size: clamp(1.62rem, 2.35vw, 2.25rem);
+  font-stretch: 125%;
+  font-weight: 900;
+  line-height: 0.98;
+  letter-spacing: -0.028em;
+  text-transform: uppercase;
+  text-wrap: balance;
+}
+
+.description {
+  max-width: 46ch;
+  margin-top: 14px;
+  font-size: clamp(0.82rem, 1vw, 0.96rem);
+  line-height: 1.48;
+  color: var(--nav-muted);
+}
+
+.action {
+  display: flex;
+  min-height: 52px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  margin-top: 30px;
+  padding-top: 16px;
+  border-top: 1px solid var(--nav-border);
+  font-size: 0.86rem;
+  font-weight: 720;
+  color: var(--nav-text);
+}
+
+.actionIcon {
+  display: inline-flex;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--nav-text);
+  color: var(--nav-bg);
+  transition: transform 220ms ease;
+}
+
+.directoryLink:hover .actionIcon {
+  transform: translateX(4px);
+}
+
+@container (min-width: 601px) and (max-width: 960px) {
+  .portraitStage {
+    min-height: 390px;
+  }
+
+  .portraitArc {
+    min-height: 190px;
+    grid-template-columns: repeat(14, minmax(0, 1fr));
+    grid-auto-rows: 92px;
+    gap: 6px 0;
+  }
+
+  .portraitButton {
+    --portrait-size: 48px;
+    grid-column: span 2;
+    margin-top: 12px;
+  }
+
+  .portraitTwo,
+  .portraitSix,
+  .portraitEight,
+  .portraitNine,
+  .portraitTwelve {
+    --portrait-size: 56px;
+    margin-top: 5px;
+  }
+
+  .portraitFour,
+  .portraitSeven,
+  .portraitEleven {
+    --portrait-size: 64px;
+    margin-top: 0;
+  }
+
+  .portraitEight {
+    grid-column: 2 / span 2;
+  }
+}
+
+@container (max-width: 600px) {
+  .promo {
+    min-height: 756px;
+  }
+
+  .portraitStage {
+    min-height: 458px;
+    padding: 19px 20px 14px;
+  }
+
+  .portraitHeading {
+    display: block;
+  }
+
+  .portraitHeading h2 {
+    max-width: 28ch;
+    font-size: 1.05rem;
+  }
+
+  .profileHint {
+    display: inline-block;
+    margin-top: 7px;
+  }
+
+  .portraitArc {
+    min-height: 274px;
+    grid-template-columns: repeat(8, minmax(0, 1fr));
+    grid-auto-rows: 68px;
+    gap: 5px 0;
+    margin-top: 8px;
+  }
+
+  .portraitButton {
+    --portrait-size: 44px;
+    grid-column: span 2;
+    margin-top: 8px;
+  }
+
+  .portraitTwo,
+  .portraitFive,
+  .portraitEight,
+  .portraitTwelve {
+    --portrait-size: 48px;
+    margin-top: 4px;
+  }
+
+  .portraitFour,
+  .portraitSix,
+  .portraitNine,
+  .portraitEleven {
+    --portrait-size: 52px;
+    margin-top: 1px;
+  }
+
+  .portraitSeven {
+    --portrait-size: 56px;
+    margin-top: 0;
+  }
+
+  .portraitThirteen {
+    grid-column: 4 / span 2;
+  }
+
+  .directoryLink {
+    min-height: 294px;
+    padding: 24px 22px;
+  }
+
+  .title {
+    max-width: 100%;
+    font-size: clamp(1.5rem, 7.2vw, 1.86rem);
+    line-height: 1;
+    letter-spacing: -0.034em;
+  }
+
+  .description {
+    font-size: 0.82rem;
+  }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  @container (min-width: 601px) {
+    .portraitLabel {
+      display: block;
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .directoryLink,
+  .actionIcon {
+    transition: none;
+  }
+
+  .directoryLink:hover .actionIcon {
+    transform: none;
+  }
+}
+
+@media (prefers-contrast: more) {
+  .promo,
+  .portraitFrame,
+  .profileHint {
+    border-color: var(--border-strong);
+  }
+}
+
+@media (forced-colors: active) {
+  .promo,
+  .portraitStage,
+  .directoryLink,
+  .portraitFrame,
+  .profileHint,
+  .portraitLabel,
+  .actionIcon {
+    border-color: CanvasText;
+    background: Canvas;
+    color: CanvasText;
+    box-shadow: none;
+  }
+
+  .backgroundIcon {
+    display: none;
+  }
+}

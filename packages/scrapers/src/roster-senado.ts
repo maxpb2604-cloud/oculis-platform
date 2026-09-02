@@ -4,7 +4,7 @@
  * Unlike the Diputados SIL API, the Senate exposes no JSON: its WP REST API is locked
  * (401) and the data is in server-rendered HTML (WordPress + Divi theme). We parse three
  * pages with regex (no HTML-parser dependency, matching the rest of this package):
- *   1. /senadores/                          → 32 senator cards (name, province slug, board role)
+ *   1. /senadores-2024-2028/                → 32 senator cards (name, province slug, board role)
  *   2. /provincia/{slug}/                    → that senator's party (one HTTP call each)
  *   3. /comisiones/lista-de-comisiones/      → every committee + its numbered member list w/ cargos
  *
@@ -13,9 +13,13 @@
  */
 import { browserHeaders, fetchText } from "./http.js";
 import type { RawCommissionMembership, RawLegislator, RosterResult } from "./roster.js";
+import { REVIEWED_SENADO_SIL_PERSON_BRIDGE } from "./senado-sil.js";
 
 const ORIGIN = "https://www.senadord.gob.do";
 const H = browserHeaders({ Referer: `${ORIGIN}/` });
+export const SENADO_ROSTER_URL = `${ORIGIN}/senadores-2024-2028/`;
+const SENADO_ROSTER_PERIOD = "2024-2028";
+const SENADO_COMMITTEES_URL = `${ORIGIN}/comisiones/lista-de-comisiones/`;
 
 /** Province slug (from /provincia/{slug}) → display name aligned with the map dataset. */
 const SLUG_TO_PROVINCE: Record<string, string> = {
@@ -57,6 +61,8 @@ interface Card {
   slug: string;
   name: string;
   role: string | null; // directive-board role from the card (Presidente, Vicepresidente…)
+  /** Exact identity strings explicitly published for this same card/profile. */
+  aliases?: string[];
 }
 
 export class SenadoRosterAdapter {
@@ -68,6 +74,7 @@ export class SenadoRosterAdapter {
     const gaps: string[] = [];
     const cards = await this.collectCards(gaps);
     const legislators: RawLegislator[] = [];
+    const resolvedCards: Card[] = [];
     for (const card of cards) {
       const province = SLUG_TO_PROVINCE[card.slug] ?? null;
       const url = `${ORIGIN}/provincia/${card.slug}/`;
@@ -76,9 +83,17 @@ export class SenadoRosterAdapter {
       let photoUrl: string | null = null;
       let email: string | null = null;
       let phone: string | null = null;
+      let identityAliases = appendReviewedSenadoProfileAlias(
+        card.slug,
+        card.aliases?.length ? card.aliases : [card.name],
+      );
       try {
         const html = this.profileCache.get(card.slug) ?? (await fetchText(url, { headers: H }));
         this.profileCache.set(card.slug, html);
+        identityAliases = appendReviewedSenadoProfileAlias(card.slug, [
+          ...identityAliases,
+          ...parseProfileIdentityAliases(html),
+        ]);
         const p = this.parseParty(html);
         party = p.party;
         partyShort = p.partyShort;
@@ -90,18 +105,20 @@ export class SenadoRosterAdapter {
           `roster-senado: no se pudo leer la ficha de ${card.name} (${(e as Error).message}).`,
         );
       }
+      const fullName = selectCanonicalName(identityAliases) ?? card.name;
+      resolvedCards.push({ ...card, name: fullName, aliases: identityAliases });
       legislators.push({
         sourceId: card.slug,
         source: this.source,
         chamber: "SENADO",
-        fullName: card.name,
+        fullName,
         province,
         circumscription: null,
         party,
         partyShort,
         role: card.role,
         representationLevel: null,
-        period: null,
+        period: SENADO_ROSTER_PERIOD,
         photoUrl,
         email,
         phone,
@@ -110,23 +127,32 @@ export class SenadoRosterAdapter {
         raw: {
           provenance: {
             sourceUrl: url,
-            rosterUrl: `${ORIGIN}/senadores/`,
+            rosterUrl: SENADO_ROSTER_URL,
             provinceFromOfficialUrlSlug: card.slug,
+            rosterPeriod: SENADO_ROSTER_PERIOD,
           },
-          explicit: { party, partyShort, role: card.role, email, phone, photoUrl },
+          explicit: {
+            identityAliases,
+            party,
+            partyShort,
+            role: card.role,
+            email,
+            phone,
+            photoUrl,
+          },
         },
       });
     }
-    if (legislators.length < 32) {
+    if (legislators.length !== 32) {
       gaps.push(
-        `roster-senado: ${legislators.length} senadores; referencia constitucional esperada: 32.`,
+        `roster-senado: ${legislators.length} senadores; cardinalidad oficial esperada: exactamente 32.`,
       );
     }
     const memberships = await this.collectMemberships(gaps);
     // A membership is linked to a profile only on one exact normalized full-name match.
     let unresolved = 0;
     for (const m of memberships) {
-      m.legislatorSourceId = matchCardSlug(m.legislatorName, cards);
+      m.legislatorSourceId = matchCardSlug(m.legislatorName, resolvedCards);
       if (!m.legislatorSourceId) unresolved++;
     }
     if (unresolved > 0) {
@@ -137,35 +163,14 @@ export class SenadoRosterAdapter {
     return { legislators, memberships, gaps };
   }
 
-  /** Parse the /senadores/ index into 32 cards (name, province slug, directive role). */
+  /** Parse the current-period index into 32 cards (name, province slug, directive role). */
   private async collectCards(gaps: string[]): Promise<Card[]> {
-    const html = await fetchText(`${ORIGIN}/senadores/`, { headers: H });
-    const cards: Card[] = [];
-    const re =
-      /et_pb_module_header"><a href="\/provincia\/([^"]+)">([^<]+)<\/a><\/h4>([\s\S]*?)(?=et_pb_module_header"><a href="\/provincia\/|$)/g;
-    let m: RegExpExecArray | null;
-    while ((m = re.exec(html))) {
-      const slug = m[1]!.trim();
-      const name = decodeEntities(m[2]!.trim());
-      const descMatch = m[3]!.match(/et_pb_blurb_description">([\s\S]*?)<\/div>/);
-      let role: string | null = null;
-      if (descMatch) {
-        const lines = stripTags(descMatch[1]!)
-          .split(/\n+/)
-          .map((s) => s.trim())
-          .filter(Boolean);
-        // First line is the board role (PRESIDENTE / VICE PRESIDENTE / SECRETARIO) when
-        // present; the province line is uppercase too, so only keep known role words.
-        if (lines[0] && /president|secretari|vocal|portavoz/i.test(lines[0])) {
-          role = titleCase(lines[0]);
-        }
-      }
-      cards.push({ slug, name, role });
-    }
-    if (cards.length >= 30) return cards;
+    const html = await fetchText(SENADO_ROSTER_URL, { headers: H });
+    const cards = parseSenadoRosterCards(html);
+    if (cards.length === 32) return cards;
 
     gaps.push(
-      `roster-senado: ${cards.length} cards parseadas de /senadores/; usando respaldo de 32 fichas provinciales.`,
+      `roster-senado: ${cards.length} tarjetas únicas parseadas de ${SENADO_ROSTER_URL}; usando respaldo de 32 fichas provinciales.`,
     );
     const fallback = await this.collectCardsFromProfiles(gaps);
     const merged = new Map(fallback.map((card) => [card.slug, card]));
@@ -194,12 +199,13 @@ export class SenadoRosterAdapter {
           try {
             const html = await fetchText(`${ORIGIN}/provincia/${slug}/`, { headers: H });
             this.profileCache.set(slug, html);
-            const name = parseProfileName(html);
+            const aliases = parseProfileIdentityAliases(html);
+            const name = selectCanonicalName(aliases);
             if (!name) {
               failures.push(`${slug}: nombre no encontrado`);
               return null;
             }
-            return { slug, name, role: null };
+            return { slug, name, role: null, aliases };
           } catch (error) {
             failures.push(`${slug}: ${(error as Error).message}`);
             return null;
@@ -225,37 +231,119 @@ export class SenadoRosterAdapter {
 
   /** Parse /comisiones/lista-de-comisiones/ → one membership row per numbered entry. */
   private async collectMemberships(gaps: string[]): Promise<RawCommissionMembership[]> {
-    const url = `${ORIGIN}/comisiones/lista-de-comisiones/`;
+    const url = SENADO_COMMITTEES_URL;
     const html = await fetchText(url, { headers: H });
-    const titles = [...html.matchAll(/et_pb_toggle_title">([\s\S]*?)<\/h\d>/g)];
-    const out: RawCommissionMembership[] = [];
-    for (let i = 0; i < titles.length; i++) {
-      const name = titleCase(stripTags(titles[i]![1]!).trim());
-      const start = titles[i]!.index! + titles[i]![0]!.length;
-      const end = i + 1 < titles.length ? titles[i + 1]!.index! : html.length;
-      const text = stripTags(html.slice(start, end));
-      for (const line of text.split(/\n+/)) {
-        const lm = line.trim().match(/^\d+\.\s*(.+?)(?:,\s*([A-Za-zÁÉÍÓÚÑáéíóúñ/.\- ]+))?$/);
-        if (!lm) continue;
-        const memberName = titleCase(decodeEntities(lm[1]!.trim()));
-        if (!memberName) continue;
-        out.push({
-          source: this.source,
-          chamber: "SENADO",
-          commissionName: name,
-          commissionSourceId: null,
-          legislatorName: memberName,
-          legislatorSourceId: null,
-          cargo: lm[2]?.trim() || null,
-          party: null,
-          sourceUrl: url,
-        });
-      }
-    }
+    const out = parseSenadoCommissionMemberships(html, url);
     if (out.length === 0)
       gaps.push("roster-senado: la página devolvió 0 membresías de comisión parseables.");
+    if (!hasExplicitCommitteeEffectiveDate(html)) {
+      gaps.push(
+        "roster-senado: el listado HTML de comisiones no publica una fecha exacta de vigencia; no se infiere ni se fabrica una.",
+      );
+    }
     return out;
   }
+}
+
+/**
+ * Parse the current Divi card modules. The official Peravia card currently contains an
+ * invalid nested <h4><a><h4><a> tree, so parsing is anchored on each complete blurb module
+ * and its unique province URL instead of assuming a perfectly nested heading.
+ */
+export function parseSenadoRosterCards(html: string): Card[] {
+  const modules = [
+    ...html.matchAll(
+      /<div\b[^>]*class=["'][^"']*\bet_pb_blurb_\d+\b[^"']*\bet_pb_blurb\b[^"']*["'][^>]*>/gi,
+    ),
+  ];
+  const bySlug = new Map<string, Card>();
+  for (let index = 0; index < modules.length; index++) {
+    const start = modules[index]!.index!;
+    const end = index + 1 < modules.length ? modules[index + 1]!.index! : html.length;
+    const block = html.slice(start, end);
+    const slugs = new Set(
+      [
+        ...block.matchAll(
+          /href=["'](?:https?:\/\/www\.senadord\.gob\.do)?\/provincia\/([a-z0-9-]+)\/?["']/gi,
+        ),
+      ]
+        .map((match) => match[1]!.toLowerCase())
+        .filter((slug) => slug in SLUG_TO_PROVINCE),
+    );
+    if (slugs.size !== 1) continue;
+    const slug = [...slugs][0]!;
+    if (bySlug.has(slug)) continue;
+    const heading = block.match(
+      /<h4\b[^>]*class=["'][^"']*\bet_pb_module_header\b[^"']*["'][^>]*>([\s\S]*?)<\/h4>/i,
+    );
+    const name = heading ? cleanName(heading[1]!) : null;
+    if (!name) continue;
+    const description = block.match(
+      /<div\b[^>]*class=["'][^"']*\bet_pb_blurb_description\b[^"']*["'][^>]*>([\s\S]*?)<\/div>/i,
+    )?.[1];
+    const roleMatch = description
+      ? stripTags(description).match(
+          /\b(VICE\s*PRESIDENT[EA]|PRESIDENT[EA]|SECRETARI[OA]|VOCAL|PORTAVOZ)\b/i,
+        )
+      : null;
+    const role = roleMatch ? titleCase(roleMatch[1]!.replace(/\s+/g, " ")) : null;
+    const imageAlt = block.match(/<img\b[^>]*\balt=["']([^"']+)["']/i)?.[1];
+    const aliases = [name];
+    if (imageAlt) {
+      const altName = cleanName(imageAlt);
+      // Accept only a literal whole-name extension, never edit distance/token guessing.
+      if (altName && isWholeNameExtension(name, altName)) aliases.push(altName);
+    }
+    bySlug.set(slug, { slug, name, role, aliases: uniqueNames(aliases) });
+  }
+  return [...bySlug.values()];
+}
+
+/** Parse only numbered membership lines inside each explicit commission toggle. */
+export function parseSenadoCommissionMemberships(
+  html: string,
+  sourceUrl = SENADO_COMMITTEES_URL,
+): RawCommissionMembership[] {
+  const titles = [
+    ...html.matchAll(
+      /<h[1-6]\b[^>]*class=["'][^"']*\bet_pb_toggle_title\b[^"']*["'][^>]*>([\s\S]*?)<\/h[1-6]>/gi,
+    ),
+  ];
+  const out: RawCommissionMembership[] = [];
+  for (let index = 0; index < titles.length; index++) {
+    const commissionName = titleCase(stripTags(titles[index]![1]!).trim());
+    if (!commissionName) continue;
+    const start = titles[index]!.index! + titles[index]![0]!.length;
+    const end = index + 1 < titles.length ? titles[index + 1]!.index! : html.length;
+    const text = stripTags(html.slice(start, end));
+    for (const rawLine of text.split(/\n+/)) {
+      const numbered = rawLine.trim().match(/^\d+\.\s*(.+)$/);
+      if (!numbered) continue;
+      let identity = numbered[1]!.trim();
+      let cargo: string | null = null;
+      const cargoMatch = identity.match(
+        /,\s*(VICE\s*PRESIDENT[EA]|PRESIDENT[EA]|SECRETARI[OA]|MIEMBRO)\s*,?$/i,
+      );
+      if (cargoMatch) {
+        cargo = cargoMatch[1]!.trim();
+        identity = identity.slice(0, cargoMatch.index).trim();
+      }
+      const memberName = cleanName(identity.replace(/,\s*$/, ""));
+      if (!memberName) continue;
+      out.push({
+        source: "roster-senado",
+        chamber: "SENADO",
+        commissionName,
+        commissionSourceId: null,
+        legislatorName: memberName,
+        legislatorSourceId: null,
+        cargo,
+        party: null,
+        sourceUrl,
+      });
+    }
+  }
+  return out;
 }
 
 /** Extract the senator's full name from a province profile without relying on Divi classes. */
@@ -283,6 +371,67 @@ export function parseProfileName(html: string): string | null {
     /SENADOR(?:A)? DE LA REP[\u00daU]BLICA/i.test(after),
   );
   return contextual.length === 1 ? titleCase(contextual[0]!.raw) : null;
+}
+
+/** Exact first-party identity strings exposed in the profile heading and page title. */
+export function parseProfileIdentityAliases(html: string): string[] {
+  const aliases: string[] = [];
+  const heading = parseProfileName(html);
+  if (heading) aliases.push(heading);
+  const title = html.match(/<title\b[^>]*>([\s\S]*?)<\/title>/i)?.[1];
+  if (title) {
+    const visible = decodeEntities(stripTags(title)).replace(/\s+/g, " ").trim();
+    const match = visible.match(/^Senado\s*\|\s*(.+?)\s*-\s*Senador(?:a)?\b/i);
+    const titleName = match ? cleanName(match[1]!) : null;
+    if (titleName) aliases.push(titleName);
+  }
+  // The first et_pb_image_0 inside a province profile is the senator portrait. Its
+  // title/alt are explicit identity fields structurally attached to that one profile;
+  // they are aliases, not fuzzy transformations. Duplicate aliases across profiles
+  // still fail closed later in matchCardSlug.
+  const portraitModule = html.match(
+    /<div\b[^>]*class=["'][^"']*\bet_pb_image_0\b[^"']*["'][^>]*>([\s\S]{0,3000}?)<\/div>/i,
+  )?.[1];
+  const portraitTag = portraitModule?.match(/<img\b[^>]*>/i)?.[0];
+  if (portraitTag) {
+    for (const attribute of ["title", "alt"] as const) {
+      const raw = portraitTag.match(new RegExp(`\\b${attribute}=["']([^"']+)["']`, "i"))?.[1];
+      const portraitName = raw ? cleanName(raw) : null;
+      if (portraitName) aliases.push(portraitName);
+    }
+  }
+  return uniqueNames(aliases);
+}
+
+/**
+ * Add only the profile-name aliases explicitly reviewed in the Senate SIL bridge for
+ * this exact province slug. The SIL `officialName` is deliberately not an alias source:
+ * it describes a separate catalog and may differ from public roster identity literals.
+ * Duplicate bridge rows fail closed instead of choosing one.
+ */
+export function appendReviewedSenadoProfileAlias(
+  rosterSourceId: string,
+  aliases: readonly string[],
+): string[] {
+  const matches = REVIEWED_SENADO_SIL_PERSON_BRIDGE.filter(
+    (row) => row.rosterSourceId === rosterSourceId,
+  );
+  const reviewedAliases =
+    matches.length === 1
+      ? (matches[0]!.profileNameAliases ?? []).map((alias) => alias.trim()).filter(Boolean)
+      : [];
+  if (reviewedAliases.length === 0) return uniqueNames(aliases);
+
+  // `uniqueNames` intentionally folds accents for committee matching. Do not let that
+  // erase reviewed literals: DB identity safety compares historical aliases with
+  // conservative NFC/whitespace/case normalization only.
+  const reviewedByKey = new Map(
+    reviewedAliases.map((alias) => [exactIdentityAliasKey(alias), alias] as const),
+  );
+  const publishedAliases = aliases.filter(
+    (alias) => !reviewedByKey.has(exactIdentityAliasKey(alias)),
+  );
+  return [...uniqueNames(publishedAliases), ...reviewedByKey.values()];
 }
 
 /**
@@ -338,8 +487,65 @@ export function normalizeRosterName(s: string): string {
 export function matchCardSlug(memberName: string, cards: Card[]): string | null {
   const key = normalizeRosterName(memberName);
   if (!key) return null;
-  const matches = cards.filter((card) => normalizeRosterName(card.name) === key);
+  const matches = cards.filter((card) =>
+    uniqueNames([card.name, ...(card.aliases ?? [])]).some(
+      (alias) => normalizeRosterName(alias) === key,
+    ),
+  );
   return matches.length === 1 ? matches[0]!.slug : null;
+}
+
+function cleanName(value: string): string | null {
+  const visible = decodeEntities(stripTags(value)).replace(/\s+/g, " ").trim();
+  if (
+    visible.length < 5 ||
+    visible.length > 120 ||
+    visible.split(/\s+/).length < 2 ||
+    !/^[\p{L}.'\- ]+$/u.test(visible)
+  ) {
+    return null;
+  }
+  return titleCase(visible);
+}
+
+function uniqueNames(values: readonly string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const value of values) {
+    const key = normalizeRosterName(value);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(value);
+  }
+  return out;
+}
+
+function exactIdentityAliasKey(value: string): string {
+  return value.normalize("NFC").replace(/\s+/g, " ").trim().toLocaleLowerCase("es-DO");
+}
+
+function selectCanonicalName(values: readonly string[]): string | null {
+  return (
+    uniqueNames(values).sort((left, right) => {
+      const leftKey = normalizeRosterName(left);
+      const rightKey = normalizeRosterName(right);
+      const tokenDelta = rightKey.split(" ").length - leftKey.split(" ").length;
+      return tokenDelta || rightKey.length - leftKey.length;
+    })[0] ?? null
+  );
+}
+
+function isWholeNameExtension(left: string, right: string): boolean {
+  const a = normalizeRosterName(left);
+  const b = normalizeRosterName(right);
+  return a === b || a.startsWith(`${b} `) || b.startsWith(`${a} `);
+}
+
+/** The HTML has a last-modified timestamp, but no effective date for this composition. */
+function hasExplicitCommitteeEffectiveDate(html: string): boolean {
+  return /(?:vigente|vigencia|conformación|composición)\s+(?:desde|al|a partir del)\s+\d{1,2}[/-]\d{1,2}[/-]\d{4}/i.test(
+    stripTags(html),
+  );
 }
 
 function stripTags(s: string): string {

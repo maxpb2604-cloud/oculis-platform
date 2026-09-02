@@ -1,17 +1,28 @@
 /** Minimal bilingual dictionary (ES default, EN alternate) — Wish List requirement. */
 export type Lang = "es" | "en";
 
+/** Internal request header set by middleware so the root layout can render the right HTML lang. */
+export const LANG_REQUEST_HEADER = "x-oculis-lang";
+
+/**
+ * Resolve the only two supported interface languages. The URL query is canonical:
+ * exact `lang=en` selects English and every other value falls back to Spanish.
+ */
+export function parseLang(value: unknown): Lang {
+  return value === "en" ? "en" : "es";
+}
+
 export const dict: Record<Lang, Record<string, string>> = {
   es: {
     appName: "Oculis Auribus",
-    tagline: "Seguimiento Experto de Legislación y Regulaciones",
-    legislative: "Monitoreo Legislativo",
-    regulatory: "Monitoreo Regulatorio",
-    totalBills: "Iniciativas Totales",
-    published: "Con documento oficial",
-    byStatus: "Iniciativas por Estado",
-    byProvince: "Iniciativas por Provincia",
-    recent: "Iniciativas Recientes",
+    tagline: "Seguimiento experto de legislación y regulaciones",
+    legislative: "Monitoreo legislativo",
+    regulatory: "Monitoreo regulatorio",
+    totalBills: "Iniciativas totales",
+    published: "Con archivo registrado",
+    byStatus: "Iniciativas por estado",
+    byProvince: "Iniciativas por provincia",
+    recent: "Iniciativas recientes",
     code: "Código",
     title: "Iniciativa",
     status: "Estado",
@@ -26,18 +37,18 @@ export const dict: Record<Lang, Record<string, string>> = {
     scopeCOMMITTEE: "Comisión",
 
     // Monitoring building blocks
-    viewDocument: "Ver documento ↗",
-    openDocument: "Abrir documento ↗",
+    viewDocument: "Ver documento",
+    openDocument: "Abrir documento",
     filedBy: "Depositada por",
     coSponsors: "proponente",
     coSponsorsPlural: "proponentes",
     initiative: "iniciativa",
     initiativePlural: "iniciativas",
-    docFiled: "Con documento oficial",
-    docPending: "Documento oficial: No informado",
+    docFiled: "Archivo registrado por la fuente",
+    docPending: "Archivo oficial: No registrado",
     docSenate: "Documento oficial: consultar fuente",
-    openSenateRecord: "Abrir expediente en el Senado ↗",
-    viewSilRecord: "Ver ficha en SIL ↗",
+    openSenateRecord: "Abrir ficha del Senado",
+    viewSilRecord: "Ver ficha en SIL",
     publicConsultation: "CONSULTA PÚBLICA",
     deadline: "Plazo",
 
@@ -51,11 +62,11 @@ export const dict: Record<Lang, Record<string, string>> = {
     noDeputies: "Sin diputados registrados para esta provincia.",
     mapMissingToken: "Falta NEXT_PUBLIC_MAPBOX_TOKEN",
     mapError: "Error de Mapbox",
-    mapAriaLabel: "Mapa de iniciativas por provincia. Cada círculo representa una provincia; su tamaño es proporcional al número de iniciativas. Use el panel lateral para ver los legisladores.",
+    mapAriaLabel:
+      "Mapa de iniciativas por provincia. Cada círculo representa una provincia; su tamaño es proporcional al número de iniciativas. Use el panel lateral para ver los legisladores.",
 
     // Charts
     total: "Total",
-
   },
   en: {
     appName: "Oculis Auribus",
@@ -63,7 +74,7 @@ export const dict: Record<Lang, Record<string, string>> = {
     legislative: "Legislative Monitoring",
     regulatory: "Regulatory Monitoring",
     totalBills: "Total Initiatives",
-    published: "With official document",
+    published: "With registered file",
     byStatus: "Initiatives by Status",
     byProvince: "Initiatives by Province",
     recent: "Recent Initiatives",
@@ -81,18 +92,18 @@ export const dict: Record<Lang, Record<string, string>> = {
     scopeCOMMITTEE: "Committee",
 
     // Monitoring building blocks
-    viewDocument: "View document ↗",
-    openDocument: "Open document ↗",
+    viewDocument: "View document",
+    openDocument: "Open document",
     filedBy: "Filed by",
     coSponsors: "co-sponsor",
     coSponsorsPlural: "co-sponsors",
     initiative: "initiative",
     initiativePlural: "initiatives",
-    docFiled: "With official document",
-    docPending: "Official document: Not reported",
+    docFiled: "File registered by source",
+    docPending: "Official file: Not registered",
     docSenate: "Official document: consult source",
-    openSenateRecord: "Open Senate record ↗",
-    viewSilRecord: "View SIL record ↗",
+    openSenateRecord: "Open Senate record",
+    viewSilRecord: "View SIL record",
     publicConsultation: "PUBLIC CONSULTATION",
     deadline: "Deadline",
 
@@ -106,11 +117,11 @@ export const dict: Record<Lang, Record<string, string>> = {
     noDeputies: "No deputies on record for this province.",
     mapMissingToken: "Missing NEXT_PUBLIC_MAPBOX_TOKEN",
     mapError: "Mapbox error",
-    mapAriaLabel: "Map of initiatives by province. Each circle represents a province; its size is proportional to the number of initiatives. Use the side panel to view legislators.",
+    mapAriaLabel:
+      "Map of initiatives by province. Each circle represents a province; its size is proportional to the number of initiatives. Use the side panel to view legislators.",
 
     // Charts
     total: "Total",
-
   },
 };
 
@@ -133,4 +144,20 @@ export function langQuery(lang: Lang): string {
 /** Same as `langQuery` but as a parameter to append to an existing query string ("&lang=en"). */
 export function langParam(lang: Lang): string {
   return lang === "en" ? "&lang=en" : "";
+}
+
+/**
+ * Switch language without losing filters, dates, pagination, or any other URL state.
+ * Spanish is the canonical default and therefore omits the `lang` query parameter.
+ */
+export function languageSwitchHref(
+  pathname: string,
+  searchParams: Pick<URLSearchParams, "toString">,
+  target: Lang,
+): string {
+  const params = new URLSearchParams(searchParams.toString());
+  if (target === "en") params.set("lang", "en");
+  else params.delete("lang");
+  const query = params.toString();
+  return `${pathname}${query ? `?${query}` : ""}`;
 }

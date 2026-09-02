@@ -1,6 +1,9 @@
 import { type Lang } from "@/lib/i18n";
+import { ArrowSquareOut } from "@phosphor-icons/react/dist/ssr";
 import type { FeedAccount } from "@/lib/data";
 import { safeHttpUrl } from "@/lib/input";
+import { NewTabNotice } from "@/components/ui/primitives";
+import { LegislatorProfileTrigger } from "@/components/legislator-profile-provider";
 
 const KIND_LABEL: Record<string, { es: string; en: string }> = {
   SENADO_OFFICIAL: { es: "Senado", en: "Senate" },
@@ -12,9 +15,8 @@ const KIND_LABEL: Record<string, { es: string; en: string }> = {
 };
 
 /**
- * Shown in the center column when the "Redes" (social) filter is active but no
- * posts exist yet (X/Instagram ingestion is credential-gated). Turns the empty state
- * into a browsable directory of active source and public-account records.
+ * Shown when public-account updates are unavailable. The customer can still open
+ * the exact public accounts without seeing operational or credential details.
  */
 export function FeedSocialDirectory({ lang, accounts }: { lang: Lang; accounts: FeedAccount[] }) {
   const es = lang === "es";
@@ -29,14 +31,16 @@ export function FeedSocialDirectory({ lang, accounts }: { lang: Lang; accounts: 
         </div>
         <p className="text-[13px] leading-relaxed" style={{ color: "var(--text)" }}>
           {es
-            ? "Las publicaciones de X e Instagram aparecerán aquí cuando se conecte la API. El directorio muestra las fuentes y cuentas públicas activas registradas, en orden alfabético."
-            : "X and Instagram posts will appear here once the API is connected. The directory lists registered active sources and public accounts alphabetically."}
+            ? "Todavía no hay publicaciones disponibles en esta vista. Puedes consultar directamente las cuentas públicas incluidas por Oculis."
+            : "No posts are available in this view yet. You can open the public accounts included by Oculis directly."}
         </p>
       </div>
 
       {accounts.length === 0 ? (
         <div className="card p-10 text-center text-sm" style={{ color: "var(--text-muted)" }}>
-          {es ? "Directorio vacío." : "Directory is empty."}
+          {es
+            ? "Todavía no hay cuentas públicas disponibles."
+            : "No public accounts are available yet."}
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
@@ -44,14 +48,9 @@ export function FeedSocialDirectory({ lang, accounts }: { lang: Lang; accounts: 
             const kind = KIND_LABEL[a.kind] ?? { es: a.kind, en: a.kind };
             const url = safeHttpUrl(a.url);
             if (!url) return null;
-            return (
-              <a
-                key={a.id}
-                href={url}
-                target="_blank"
-                rel="noreferrer"
-                className="card flex items-center gap-3 p-3 transition-shadow hover:shadow-lg"
-              >
+            const personAccount = a.kind === "SENATOR" || a.kind === "DEPUTY";
+            const accountContent = (
+              <>
                 <span
                   className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[13px] font-semibold text-white"
                   style={{ background: "var(--accent)" }}
@@ -74,6 +73,47 @@ export function FeedSocialDirectory({ lang, accounts }: { lang: Lang; accounts: 
                 >
                   {platformLabel(a.platform)}
                 </span>
+              </>
+            );
+            if (personAccount) {
+              return (
+                <div key={a.id} className="card flex min-w-0 items-center gap-1 p-1.5">
+                  <LegislatorProfileTrigger
+                    profileId={a.legislatorProfileId}
+                    fullName={a.name}
+                    chamber={a.chamber}
+                    role={es ? kind.es : kind.en}
+                    className="flex min-h-14 min-w-0 flex-1 items-center gap-3 rounded-lg p-1.5 text-left transition-colors hover:bg-[var(--surface-2)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
+                  >
+                    {accountContent}
+                  </LegislatorProfileTrigger>
+                  <a
+                    href={url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-[var(--accent)] hover:bg-[var(--accent-soft)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
+                    aria-label={
+                      es
+                        ? `Abrir la cuenta pública de ${a.name} en una pestaña nueva`
+                        : `Open ${a.name}'s public account in a new tab`
+                    }
+                  >
+                    <ArrowSquareOut size={18} aria-hidden="true" />
+                    <NewTabNotice lang={lang} />
+                  </a>
+                </div>
+              );
+            }
+            return (
+              <a
+                key={a.id}
+                href={url}
+                target="_blank"
+                rel="noreferrer"
+                className="card flex items-center gap-3 p-3 transition-shadow hover:shadow-lg"
+              >
+                {accountContent}
+                <NewTabNotice lang={lang} />
               </a>
             );
           })}

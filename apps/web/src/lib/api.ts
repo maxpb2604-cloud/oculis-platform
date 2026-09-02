@@ -20,5 +20,4 @@ export function apiError(
   );
 }
 
-export const PRIVATE_READ_CACHE =
-  "private, max-age=0, must-revalidate";
+export const PRIVATE_READ_CACHE = "private, max-age=0, must-revalidate";

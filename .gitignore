@@ -1,6 +1,8 @@
 node_modules/
 dist/
 .next/
+.next-dev/
+.next-health-validation/
 .env
 .env.local
 *.log
@@ -12,3 +14,4 @@ coverage/
 *.tsbuildinfo
 .pnpm-store/
 .artifacts/
+work/

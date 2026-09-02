@@ -5,6 +5,7 @@ import {
   parseSenadoAttendanceMeetingDates,
   parseSenadoPublicationLanding,
   parseSenadoReportReferences,
+  parseSenadoWpfdPage,
   SenadoPublicationsAdapter,
   SENADO_PUBLICATION_SOURCES,
   type SenadoPublicationTransport,
@@ -13,8 +14,24 @@ import {
 const approvedSource = SENADO_PUBLICATION_SOURCES.find(
   (source) => source.kind === "APPROVED_INITIATIVES",
 )!;
+const expiredSource = SENADO_PUBLICATION_SOURCES.find(
+  (source) => source.kind === "EXPIRED_PROJECTS",
+)!;
 
-function wpfdFile(id: number, title = `Documento ${id}`) {
+function mockTransport(
+  overrides: Partial<SenadoPublicationTransport> = {},
+): SenadoPublicationTransport {
+  return {
+    json: async () => ({}),
+    text: async () => "",
+    pdfText: async () => ({ text: "", pages: 0 }),
+    bytes: async () => ({ bytes: new Uint8Array(), contentType: "" }),
+    legacyWordText: async () => "",
+    ...overrides,
+  };
+}
+
+function wpfdFile(id: number, title = `Documento ${id}`, overrides: Record<string, unknown> = {}) {
   return {
     ID: id,
     post_title: title,
@@ -30,7 +47,35 @@ function wpfdFile(id: number, title = `Documento ${id}`) {
     catid: "1389",
     linkdownload: `https://www.senadord.gob.do/Descargas/1389/iniciativas-aprobadas/${id}/documento-${id}`,
     openpdflink: `https://www.senadord.gob.do/preview/${id}`,
+    ...overrides,
   };
+}
+
+function oleBytes(size = 512): Uint8Array {
+  const bytes = new Uint8Array(size);
+  bytes.set([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]);
+  return bytes;
+}
+
+function legacyWordDocument(size = 512) {
+  return parseSenadoWpfdPage(
+    {
+      files: [
+        wpfdFile(46464, "Perimidos al 26 julio 2011", {
+          ext: "doc",
+          size,
+          catid: "1390",
+          catname: "proyectos-perimidos",
+          cattitle: "Proyectos Perimidos",
+          linkdownload:
+            "https://www.senadord.gob.do/Descargas/1390/proyectos-perimidos/46464/perimidos-al-26-julio-2011",
+          openpdflink: null,
+        }),
+      ],
+      category: { term_id: 1390, count: 1 },
+    },
+    expiredSource,
+  ).documents[0]!;
 }
 
 describe("Senado documentary publications", () => {
@@ -40,14 +85,12 @@ describe("Senado documentary publications", () => {
       { files: [wpfdFile(8)], category: { term_id: 1389, count: 3 } },
     ];
     const requested: string[] = [];
-    const transport: SenadoPublicationTransport = {
+    const transport = mockTransport({
       json: async (url) => {
         requested.push(url);
         return pages[requested.length - 1];
       },
-      text: async () => "",
-      pdfText: async () => ({ text: "", pages: 0 }),
-    };
+    });
     const result = await new SenadoPublicationsAdapter(transport).collect({
       kinds: ["APPROVED_INITIATIVES"],
     });
@@ -75,14 +118,12 @@ describe("Senado documentary publications", () => {
   });
 
   it("makes a page limit explicit instead of presenting a partial collection as complete", async () => {
-    const transport: SenadoPublicationTransport = {
+    const transport = mockTransport({
       json: async () => ({
         files: [wpfdFile(10), wpfdFile(9)],
         category: { term_id: 1389, count: 3 },
       }),
-      text: async () => "",
-      pdfText: async () => ({ text: "", pages: 0 }),
-    };
+    });
     const result = await new SenadoPublicationsAdapter(transport).collect({
       kinds: ["APPROVED_INITIATIVES"],
       maxPagesPerSource: 1,
@@ -99,15 +140,95 @@ describe("Senado documentary publications", () => {
       emptyMessage: officialMessage,
     });
 
-    const result = await new SenadoPublicationsAdapter({
-      json: async () => ({}),
-      text: async () => html,
-      pdfText: async () => ({ text: "", pages: 0 }),
-    }).collect({ kinds: ["ELECTRONIC_VOTES"] });
+    const result = await new SenadoPublicationsAdapter(
+      mockTransport({
+        text: async () => html,
+      }),
+    ).collect({ kinds: ["ELECTRONIC_VOTES"] });
     expect(result.documents).toEqual([]);
     expect(result.observations[0]).toMatchObject({ collectedCount: 0, complete: true });
     expect(result.observations[0]?.emptyMessage).toBe(officialMessage);
     expect(result.gaps).toEqual([]);
+  });
+
+  it("reads a legacy Word document only after exact MIME, size, and OLE checks", async () => {
+    const bytes = oleBytes();
+    let extracted = 0;
+    const adapter = new SenadoPublicationsAdapter(
+      mockTransport({
+        bytes: async () => ({ bytes, contentType: "application/octet-stream" }),
+        legacyWordText: async (received) => {
+          extracted++;
+          expect(received).toBe(bytes);
+          return "Perimida el 26/07/2011 »Número Iniciativa: 00009-2010-SLO-SE";
+        },
+      }),
+    );
+
+    await expect(adapter.fetchDocumentText(legacyWordDocument())).resolves.toEqual({
+      text: "Perimida el 26/07/2011 »Número Iniciativa: 00009-2010-SLO-SE",
+      pages: 0,
+    });
+    expect(extracted).toBe(1);
+  });
+
+  it("fails closed before Word extraction when MIME, OLE magic, or size is wrong", async () => {
+    let extracted = 0;
+    const cases = [
+      {
+        body: { bytes: oleBytes(), contentType: "text/html" },
+        expected: "MIME no permitido",
+      },
+      {
+        body: { bytes: new Uint8Array(512), contentType: "application/octet-stream" },
+        expected: "no contiene un documento OLE válido",
+      },
+      {
+        body: { bytes: oleBytes(513), contentType: "application/msword; charset=binary" },
+        expected: "cambió de tamaño",
+      },
+    ];
+
+    for (const testCase of cases) {
+      const adapter = new SenadoPublicationsAdapter(
+        mockTransport({
+          bytes: async () => testCase.body,
+          legacyWordText: async () => {
+            extracted++;
+            return "no debe ejecutarse";
+          },
+        }),
+      );
+      await expect(adapter.fetchDocumentText(legacyWordDocument())).rejects.toThrow(
+        testCase.expected,
+      );
+    }
+    expect(extracted).toBe(0);
+  });
+
+  it("keeps PDF extraction on the PDF-specific validated path", async () => {
+    const document = parseSenadoWpfdPage(
+      {
+        files: [wpfdFile(10)],
+        category: { term_id: 1389, count: 1 },
+      },
+      approvedSource,
+    ).documents[0]!;
+    let fetched = "";
+    const adapter = new SenadoPublicationsAdapter(
+      mockTransport({
+        pdfText: async (url) => {
+          fetched = url;
+          return { text: "PDF oficial", pages: 1 };
+        },
+      }),
+    );
+
+    await expect(adapter.fetchDocumentText(document)).resolves.toEqual({
+      text: "PDF oficial",
+      pages: 1,
+    });
+    expect(fetched).toBe(document.directDownloadUrl);
   });
 
   it("extracts complete codes from approved lists without inferring flattened columns", () => {

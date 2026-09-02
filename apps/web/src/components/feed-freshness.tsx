@@ -2,7 +2,9 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useTransition } from "react";
+import { ArrowsClockwise, CaretDown } from "@phosphor-icons/react";
 import { type Lang } from "@/lib/i18n";
+import { feedSourceLabel } from "@/lib/source-labels";
 
 interface SourceStatus {
   source: string;
@@ -60,8 +62,8 @@ export function FeedFreshness({
   }, []);
 
   return (
-    <div ref={boxRef} className="card relative flex items-center justify-between gap-3 px-3 py-2">
-      <div className="flex items-center gap-2 text-[13px]">
+    <div ref={boxRef} className="relative flex items-center justify-between gap-3 border-y py-3">
+      <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[13px]">
         <span
           className="inline-block h-2 w-2 shrink-0 rounded-full"
           style={{ background: "var(--accent)" }}
@@ -70,30 +72,40 @@ export function FeedFreshness({
         <span style={{ color: "var(--text-muted)" }}>
           {newestSuccessAt ? (
             <>
-              {es ? "Éxito más reciente entre las fuentes" : "Newest success among sources"}{" "}
+              <span className="sm:hidden">{es ? "Actualizada" : "Updated"}</span>
+              <span className="hidden sm:inline">
+                {es ? "Información actualizada" : "Information updated"}
+              </span>{" "}
               <strong style={{ color: "var(--text)", fontWeight: 600 }}>
                 {ago(newestSuccessAt, es)}
               </strong>
             </>
           ) : es ? (
-            "Ninguna fuente del feed tiene una ejecución completa registrada"
+            "Las fuentes todavía no tienen una actualización completa registrada"
           ) : (
             "No feed source has a recorded complete run"
           )}
         </span>
         <button
+          type="button"
           onClick={() => setOpen((o) => !o)}
+          aria-expanded={open}
+          aria-controls="feed-source-status"
           className="rounded px-1.5 text-[12px] underline-offset-2 hover:underline"
           style={{ color: "var(--text-muted)", cursor: "pointer" }}
         >
-          {es ? `${sources.length} fuentes` : `${sources.length} sources`}
+          <span className="inline-flex items-center gap-1">
+            {es ? `${sources.length} fuentes` : `${sources.length} sources`}
+            <CaretDown size={12} aria-hidden />
+          </span>
         </button>
       </div>
 
       <button
+        type="button"
         onClick={() => startTransition(() => router.refresh())}
         disabled={pending}
-        className="rounded-lg px-2.5 py-1 text-[12px] font-medium transition-colors hover:bg-[var(--surface-2)]"
+        className="inline-flex min-h-10 items-center gap-1.5 rounded-lg px-2.5 text-[12px] font-medium transition-colors hover:bg-[var(--surface-2)]"
         style={{
           border: "1px solid var(--border)",
           color: "var(--text)",
@@ -101,11 +113,13 @@ export function FeedFreshness({
           opacity: pending ? 0.6 : 1,
         }}
       >
-        {pending ? (es ? "Actualizando…" : "Refreshing…") : es ? "Actualizar" : "Refresh"}
+        <ArrowsClockwise size={15} className={pending ? "animate-spin" : ""} aria-hidden />
+        {pending ? (es ? "Recargando…" : "Refreshing…") : es ? "Recargar" : "Refresh"}
       </button>
 
       {open && (
         <div
+          id="feed-source-status"
           className="absolute right-0 top-full z-30 mt-1.5 w-72 rounded-lg p-2 shadow-lg"
           style={{ background: "var(--surface)", border: "1px solid var(--border)" }}
         >
@@ -126,13 +140,12 @@ export function FeedFreshness({
                       className="inline-block h-1.5 w-1.5 shrink-0 rounded-full"
                       style={{ background: "var(--accent)" }}
                     />
-                    <span className="truncate">{s.label}</span>
+                    <span className="truncate">{feedSourceLabel(s.source, lang, s.label)}</span>
                   </span>
                   <span className="shrink-0 tabular-nums" style={{ color: "var(--text-muted)" }}>
                     {outcome}
-                    {s.outcome ? ` · ${s.seen} ${es ? "vistos" : "seen"}` : ""}
                     {s.lastSuccessAt
-                      ? ` · ${es ? "éxito" : "success"} ${ago(s.lastSuccessAt, es)}`
+                      ? ` · ${es ? "actualizada" : "updated"} ${ago(s.lastSuccessAt, es)}`
                       : ""}
                   </span>
                 </li>
@@ -146,9 +159,9 @@ export function FeedFreshness({
 }
 
 function outcomeLabel(outcome: SourceStatus["outcome"], es: boolean): string {
-  if (outcome === "RUNNING") return es ? "En ejecución" : "Running";
-  if (outcome === "COMPLETE") return es ? "Completa" : "Complete";
-  if (outcome === "PARTIAL") return es ? "Parcial" : "Partial";
-  if (outcome === "FAILED") return es ? "Falló" : "Failed";
-  return es ? "Nunca ejecutada" : "Never run";
+  if (outcome === "RUNNING") return es ? "Actualizando" : "Updating";
+  if (outcome === "COMPLETE") return es ? "Disponible" : "Available";
+  if (outcome === "PARTIAL") return es ? "Actualización parcial" : "Partially updated";
+  if (outcome === "FAILED") return es ? "No disponible" : "Unavailable";
+  return es ? "Sin actualización" : "Not updated";
 }

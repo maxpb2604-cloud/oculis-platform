@@ -10,20 +10,29 @@
     "crawl:corpus": "tsx src/index.ts --concurrency 6",
     "crawl:full": "tsx src/index.ts --enrich --concurrency 6 --delay 75",
     "movements": "tsx src/index.ts --movements --concurrency 6 --delay 75",
+    "movements:incremental": "tsx src/incremental-movements-cli.ts",
     "publications": "tsx src/index.ts --publications",
     "senate:corpus": "tsx src/index.ts --senate-corpus",
+    "senate:fichas": "tsx src/index.ts --senate-fichas",
+    "senate:fichas:full": "tsx src/index.ts --senate-fichas --full",
+    "link:initiative-proponents": "tsx src/index.ts --link-initiative-proponents",
     "daily": "tsx src/index.ts --daily",
     "roster": "tsx src/index.ts --roster",
     "activity": "tsx src/index.ts --activity",
     "feed": "tsx src/index.ts --feed",
     "seed-accounts": "tsx src/index.ts --seed-accounts",
+    "verify-documents": "tsx src/verify-documents.ts",
+    "translate-initiative-titles": "tsx src/translate-initiative-titles.ts",
+    "import-reviewed-initiative-titles": "tsx src/import-reviewed-initiative-titles.ts",
     "test": "node --import tsx --test test/*.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@huggingface/transformers": "3.8.1",
     "@oculis/core": "*",
     "@oculis/db": "*",
-    "@oculis/scrapers": "*"
+    "@oculis/scrapers": "*",
+    "unpdf": "^1.6.2"
   },
   "devDependencies": {
     "tsx": "*",

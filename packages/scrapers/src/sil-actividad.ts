@@ -16,6 +16,12 @@
  */
 import { extractCodes } from "./codes.js";
 import { buildISODate, extractLeadingISODate, spanishMonthToNum } from "./dates.js";
+import {
+  commissionAppearsInAgendaPdf,
+  DipCommissionAgendaAdapter,
+  type CommissionAgendaResolution,
+  type CommissionAgendaResolver,
+} from "./dip-commission-agenda.js";
 import { fetchJson } from "./http.js";
 import type { Page } from "./sil-diputados.js";
 import { createHash } from "node:crypto";
@@ -31,6 +37,27 @@ export interface SilComisionOrden {
   tipo: string | null;
   nombreComision: string | null;
   periodoLegislativo: number | null;
+  [k: string]: unknown;
+}
+
+/** Calendar record returned by actividad/AgendaActividad. */
+export interface SilAgendaActividad {
+  id: number | null;
+  comision: string | null;
+  tipoActividad: string | null;
+  start: string | null;
+  end?: string | null;
+  descripcion: string | null;
+  title?: string | null;
+  [k: string]: unknown;
+}
+
+/** Exact activity detail returned by actividad/actividad/{calendar activity id}. */
+export interface SilActividadDetail {
+  id?: number | null;
+  ubicacion?: string | null;
+  comisionId?: number | null;
+  comision?: string | null;
   [k: string]: unknown;
 }
 
@@ -53,13 +80,20 @@ export interface SilSesionOrden {
 /** Canonical, source-agnostic agenda/activity event. */
 export interface RawActivityEvent {
   source: string;
+  /** Stable official event id, when the source publishes one. */
+  sourceEventId?: string | null;
   /** COMMITTEE (comisión), PLENARY (pleno), or ASAMBLEA (asamblea nacional). */
   scope: "COMMITTEE" | "PLENARY" | "ASAMBLEA";
   chamber?: "DIPUTADOS" | "SENADO" | null;
   agendaUrl?: string | null;
+  /** Keep an already verified agenda URL only when the entire agenda catalog is
+   * temporarily unavailable. A successful negative/ambiguous lookup still clears it. */
+  preserveAgendaUrlOnNull?: boolean;
   date: string | null;
   /** Literal time/range reported by the agenda, when present. */
   time?: string | null;
+  /** Literal official meeting location, when present. */
+  location?: string | null;
   kind: string | null;
   body: string | null;
   description: string;
@@ -79,6 +113,81 @@ function exactFingerprint(value: unknown): string {
   return createHash("sha256").update(JSON.stringify(value)).digest("hex");
 }
 
+function normalizedExactText(value: string | null | undefined): string | null {
+  const normalized = value?.normalize("NFC").replace(/\s+/g, " ").trim().toLocaleLowerCase("es");
+  return normalized || null;
+}
+
+function validActivityId(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
+}
+
+function activityUrl(root: string, activityId: number): string {
+  return `${root.replace(/\/+$/, "")}/actividad/actividad/${activityId}`;
+}
+
+function calendarUrl(root: string, date: string): string {
+  const query = new URLSearchParams({ inicio: date, fin: date });
+  return `${root.replace(/\/+$/, "")}/actividad/AgendaActividad?${query.toString()}`;
+}
+
+function exactReportedTime(value: string | null | undefined): string | null {
+  // Keep the time component exactly as published. Do not reinterpret it in the server's
+  // timezone (the source does not publish a timezone offset).
+  return /^\d{4}-\d{2}-\d{2}T(\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?)/.exec(value ?? "")?.[1] ?? null;
+}
+
+interface CommitteeCalendarResolution {
+  status: "UNIQUE" | "NO_MATCH" | "AMBIGUOUS" | "INSUFFICIENT_FIELDS";
+  event: SilAgendaActividad | null;
+  candidateCount: number;
+}
+
+/**
+ * Match only the literal facts shared by both official endpoints. Whitespace, Unicode
+ * composition, and case are normalized, but words, punctuation, accents, and dates are
+ * never guessed or fuzzy-matched.
+ */
+function resolveCommitteeCalendarEvent(
+  row: SilComisionOrden,
+  calendar: readonly SilAgendaActividad[],
+): CommitteeCalendarResolution {
+  const date = extractLeadingISODate(row.fecha);
+  const commission = normalizedExactText(row.nombreComision);
+  const kind = normalizedExactText(row.tipo);
+  const description = normalizedExactText(row.descripcion);
+  if (!date || !commission || !kind || !description) {
+    return { status: "INSUFFICIENT_FIELDS", event: null, candidateCount: 0 };
+  }
+
+  const candidates = calendar.filter(
+    (event) =>
+      validActivityId(event.id) &&
+      extractLeadingISODate(event.start) === date &&
+      normalizedExactText(event.comision) === commission &&
+      normalizedExactText(event.tipoActividad) === kind &&
+      normalizedExactText(event.descripcion) === description,
+  );
+  if (candidates.length === 1) {
+    return { status: "UNIQUE", event: candidates[0]!, candidateCount: 1 };
+  }
+  return {
+    status: candidates.length > 1 ? "AMBIGUOUS" : "NO_MATCH",
+    event: null,
+    candidateCount: candidates.length,
+  };
+}
+
+/** Resolve only a uniquely matched calendar activity URL for technical provenance. */
+export function resolveCommitteeActivityUrl(
+  row: SilComisionOrden,
+  calendar: readonly SilAgendaActividad[],
+  root: string = ROOT,
+): string | null {
+  const match = resolveCommitteeCalendarEvent(row, calendar);
+  return match.event && validActivityId(match.event.id) ? activityUrl(root, match.event.id) : null;
+}
+
 /** Pull a Spanish date ("24 de junio de 2026") out of free text → ISO yyyy-mm-dd. */
 export function parseSpanishDate(text: string | null | undefined): string | null {
   if (!text) return null;
@@ -91,7 +200,10 @@ export function parseSpanishDate(text: string | null | undefined): string | null
 export class SilActividadAdapter {
   readonly source = "sil-actividad";
 
-  constructor(private readonly root: string = ROOT) {}
+  constructor(
+    private readonly root: string = ROOT,
+    private readonly commissionAgendas: CommissionAgendaResolver = new DipCommissionAgendaAdapter(),
+  ) {}
 
   /**
    * Fully paginate one endpoint with safety guards:
@@ -103,12 +215,14 @@ export class SilActividadAdapter {
   private async fetchAll<T>(
     path: string,
     label: string,
+    query: Record<string, string> = { periodoId: "0" },
   ): Promise<{ rows: T[]; expected: number; gap?: string }> {
     const rows: T[] = [];
     let expected = 0;
     let page = 1;
     while (page <= MAX_PAGES) {
-      const env = await fetchJson<Page<T>>(`${this.root}/${path}?page=${page}&periodoId=0`, {
+      const params = new URLSearchParams({ page: String(page), ...query });
+      const env = await fetchJson<Page<T>>(`${this.root}/${path}?${params.toString()}`, {
         headers,
       });
       const pageSize = Number(env.pageSize);
@@ -143,14 +257,126 @@ export class SilActividadAdapter {
 
   async committeeOrders(): Promise<{ events: RawActivityEvent[]; gap?: string }> {
     const { rows, gap } = await this.fetchAll<SilComisionOrden>("comision/ordenes", "comisiones");
-    // This endpoint has no stable id. Fingerprint the complete source row and retain an
-    // occurrence number only for literally identical duplicate rows. No date/name/text
-    // similarity is used to merge distinct published records.
+
+    // `comision/ordenes` omits the calendar activity id and meeting time. Fetch the
+    // official calendar once per published date, then require one exact factual match.
+    const dates = [
+      ...new Set(rows.map((row) => extractLeadingISODate(row.fecha)).filter(Boolean) as string[]),
+    ];
+    const calendarByDate = new Map<
+      string,
+      { sourceUrl: string; events: SilAgendaActividad[]; available: boolean }
+    >();
+    const calendarGaps: string[] = [];
+    await Promise.all(
+      dates.map(async (date) => {
+        const sourceUrl = calendarUrl(this.root, date);
+        try {
+          const calendar = await fetchJson<unknown>(sourceUrl, { headers });
+          if (!Array.isArray(calendar)) {
+            throw new Error("la respuesta no es una lista");
+          }
+          calendarByDate.set(date, {
+            sourceUrl,
+            events: calendar as SilAgendaActividad[],
+            available: true,
+          });
+        } catch (error) {
+          calendarByDate.set(date, { sourceUrl, events: [], available: false });
+          calendarGaps.push(
+            `SIL · calendario de comisiones (${date}): no se pudo consultar AgendaActividad (${(error as Error).message}).`,
+          );
+        }
+      }),
+    );
+
+    let dailyAgendas: CommissionAgendaResolution = {
+      documentsByDate: new Map(dates.map((date) => [date, null])),
+      pdfTextBySourceId: new Map(),
+      gaps: [],
+    };
+    let dailyAgendaCatalogAvailable = true;
+    try {
+      dailyAgendas = await this.commissionAgendas.resolveDates(dates);
+    } catch (error) {
+      dailyAgendaCatalogAvailable = false;
+      dailyAgendas.gaps.push(
+        `Diputados · agendas PDF diarias: no se pudo reconciliar la fuente oficial (${(error as Error).message}).`,
+      );
+    }
+
+    const resolutions = rows.map((row) => {
+      const date = extractLeadingISODate(row.fecha);
+      const day = date ? calendarByDate.get(date) : undefined;
+      const resolution = resolveCommitteeCalendarEvent(row, day?.events ?? []);
+      return {
+        day,
+        resolution:
+          day && !day.available
+            ? ({ ...resolution, status: "NO_MATCH" } as CommitteeCalendarResolution)
+            : resolution,
+      };
+    });
+
+    // The exact activity URL remains valid even if this optional enrichment fails.
+    const matchedIds = [
+      ...new Set(resolutions.map(({ resolution }) => resolution.event?.id).filter(validActivityId)),
+    ];
+    const detailByActivityId = new Map<number, SilActividadDetail | null>();
+    const detailFailures: number[] = [];
+    await Promise.all(
+      matchedIds.map(async (activityId) => {
+        try {
+          const detail = await fetchJson<SilActividadDetail>(activityUrl(this.root, activityId), {
+            headers,
+          });
+          detailByActivityId.set(activityId, detail);
+        } catch {
+          detailByActivityId.set(activityId, null);
+          detailFailures.push(activityId);
+        }
+      }),
+    );
+
+    // This endpoint has no stable id. Preserve its historical five-field fingerprint and
+    // retain an occurrence number only for literally identical duplicate rows. No
+    // date/name/text similarity is used to merge distinct published records.
     const occurrences = new Map<string, number>();
-    const events = rows.map((r): RawActivityEvent => {
+    let unresolved = 0;
+    let ambiguous = 0;
+    let dailyDocumentMissing = 0;
+    let commissionNotInDailyDocument = 0;
+    const events = rows.map((r, index): RawActivityEvent => {
       const description = (r.descripcion ?? "").replace(/\s+/g, " ").trim();
       const date = extractLeadingISODate(r.fecha);
       const body = (r.nombreComision ?? "").trim() || null;
+      const { day, resolution } = resolutions[index]!;
+      const calendarEvent = resolution.event;
+      const activityId =
+        calendarEvent && validActivityId(calendarEvent.id) ? calendarEvent.id : null;
+      const calendarEventUrl = activityId == null ? null : activityUrl(this.root, activityId);
+      const detail = activityId == null ? null : (detailByActivityId.get(activityId) ?? null);
+      const dailyAgendaDocument = date ? (dailyAgendas.documentsByDate.get(date) ?? null) : null;
+      const dailyAgendaText = dailyAgendaDocument
+        ? (dailyAgendas.pdfTextBySourceId.get(dailyAgendaDocument.sourceId) ?? "")
+        : "";
+      const dailyAgendaVerification = commissionAppearsInAgendaPdf(
+        body,
+        r.descripcion,
+        date,
+        dailyAgendaText,
+      );
+      const agendaUrl =
+        dailyAgendaDocument && dailyAgendaVerification.matched
+          ? dailyAgendaDocument.previewUrl
+          : null;
+      if (!calendarEvent) unresolved++;
+      if (resolution.status === "AMBIGUOUS") ambiguous++;
+      if (!dailyAgendaDocument) dailyDocumentMissing++;
+      else if (!dailyAgendaVerification.matched) commissionNotInDailyDocument++;
+
+      // Preserve the pre-enrichment key exactly: calendar ids, times, detail fields, and
+      // any future extra properties in the source payload must not create a new DB row.
       const fingerprint = exactFingerprint({
         fecha: r.fecha ?? null,
         descripcion: r.descripcion ?? null,
@@ -162,9 +388,14 @@ export class SilActividadAdapter {
       occurrences.set(fingerprint, occurrence);
       return {
         source: this.source,
+        sourceEventId: activityId == null ? null : String(activityId),
         scope: "COMMITTEE",
         chamber: "DIPUTADOS",
+        agendaUrl,
+        preserveAgendaUrlOnNull: !dailyAgendaCatalogAvailable,
         date,
+        time: exactReportedTime(calendarEvent?.start),
+        location: detail?.ubicacion?.trim() || null,
         kind: r.tipo ?? null,
         body,
         description,
@@ -172,15 +403,55 @@ export class SilActividadAdapter {
         dedupeKey: `sil-com|${fingerprint}|${occurrence}`,
         raw: {
           payload: r,
+          calendarEvent,
+          activityDetail: detail,
+          dailyAgendaDocument,
+          dailyAgendaVerification,
           provenance: {
             endpoint: `${this.root}/comision/ordenes`,
             explicitDateField: "fecha",
             explicitKindField: "tipo",
+            matchFields: ["fecha", "nombreComision", "tipo", "descripcion"],
+            matchStatus: day && !day.available ? "SOURCE_UNAVAILABLE" : resolution.status,
+            matchCandidateCount: resolution.candidateCount,
+            activityId,
+            calendarSourceUrl: day?.sourceUrl ?? null,
+            calendarEventUrl,
+            dailyAgendaPageSource: dailyAgendaDocument?.raw.provenance.pageSource ?? null,
+            dailyAgendaMetadataUrl: dailyAgendaDocument?.raw.provenance.metadataUrl ?? null,
+            dailyAgendaCategoryId: dailyAgendaDocument?.categoryId ?? null,
+            dailyAgendaFileId: dailyAgendaDocument?.fileId ?? null,
+            dailyAgendaDownloadUrl: dailyAgendaDocument?.downloadUrl ?? null,
+            dailyAgendaPreviewUrl: dailyAgendaDocument?.previewUrl ?? null,
+            agendaDestination: agendaUrl,
+            officialLocation: detail?.ubicacion ?? null,
+            officialCommissionId:
+              typeof detail?.comisionId === "number" && Number.isSafeInteger(detail.comisionId)
+                ? detail.comisionId
+                : null,
           },
         },
       };
     });
-    return { events, gap };
+    const resolutionGap =
+      unresolved > 0
+        ? `SIL · actividades exactas: ${unresolved} de ${rows.length} filas no tuvieron una coincidencia única en AgendaActividad${ambiguous > 0 ? ` (${ambiguous} ambiguas)` : ""}; su ID, hora y ubicación quedaron sin atribuir.`
+        : undefined;
+    const detailGap =
+      detailFailures.length > 0
+        ? `SIL · detalle de agendas: falló el enriquecimiento de ${detailFailures.length} actividad(es) (${detailFailures.sort((a, b) => a - b).join(", ")}); su ID y hora exactos se conservaron.`
+        : undefined;
+    const dailyDocumentGap =
+      dailyDocumentMissing > 0 || commissionNotInDailyDocument > 0
+        ? `Diputados · agenda PDF diaria: ${dailyDocumentMissing} de ${rows.length} filas no tuvieron un PDF único y verificable por fecha; ${commissionNotInDailyDocument} fila(s) no tuvieron evidencia literal suficiente de la comisión y su agenda dentro del PDF.`
+        : undefined;
+    return {
+      events,
+      gap:
+        [gap, ...calendarGaps, ...dailyAgendas.gaps, resolutionGap, detailGap, dailyDocumentGap]
+          .filter(Boolean)
+          .join(" | ") || undefined,
+    };
   }
 
   async plenaryOrders(): Promise<{ events: RawActivityEvent[]; gap?: string }> {

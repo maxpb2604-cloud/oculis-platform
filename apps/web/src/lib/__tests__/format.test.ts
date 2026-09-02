@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { formatISODate, formatISODayMonth } from "@/lib/format";
+import {
+  formatISODate,
+  formatISODateTime,
+  formatISODayMonth,
+  formatOfficialTime,
+} from "@/lib/format";
 
 describe("formatISODate", () => {
   it("returns an explicit not-reported label for nullish/empty input", () => {
@@ -55,5 +60,37 @@ describe("formatISODayMonth", () => {
     expect(out).toMatch(/24/);
     expect(out).toMatch(/6/); // month 06 (may render as "6" in some locale data)
     expect(out).not.toMatch(/2026/);
+  });
+});
+
+describe("formatISODateTime", () => {
+  it("preserves the official wall-clock time without a timezone conversion", () => {
+    const out = formatISODateTime("2026-08-27T13:48:19.4492968", "es");
+    expect(out).toMatch(/27/);
+    expect(out).toMatch(/08/);
+    expect(out).toMatch(/2026/);
+    expect(out).toContain("13:48:19");
+  });
+
+  it("falls back to the official date when no time was published", () => {
+    expect(formatISODateTime("2026-08-27", "es")).toBe(formatISODate("2026-08-27", "es"));
+  });
+
+  it("rejects malformed or impossible wall-clock times", () => {
+    expect(formatISODateTime("2026-08-27T25:61:00", "es")).toBe("No informado");
+    expect(formatISODateTime("not-a-date", "en")).toBe("Not reported");
+  });
+});
+
+describe("formatOfficialTime", () => {
+  it("shows a readable time without source-level seconds", () => {
+    expect(formatOfficialTime("09:30:00", "es")).toMatch(/9:30/i);
+    expect(formatOfficialTime("09:30:00", "es")).not.toContain(":00");
+    expect(formatOfficialTime("16:05", "en")).toMatch(/4:05/i);
+  });
+
+  it("fails closed for absent or malformed times", () => {
+    expect(formatOfficialTime(null, "es")).toBe("No informado");
+    expect(formatOfficialTime("25:61:00", "en")).toBe("Not reported");
   });
 });

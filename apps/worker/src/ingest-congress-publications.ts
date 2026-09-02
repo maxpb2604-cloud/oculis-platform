@@ -45,7 +45,34 @@ export interface CongressPublicationSummary {
   inserted: number;
   statusChanges: number;
   gaps: string[];
+  coverageNotes: string[];
   error?: string;
+}
+
+export interface CongressPublicationHealthAssessment {
+  ok: boolean;
+  outcome: "COMPLETE" | "PARTIAL";
+  gaps: string[];
+  coverageNotes: string[];
+  error?: string;
+}
+
+/** Coverage notes never hide a transport, parse, persistence or reconciliation gap. */
+export function assessCongressPublicationHealth(
+  technicalFailures: number,
+  gaps: readonly string[],
+  coverageNotes: readonly string[],
+): CongressPublicationHealthAssessment {
+  const ok = technicalFailures === 0;
+  const outcome = technicalFailures > 0 || gaps.length ? "PARTIAL" : "COMPLETE";
+  const error = ok ? undefined : `${technicalFailures} official document request(s) failed`;
+  return {
+    ok,
+    outcome,
+    gaps: [...gaps],
+    coverageNotes: [...coverageNotes],
+    ...(error ? { error } : {}),
+  };
 }
 
 interface PublicationIngestOptions {
@@ -130,6 +157,7 @@ async function ingestKnownAgenda(
   });
   const adapter = new DipKnownAgendaAdapter();
   const gaps: string[] = [];
+  const coverageNotes: string[] = [];
   let seen = 0;
   let inserted = 0;
   let parsedPdfs = 0;
@@ -231,14 +259,13 @@ async function ingestKnownAgenda(
     }
 
     if (unmatchedCodes.size > 0) {
-      gaps.push(
+      coverageNotes.push(
         `Cámara · ${unmatchedCodes.size} código(s) exacto(s) no identificaron un PDL único del corpus de Diputados.`,
       );
     }
 
-    const outcome = gaps.length ? "PARTIAL" : "COMPLETE";
-    const ok = technicalFailures === 0;
-    const error = ok ? undefined : `${technicalFailures} official request(s) failed`;
+    const health = assessCongressPublicationHealth(technicalFailures, gaps, coverageNotes);
+    const { ok, outcome, error } = health;
     await recordIngestionRun(db, {
       runId,
       source: DIP_SOURCE,
@@ -258,12 +285,14 @@ async function ingestKnownAgenda(
         failureExamples,
         pdfMode: options.full ? "ALL" : "RECENT_SLICE",
         gaps,
+        coverageNotes,
       },
     });
     options.log(
       `  ${outcome === "COMPLETE" ? "✔" : "⚠"} ${DIP_SOURCE}: ${documents.length} documento(s), ${parsedPdfs} PDF leídos`,
     );
     gaps.forEach((gap) => options.log(`    ⚠ ${gap}`));
+    coverageNotes.forEach((note) => options.log(`    ℹ ${note}`));
     return {
       source: DIP_SOURCE,
       ok,
@@ -272,6 +301,7 @@ async function ingestKnownAgenda(
       inserted: inserted + activityInserted,
       statusChanges: 0,
       gaps,
+      coverageNotes,
       ...(error ? { error } : {}),
     };
   } catch (error) {
@@ -283,7 +313,7 @@ async function ingestKnownAgenda(
       inserted,
       ok: false,
       error: message,
-      details: { parsedPdfs, gaps },
+      details: { parsedPdfs, gaps, coverageNotes },
     });
     return {
       source: DIP_SOURCE,
@@ -293,6 +323,7 @@ async function ingestKnownAgenda(
       inserted,
       statusChanges: 0,
       gaps,
+      coverageNotes,
       error: message,
     };
   }
@@ -338,10 +369,13 @@ async function ingestSenateKind(
     pdfMode: options.full ? "FULL_DECLARED_COLLECTIONS" : "RECENT_SLICE",
   });
   const gaps: string[] = [];
+  const coverageNotes: string[] = [];
   let seen = 0;
   let inserted = 0;
   let statusChanges = 0;
+  let parsedDocuments = 0;
   let parsedPdfs = 0;
+  let parsedLegacyWordDocuments = 0;
   let activityInserted = 0;
   let technicalFailures = 0;
   const failureExamples: string[] = [];
@@ -382,7 +416,9 @@ async function ingestSenateKind(
       for (const document of targets) {
         try {
           const { text } = await adapter.fetchDocumentText(document);
-          parsedPdfs++;
+          parsedDocuments++;
+          if (document.extension === "pdf") parsedPdfs++;
+          if (document.extension === "doc") parsedLegacyWordDocuments++;
           const url = senateDocumentUrl(document);
           if (kind === "APPROVED_INITIATIVES") {
             for (const mention of parseApprovedInitiativeMentions(text)) {
@@ -504,8 +540,7 @@ async function ingestSenateKind(
             });
           }
         } catch (error) {
-          const message =
-            `Senado · ${registry.label} · archivo ${document.fileId}: ${(error as Error).message}`;
+          const message = `Senado · ${registry.label} · archivo ${document.fileId}: ${(error as Error).message}`;
           technicalFailures++;
           if (failureExamples.length < 10) failureExamples.push(message);
           gaps.push(message);
@@ -514,14 +549,13 @@ async function ingestSenateKind(
     }
 
     if (unmatchedCodes.size > 0) {
-      gaps.push(
+      coverageNotes.push(
         `Senado · ${registry.label}: ${unmatchedCodes.size} código(s) exacto(s) no identificaron un PDL único del corpus del Senado.`,
       );
     }
 
-    const outcome = gaps.length ? "PARTIAL" : "COMPLETE";
-    const ok = technicalFailures === 0;
-    const error = ok ? undefined : `${technicalFailures} official document request(s) failed`;
+    const health = assessCongressPublicationHealth(technicalFailures, gaps, coverageNotes);
+    const { ok, outcome, error } = health;
     await recordIngestionRun(db, {
       runId,
       source,
@@ -538,7 +572,9 @@ async function ingestSenateKind(
         collectedCount: observation?.collectedCount ?? seen,
         complete: observation?.complete ?? false,
         emptyMessage: observation?.emptyMessage ?? null,
+        parsedDocuments,
         parsedPdfs,
+        parsedLegacyWordDocuments,
         unmatchedCodes: unmatchedCodes.size,
         unmatchedCodeExamples: [...unmatchedCodes].slice(0, 50),
         technicalFailures,
@@ -548,12 +584,14 @@ async function ingestSenateKind(
         activityInserted,
         pdfMode: options.full ? "FULL_DECLARED_COLLECTIONS" : "RECENT_SLICE",
         gaps,
+        coverageNotes,
       },
     });
     options.log(
-      `  ${outcome === "COMPLETE" ? "✔" : "⚠"} ${source}: ${seen} documento(s), ${parsedPdfs} PDF leídos`,
+      `  ${outcome === "COMPLETE" ? "✔" : "⚠"} ${source}: ${seen} documento(s), ${parsedDocuments} leído(s) (${parsedPdfs} PDF, ${parsedLegacyWordDocuments} DOC)`,
     );
     gaps.forEach((gap) => options.log(`    ⚠ ${gap}`));
+    coverageNotes.forEach((note) => options.log(`    ℹ ${note}`));
     return {
       source,
       ok,
@@ -562,6 +600,7 @@ async function ingestSenateKind(
       inserted: inserted + activityInserted,
       statusChanges,
       gaps,
+      coverageNotes,
       ...(error ? { error } : {}),
     };
   } catch (error) {
@@ -574,7 +613,7 @@ async function ingestSenateKind(
       statusChanges,
       ok: false,
       error: message,
-      details: { publicationKind: kind, gaps },
+      details: { publicationKind: kind, gaps, coverageNotes },
     });
     return {
       source,
@@ -584,6 +623,7 @@ async function ingestSenateKind(
       inserted,
       statusChanges,
       gaps,
+      coverageNotes,
       error: message,
     };
   }

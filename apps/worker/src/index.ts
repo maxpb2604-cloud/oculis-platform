@@ -3,13 +3,17 @@
  *
  * Usage:
  *   npm run ingest -w @oculis/worker -- [--limit N] [--enrich] [--delay MS]
+ *   npm run ingest -w @oculis/worker -- --documents [--missing-deposited] [--limit N]
  *   npm run publications -w @oculis/worker -- [--limit N] [--full]
+ *   npm run senate:fichas:full -w @oculis/worker -- [--limit N] [--batch-size N] [--resume]
+ *   npm run link:initiative-proponents -w @oculis/worker -- [--limit N] [--batch-size N]
  *   npm run ingest:demo -w @oculis/worker        # 25 records, enriched, into PGlite
  *
  * DB target: set DATABASE_URL for Postgres/RDS; otherwise an in-memory PGlite is used
  * (set PGLITE_DIR to persist to disk).
  */
-import { createDb } from "@oculis/db";
+import { pathToFileURL } from "node:url";
+import { createDb, type Database } from "@oculis/db";
 import { loadEnv } from "./env.js";
 import { ingestSilDiputados } from "./ingest.js";
 import { ingestActivity } from "./ingest-activity.js";
@@ -22,6 +26,7 @@ import { ingestMovements } from "./ingest-movements.js";
 import { ingestCongressPublications } from "./ingest-congress-publications.js";
 import { ingestFeed } from "./ingest-feed.js";
 import { seedFeedAccounts } from "./feed-accounts.seed.js";
+import { linkInitiativeProponents } from "./link-initiative-proponents.js";
 import { numericArg } from "./cli.js";
 import {
   assertRequiredSourcesOk,
@@ -34,6 +39,86 @@ loadEnv();
 
 function flag(name: string): boolean {
   return process.argv.includes(`--${name}`);
+}
+
+interface DailyRefreshDependencies {
+  ingestDeposits: typeof ingestDeposits;
+  ingestSenateDeposits: typeof ingestSenateDeposits;
+  linkInitiativeProponents: typeof linkInitiativeProponents;
+  runDaily: typeof runDaily;
+  ingestFeed: typeof ingestFeed;
+}
+
+function asError(error: unknown): Error {
+  return error instanceof Error ? error : new Error(String(error));
+}
+
+function failedProponentSummaryMessage(
+  result: Awaited<ReturnType<typeof linkInitiativeProponents>>,
+): string {
+  return `daily initiative proponent reconciliation failed: ${[
+    ...result.diputados.failureExamples,
+    ...result.senado.failureExamples,
+  ]
+    .slice(0, 5)
+    .join("; ")}`;
+}
+
+/**
+ * Run the complete daily data refresh while treating proponent reconciliation as
+ * an independently reportable source. Its failure is returned to the CLI only after
+ * agenda/status ingestion and feed refresh have both had a chance to complete.
+ */
+export async function runDailyDataRefresh(
+  db: Database,
+  opts: {
+    log?: (message: string) => void;
+    dependencies?: Partial<DailyRefreshDependencies>;
+  } = {},
+) {
+  const log = opts.log ?? (() => {});
+  const dependencies: DailyRefreshDependencies = {
+    ingestDeposits,
+    ingestSenateDeposits,
+    linkInitiativeProponents,
+    runDaily,
+    ingestFeed,
+    ...opts.dependencies,
+  };
+
+  // Ingest deposits first so agenda rows collected immediately afterward can resolve
+  // their exact initiative codes in the same run.
+  const dep = await dependencies.ingestDeposits(db, { log });
+  // Keep the stable list observation and the authenticated Ficha observation as
+  // independently monitored sources. Existing Fichas must be revisited here: their
+  // status history can change after the first successful observation.
+  const senDep = await dependencies.ingestSenateDeposits(db, { log });
+  const senFicha = await dependencies.ingestSenateDeposits(db, {
+    enrichFichas: true,
+    resumeFichas: false,
+    log,
+  });
+
+  let proponentLinks: Awaited<ReturnType<typeof linkInitiativeProponents>> | null = null;
+  let proponentFailure: Error | null = null;
+  try {
+    proponentLinks = await dependencies.linkInitiativeProponents(db, {
+      log,
+      recordCoverage: false,
+    });
+    if (!proponentLinks.ok) {
+      proponentFailure = new Error(failedProponentSummaryMessage(proponentLinks));
+    }
+  } catch (error) {
+    proponentFailure = asError(error);
+  }
+  if (proponentFailure) {
+    log(`  ⚠ ${proponentFailure.message}; continuing unrelated daily sources`);
+  }
+
+  const summaries = await dependencies.runDaily(db, { log });
+  const feed = await dependencies.ingestFeed(db, { log });
+  return { dep, senDep, senFicha, proponentLinks, proponentFailure, summaries, feed };
 }
 
 async function main() {
@@ -59,6 +144,36 @@ async function main() {
   try {
     await ensureSchema();
 
+    if (flag("link-initiative-proponents")) {
+      const batchSize = numericArg(process.argv, "batch-size", { min: 1, max: 1_000 });
+      console.log("🔗 Reconciling initiative proponents with exact official identities\n");
+      const result = await linkInitiativeProponents(db, {
+        limit,
+        batchSize,
+        recordCoverage: true,
+        log: (message) => console.log(message),
+      });
+      const secs = ((Date.now() - started) / 1000).toFixed(1);
+      console.log(
+        `\n${result.ok ? "✔" : "⚠"} done in ${secs}s — ` +
+          `Diputados ${result.diputados.replaced}/${result.diputados.candidates}, ` +
+          `Senado ${result.senado.replaced}/${result.senado.candidates}, ` +
+          `unresolved ${result.diputados.unresolved + result.senado.unresolved}, ` +
+          `failures ${result.diputados.failures + result.senado.failures}`,
+      );
+      if (!result.ok) {
+        throw new Error(
+          `initiative proponent reconciliation failed: ${[
+            ...result.diputados.failureExamples,
+            ...result.senado.failureExamples,
+          ]
+            .slice(0, 5)
+            .join("; ")}`,
+        );
+      }
+      return;
+    }
+
     if (flag("regulatory")) {
       console.log("🏛  Ingesting regulatory instruments (institutions)\n");
       const r = await ingestRegulatory(db, { log: (m) => console.log(m) });
@@ -77,12 +192,24 @@ async function main() {
     }
 
     if (flag("documents")) {
-      console.log("📎 Ingesting official initiative documents (metadata + URLs)\n");
-      const r = await ingestDocuments(db, { limit, log: (m) => console.log(m) });
+      const missingDepositedOnly = flag("missing-deposited");
+      console.log(
+        `📎 Ingesting official initiative documents ` +
+          `(${missingDepositedOnly ? "late/missing deposited-PDF sweep" : "complete metadata + URL sweep"})\n`,
+      );
+      const r = await ingestDocuments(db, {
+        limit,
+        concurrency,
+        delayMs: numericArg(process.argv, "delay", { min: 0 }),
+        missingDepositedOnly,
+        log: (m) => console.log(m),
+      });
       const secs = ((Date.now() - started) / 1000).toFixed(1);
       console.log(
-        `\n${r.ok ? "✔" : "⚠"} done in ${secs}s — ${r.initiatives} initiatives, ` +
-          `${r.documents} docs (${r.newDocuments} new), ${r.failures} failures`,
+        `\n${r.ok ? "✔" : "⚠"} done in ${secs}s — ${r.candidates} candidates ` +
+          `(${r.missingDepositedCandidates} missing deposited PDF before the run), ` +
+          `${r.documents} docs observed (${r.newDocuments} new), ${r.emptyObservations} empty, ` +
+          `${r.failures} failures`,
       );
       assertSourcesOk("document metadata ingestion", [r]);
       return;
@@ -97,6 +224,37 @@ async function main() {
       );
       if (r.failed > 0)
         throw new Error(`document fetch: ${r.failed} of ${r.attempted} download(s) failed`);
+      return;
+    }
+
+    if (flag("senate-fichas")) {
+      const fullCollection = flag("full");
+      const sinceDays = numericArg(process.argv, "since-days", { min: 0 });
+      const fichaBatchSize = numericArg(process.argv, "batch-size", { min: 1 });
+      const fichaBatchTimeoutMs = numericArg(process.argv, "batch-timeout", { min: 1 });
+      const fichaBatchCooldownMs = numericArg(process.argv, "batch-cooldown", { min: 0 });
+      const fichaDelayMs = numericArg(process.argv, "delay", { min: 0 }) ?? 150;
+      console.log(
+        `🏛  Enriching ${fullCollection ? "the complete Senate collection" : "recent Senate deposits"} from authenticated official Fichas\n`,
+      );
+      const result = await ingestSenateDeposits(db, {
+        fullCollection,
+        enrichFichas: true,
+        sinceDays,
+        limit,
+        fichaBatchSize,
+        fichaBatchTimeoutMs,
+        fichaBatchCooldownMs,
+        fichaDelayMs,
+        resumeFichas: flag("resume"),
+        log: (message) => console.log(message),
+      });
+      const secs = ((Date.now() - started) / 1000).toFixed(1);
+      console.log(
+        `\n${result.ok ? "✔" : "⚠"} done in ${secs}s — ` +
+          `${result.deposits} rows, ${result.inserted} new, ${result.updated} updated, ${result.failures} Ficha failures`,
+      );
+      assertSourcesOk("Senate Ficha enrichment", [result]);
       return;
     }
 
@@ -132,27 +290,41 @@ async function main() {
 
     if (flag("daily")) {
       console.log("🗓  FHC daily monitoring — both chambers\n");
-      // Ingest deposits first so agenda rows collected immediately afterward can resolve
-      // their exact initiative codes in the same run.
-      const dep = await ingestDeposits(db, { log: (m) => console.log(m) });
-      const senDep = await ingestSenateDeposits(db, { log: (m) => console.log(m) });
-      const summaries = await runDaily(db, { log: (m) => console.log(m) });
-      // Feed refresh (news / official / social / legislative signals) on the same cadence.
-      const feed = await ingestFeed(db, { log: (m) => console.log(m) });
+      const { dep, senDep, senFicha, proponentLinks, proponentFailure, summaries, feed } =
+        await runDailyDataRefresh(db, {
+          log: (message) => console.log(message),
+        });
       const secs = ((Date.now() - started) / 1000).toFixed(1);
-      const sourceResults: SourceResult[] = [...summaries, dep, senDep, ...feed];
+      const sourceResults: SourceResult[] = [...summaries, dep, senDep, senFicha, ...feed];
       const okCount = sourceResults.filter((s) => s.ok).length;
       const totalEvents = summaries.reduce((n, s) => n + s.events, 0);
       const totalGaps = summaries.reduce((n, s) => n + s.gaps.length, 0);
       const feedItems = feed.reduce((n, s) => n + s.count, 0);
       const feedInserted = feed.reduce((n, s) => n + s.inserted, 0);
-      const mark = okCount === sourceResults.length ? "✔" : "⚠";
+      const mark = okCount === sourceResults.length && !proponentFailure ? "✔" : "⚠";
       console.log(
         `\n${mark} daily done in ${secs}s — sources ok ${okCount}/${sourceResults.length}, ` +
           `events ${totalEvents}, deposits ${dep.deposits}+${senDep.deposits} (Dip+Sen), ` +
+          `Senate Ficha changes ${senFicha.statusChanges}, ` +
+          `proponent links ${
+            (proponentLinks?.diputados.replaced ?? 0) + (proponentLinks?.senado.replaced ?? 0)
+          }, ` +
           `feed ${feedItems} (${feedInserted} new), flagged gaps ${totalGaps}`,
       );
-      assertRequiredSourcesOk("daily ingestion", sourceResults, REQUIRED_SOURCE_SETS.daily);
+      const terminalFailures: Error[] = [];
+      try {
+        assertRequiredSourcesOk("daily ingestion", sourceResults, REQUIRED_SOURCE_SETS.daily);
+      } catch (error) {
+        terminalFailures.push(asError(error));
+      }
+      if (proponentFailure) terminalFailures.push(proponentFailure);
+      if (terminalFailures.length === 1) throw terminalFailures[0];
+      if (terminalFailures.length > 1) {
+        throw new AggregateError(
+          terminalFailures,
+          "daily ingestion completed with independently reported source failures",
+        );
+      }
       return;
     }
 
@@ -193,7 +365,9 @@ async function main() {
       const secs = ((Date.now() - started) / 1000).toFixed(1);
       console.log(
         `\n${r.ok ? "✔" : "⚠"} done in ${secs}s — checked ${r.checked}/${r.initiatives}, ` +
-          `official events ${r.statusEventsSeen} (${r.statusEventsInserted} new), failures ${r.failures}`,
+          `official events ${r.statusEventsSeen} (${r.statusEventsInserted} new, ` +
+          `${r.statusEventsRetired} retired, ${r.statusEventsReactivated} reactivated), ` +
+          `failures ${r.failures}`,
       );
       assertSourcesOk("status-movement ingestion", [r]);
       return;
@@ -273,7 +447,9 @@ async function main() {
   }
 }
 
-main().catch((err) => {
-  console.error("ingestion failed:", err);
-  process.exit(1);
-});
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((err) => {
+    console.error("ingestion failed:", err);
+    process.exit(1);
+  });
+}

@@ -11,9 +11,9 @@ export const normProvince = (s: string) =>
 
 /** Aliases that differ between the chambers' sources and the map dataset. */
 export const PROVINCE_ALIASES: Record<string, string> = {
-  nacional: "distrito nacional",
   "santo domingo de guzman": "distrito nacional",
   bahoruco: "baoruco",
+  montecristi: "monte cristi",
 };
 
 /** Canonical normalized province key (alias-resolved). */

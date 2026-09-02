@@ -26,6 +26,7 @@ import {
   SilActividadAdapter,
   type RawActivityEvent,
 } from "@oculis/scrapers";
+import { classifyAgendaSourceGaps } from "./source-coverage.js";
 
 export interface DailySummary {
   source: string;
@@ -34,6 +35,7 @@ export interface DailySummary {
   events: number;
   inserted: number;
   gaps: string[];
+  coverageNotes: string[];
   error?: string;
 }
 
@@ -59,20 +61,21 @@ async function runSource(
   log(`\n▶ ${source}`);
   const runId = await beginIngestionRun(db, source);
   try {
-    const { events, gaps } = await fn();
+    const { events, gaps: reportedGaps } = await fn();
     const inserted = await persist(db, events);
+    const assessment = classifyAgendaSourceGaps(source, reportedGaps);
     // Anomaly guard: a run can "succeed" yet return suspiciously few rows (selector
     // drift, partial outage). Flag it so the health page can't show green for ~nothing.
     const base = baseline.get(source) ?? null;
-    const anomalyGaps = [...gaps];
+    const executionGaps = [...assessment.gaps];
     if (events.length === 0) {
-      anomalyGaps.push(`${source}: la fuente devolvió 0 eventos.`);
+      executionGaps.push(`${source}: la fuente devolvió 0 eventos.`);
     } else if (base && events.length < base * 0.5) {
-      anomalyGaps.push(
+      executionGaps.push(
         `${source}: ${events.length} eventos; menos del 50% de la mediana histórica (${base}).`,
       );
     }
-    const outcome = anomalyGaps.length ? "PARTIAL" : "COMPLETE";
+    const outcome = executionGaps.length ? "PARTIAL" : "COMPLETE";
     // Reaching the source and persisting its explicit response is operational success,
     // even when the source reports no activity or a reconciliation gap.
     const ok = true;
@@ -83,20 +86,44 @@ async function runSource(
       inserted,
       ok,
       outcome,
-      details: anomalyGaps.length ? { gaps: anomalyGaps } : null,
+      details:
+        executionGaps.length || assessment.coverageNotes.length
+          ? { gaps: executionGaps, coverageNotes: assessment.coverageNotes }
+          : null,
     });
     log(
       `  ${outcome === "COMPLETE" ? "✔" : "⚠"} ${events.length} events (${inserted} new)` +
-        (anomalyGaps.length ? ` · ${anomalyGaps.length} gap(s)` : ""),
+        (executionGaps.length ? ` · ${executionGaps.length} gap(s)` : "") +
+        (assessment.coverageNotes.length
+          ? ` · ${assessment.coverageNotes.length} coverage note(s)`
+          : ""),
     );
-    anomalyGaps.forEach((g) => log(`    ⚠ ${g}`));
-    return { source, ok, outcome, events: events.length, inserted, gaps: anomalyGaps };
+    executionGaps.forEach((g) => log(`    ⚠ ${g}`));
+    assessment.coverageNotes.forEach((note) => log(`    ℹ ${note}`));
+    return {
+      source,
+      ok,
+      outcome,
+      events: events.length,
+      inserted,
+      gaps: executionGaps,
+      coverageNotes: assessment.coverageNotes,
+    };
   } catch (err) {
     const error = (err as Error).message;
     // Don't pollute volume metrics with a 0 on failure — leave seen unset.
     await recordIngestionRun(db, { runId, source, ok: false, error });
     log(`  ✖ FAILED: ${error}`);
-    return { source, ok: false, outcome: "FAILED", events: 0, inserted: 0, gaps: [], error };
+    return {
+      source,
+      ok: false,
+      outcome: "FAILED",
+      events: 0,
+      inserted: 0,
+      gaps: [],
+      coverageNotes: [],
+      error,
+    };
   }
 }
 
@@ -157,6 +184,7 @@ export async function runDaily(db: Database, opts: { log?: Log } = {}): Promise<
       events: 0,
       inserted: 0,
       gaps: [],
+      coverageNotes: [],
     });
   } catch (err) {
     const error = (err as Error).message;
@@ -174,6 +202,7 @@ export async function runDaily(db: Database, opts: { log?: Log } = {}): Promise<
       events: 0,
       inserted: 0,
       gaps: [],
+      coverageNotes: [],
       error,
     });
   }

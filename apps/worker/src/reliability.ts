@@ -15,12 +15,20 @@ export const REQUIRED_SOURCE_SETS = {
     "senado",
     "sil-deposits",
     "senado-sil-deposits",
+    "senado-sil-fichas",
     "activity-link-backfill",
     "feed-senado",
     "feed-diputados",
     "feed-legislative",
   ],
-  regulatory: ["reg-proconsumidor", "reg-indotel", "reg-indocal", "reg-micm", "reg-intrant"],
+  regulatory: [
+    "reg-proconsumidor",
+    "reg-indotel",
+    "reg-indocal",
+    "reg-micm",
+    "reg-intrant",
+    "reg-mispas",
+  ],
   publications: [
     "dip-known-agenda",
     "sen-approved",
@@ -29,6 +37,9 @@ export const REQUIRED_SOURCE_SETS = {
     "sen-attendance",
     "sen-reports",
   ],
+  incrementalMovements: ["sil-movements-incremental", "senado-sil-movements-incremental"],
+  documentDiscovery: ["sil-documents"],
+  documentVerification: ["document-pdf-byte-verification"],
   feed: ["feed-senado", "feed-diputados", "feed-legislative"],
 } as const;
 

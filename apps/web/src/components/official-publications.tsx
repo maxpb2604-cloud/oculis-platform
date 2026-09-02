@@ -2,6 +2,7 @@ import Link from "next/link";
 import { formatISODate } from "@/lib/format";
 import type { Lang } from "@/lib/i18n";
 import type { OfficialPublicationDocument } from "@/lib/data";
+import { NewTabNotice } from "@/components/ui/primitives";
 
 const SOURCE_LABELS: Record<string, { es: string; en: string }> = {
   "dip-known-agenda": {
@@ -74,6 +75,7 @@ export function OfficialPublications({
                       style={{ color: "var(--accent)" }}
                     >
                       {document.title ?? document.sourceDocId ?? (es ? "Documento" : "Document")}
+                      <NewTabNotice lang={lang} />
                     </a>
                   ) : (
                     <span className="text-[13px] font-medium leading-snug">

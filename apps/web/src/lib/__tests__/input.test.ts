@@ -5,8 +5,10 @@ import {
   isISODate,
   isISOTimestamp,
   optionalText,
+  parseLegislatorProfileId,
   positiveInteger,
   safeHttpUrl,
+  safeOfficialUrl,
   senateRecordId,
 } from "@/lib/input";
 
@@ -23,6 +25,15 @@ describe("input parsing", () => {
     expect(positiveInteger("0")).toBeNull();
     expect(positiveInteger("1.2")).toBeNull();
     expect(positiveInteger("not-a-number")).toBeNull();
+  });
+
+  it("accepts only canonical legislator profile identifiers", () => {
+    expect(parseLegislatorProfileId("42")).toBe(42);
+    expect(parseLegislatorProfileId("0")).toBeNull();
+    expect(parseLegislatorProfileId("042")).toBeNull();
+    expect(parseLegislatorProfileId("42 ")).toBeNull();
+    expect(parseLegislatorProfileId("")).toBeNull();
+    expect(parseLegislatorProfileId("2147483648")).toBeNull();
   });
 
   it("accepts only numeric Senate IdExpediente values", () => {
@@ -54,5 +65,25 @@ describe("input parsing", () => {
     expect(safeHttpUrl("javascript:alert(1)")).toBeNull();
     expect(safeHttpUrl("data:text/html,hello")).toBeNull();
     expect(safeHttpUrl("not a url")).toBeNull();
+    expect(safeHttpUrl("https://user:password@example.com/private")).toBeNull();
+    expect(safeHttpUrl("http://localhost:3000/private")).toBeNull();
+    expect(safeHttpUrl("http://127.0.0.1/private")).toBeNull();
+  });
+
+  it("allows official links only on the domains assigned to their source", () => {
+    expect(
+      safeOfficialUrl("https://www.diputadosrd.gob.do/sil/iniciativa/123", "sil-diputados"),
+    ).toBe("https://www.diputadosrd.gob.do/sil/iniciativa/123");
+    expect(
+      safeOfficialUrl(
+        "https://s-sil.camaradediputados.gob.do:8095/ReportesGenerales/VerDocumento?id=1",
+        "sil-documents",
+      ),
+    ).not.toBeNull();
+    expect(
+      safeOfficialUrl("https://camaradediputados.gob.do.evil.test/file.pdf", "dip-oficial"),
+    ).toBeNull();
+    expect(safeOfficialUrl("https://example.com/file.pdf", "senado")).toBeNull();
+    expect(safeOfficialUrl("https://www.senadord.gob.do/file.pdf", "unknown-source")).toBeNull();
   });
 });

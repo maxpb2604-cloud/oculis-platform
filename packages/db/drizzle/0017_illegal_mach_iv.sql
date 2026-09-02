@@ -1,0 +1,1 @@
+ALTER TABLE "initiative_title_translations" ADD COLUMN "withdrawn_at" timestamp;

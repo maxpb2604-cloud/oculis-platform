@@ -1,4 +1,9 @@
 /** @type {import('next').NextConfig} */
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const configDir = dirname(fileURLToPath(import.meta.url));
+
 const contentSecurityPolicy = [
   "default-src 'self'",
   "base-uri 'self'",
@@ -14,8 +19,22 @@ const contentSecurityPolicy = [
   "manifest-src 'self'",
 ].join("; ");
 
+// The document guard returns a self-contained recovery page rather than the Next
+// application shell. Keep that page scriptless at the actual HTTP boundary; the
+// catch-all policy below would otherwise overwrite the stricter route response.
+const officialDocumentRecoveryPolicy = [
+  "default-src 'none'",
+  "base-uri 'none'",
+  "form-action 'none'",
+  "frame-ancestors 'none'",
+  "script-src 'none'",
+  "style-src 'sha256-Mi3bnDKLZiTcS322lbsfUIWCEMyvZYGqJjjOqC3gT1s='",
+].join("; ");
+
 const nextConfig = {
   distDir: process.env.OCULIS_NEXT_DIST_DIR || ".next",
+  output: "standalone",
+  outputFileTracingRoot: join(configDir, "../.."),
   transpilePackages: ["@oculis/db", "@oculis/core", "@oculis/scrapers"],
   poweredByHeader: false,
   reactStrictMode: true,
@@ -36,6 +55,19 @@ const nextConfig = {
           },
         ],
       },
+      {
+        source: "/api/document/open",
+        headers: [
+          { key: "Content-Security-Policy", value: officialDocumentRecoveryPolicy },
+          { key: "Referrer-Policy", value: "no-referrer" },
+        ],
+      },
+    ];
+  },
+  async redirects() {
+    return [
+      { source: "/legislative", destination: "/", permanent: true },
+      { source: "/regulatory", destination: "/regulatorio", permanent: true },
     ];
   },
   // Keep native/WASM DB drivers out of the bundler; load them at runtime in Node.

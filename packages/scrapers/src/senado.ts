@@ -16,7 +16,8 @@ import { fetchPdfText } from "./pdf.js";
 import type { RawActivityEvent } from "./sil-actividad.js";
 
 const AJAX = "https://www.senadord.gob.do/wp-admin/admin-ajax.php";
-const FILE = "https://www.senadord.gob.do/wpfd_file";
+const SENATE_ORIGIN = "https://www.senadord.gob.do";
+const WPFD_DOWNLOAD_PATH = "/wp-admin/admin-ajax.php";
 const H = browserHeaders({
   "X-Requested-With": "XMLHttpRequest",
   Referer: "https://www.senadord.gob.do/",
@@ -47,6 +48,114 @@ export interface WpfdFile {
   ext: string;
   created_time: string;
   modified_time?: string;
+  /** Category identity and document URLs reported by WPFD's files.getFiles payload. */
+  catid?: string | number;
+  openpdflink?: string;
+  linkdownload?: string;
+}
+
+export interface SenateWpfdLinks {
+  /** Exact PDF endpoint reported by WPFD; safe to expose as the agenda destination. */
+  openpdflink: string | null;
+  /** Exact human-facing download permalink reported by WPFD; retained as provenance. */
+  linkdownload: string | null;
+}
+
+const OPEN_PDF_PARAM_VALUES = {
+  juwpfisadmin: "false",
+  action: "wpfd",
+  task: "file.download",
+  token: "",
+  preview: "1",
+} as const;
+
+function senateHttpsUrl(value: unknown): URL | null {
+  if (typeof value !== "string" || !value.startsWith(`${SENATE_ORIGIN}/`)) return null;
+  try {
+    const url = new URL(value);
+    if (
+      url.origin !== SENATE_ORIGIN ||
+      url.protocol !== "https:" ||
+      url.hostname !== "www.senadord.gob.do" ||
+      url.port ||
+      url.username ||
+      url.password ||
+      url.hash
+    ) {
+      return null;
+    }
+    return url;
+  } catch {
+    return null;
+  }
+}
+
+function exactOpenPdfUrl(value: unknown, categoryId: number, fileId: number): string | null {
+  const url = senateHttpsUrl(value);
+  if (!url || url.pathname !== WPFD_DOWNLOAD_PATH) return null;
+
+  const expected = new Map<string, string>([
+    ...Object.entries(OPEN_PDF_PARAM_VALUES),
+    ["wpfd_category_id", String(categoryId)],
+    ["wpfd_file_id", String(fileId)],
+  ]);
+  const entries = [...url.searchParams.entries()];
+  if (entries.length !== expected.size) return null;
+  for (const [key, expectedValue] of expected) {
+    const values = url.searchParams.getAll(key);
+    if (values.length !== 1 || values[0] !== expectedValue) return null;
+  }
+  return url.href;
+}
+
+function exactLinkDownloadUrl(
+  value: unknown,
+  categoryId: number,
+  fileId: number,
+  postName: string,
+): string | null {
+  const url = senateHttpsUrl(value);
+  if (!url || url.search) return null;
+  const match = /^\/Descargas\/([1-9]\d*)\/([^/]+)\/([1-9]\d*)\/([^/]+)$/.exec(url.pathname);
+  if (!match) return null;
+  let reportedPostName: string;
+  try {
+    reportedPostName = decodeURIComponent(match[4]!);
+  } catch {
+    return null;
+  }
+  if (
+    match[1] !== String(categoryId) ||
+    match[3] !== String(fileId) ||
+    reportedPostName !== postName
+  ) {
+    return null;
+  }
+  return url.href;
+}
+
+/**
+ * Validate the two document destinations reported by WPFD against the exact source
+ * category/file identity. This deliberately fails closed: a fabricated `/wpfd_file`
+ * permalink, a foreign host, a duplicate/extra parameter, or any id mismatch produces
+ * no customer-facing agenda URL.
+ */
+export function resolveSenateWpfdLinks(
+  file: WpfdFile,
+  expectedCategoryId: number,
+): SenateWpfdLinks | null {
+  if (!Number.isSafeInteger(file.ID) || file.ID <= 0) return null;
+  if (file.catid !== expectedCategoryId && file.catid !== String(expectedCategoryId)) return null;
+
+  return {
+    openpdflink: exactOpenPdfUrl(file.openpdflink, expectedCategoryId, file.ID),
+    linkdownload: exactLinkDownloadUrl(
+      file.linkdownload,
+      expectedCategoryId,
+      file.ID,
+      file.post_name,
+    ),
+  };
 }
 
 interface SenadoOptions {
@@ -171,13 +280,9 @@ export class SenadoAdapter {
     });
   }
 
-  fileUrl(slug: string): string {
-    return `${FILE}/${slug}/`;
-  }
-
-  /** WPFD raw-PDF download (returns application/pdf — unlike the wpfd_file viewer page). */
-  private downloadUrl(categoryId: number, fileId: number): string {
-    return `${AJAX}?juwpfisadmin=false&action=wpfd&task=file.download&wpfd_category_id=${categoryId}&wpfd_file_id=${fileId}`;
+  /** Isolated for deterministic adapter tests; production always reads the verified URL. */
+  protected readPdf(url: string) {
+    return fetchPdfText(url);
   }
 
   /**
@@ -199,6 +304,7 @@ export class SenadoAdapter {
     let parsed = 0;
     let committeeParseFailures = 0;
     let successfulCategories = 0;
+    let invalidAgendaLinks = 0;
 
     for (const cat of SENADO_CATEGORIES) {
       let files: WpfdFile[];
@@ -215,10 +321,17 @@ export class SenadoAdapter {
       // (matching how Diputados' comision/ordenes yields one row per committee).
       if (cat.scope === "COMMITTEE") {
         for (const f of files.slice(0, committeeWeeks)) {
-          const viewer = this.fileUrl(f.post_name);
+          const links = resolveSenateWpfdLinks(f, cat.id);
+          if (!links?.openpdflink || !links.linkdownload) {
+            if (!links?.openpdflink) invalidAgendaLinks++;
+            committeeParseFailures++;
+            continue;
+          }
           let text: string;
           try {
-            ({ text } = await fetchPdfText(this.downloadUrl(cat.id, f.ID)));
+            // openpdflink is the exact customer-facing viewer; linkdownload is the
+            // exact application/pdf resource used only for extraction.
+            ({ text } = await this.readPdf(links.linkdownload));
           } catch {
             committeeParseFailures++;
             continue;
@@ -230,9 +343,12 @@ export class SenadoAdapter {
             const date = c.date;
             events.push({
               source: this.source,
+              sourceEventId: `${cat.id}:${f.ID}:${entryIndex}`,
               scope: "COMMITTEE",
               chamber: "SENADO",
-              agendaUrl: viewer,
+              // Every committee row for the week intentionally opens the same exact
+              // weekly PDF published by WPFD.
+              agendaUrl: links.openpdflink,
               date,
               time: c.hora,
               kind: cat.label,
@@ -249,7 +365,8 @@ export class SenadoAdapter {
                 payload: { ...c, fileId: f.ID, week: f.post_title },
                 provenance: {
                   categoryId: cat.id,
-                  documentUrl: viewer,
+                  documentUrl: links.openpdflink,
+                  linkdownload: links.linkdownload,
                   officialSection: cat.label,
                 },
               },
@@ -271,17 +388,23 @@ export class SenadoAdapter {
 
       // Pleno / Asamblea: one event per orden-del-día file.
       for (const f of files) {
-        const url = this.fileUrl(f.post_name);
+        const links = resolveSenateWpfdLinks(f, cat.id);
+        const agendaUrl = links?.openpdflink ?? null;
+        if (!agendaUrl) invalidAgendaLinks++;
         let codes: string[] = [];
         let statuses: string[] = [];
         if (parsePdfs) {
           parsed++;
-          try {
-            const { text } = await fetchPdfText(this.downloadUrl(cat.id, f.ID));
-            codes = extractCodes(text);
-            statuses = extractProceduralMentions(text);
-          } catch {
+          if (!agendaUrl || !links?.linkdownload) {
             parseFailures++;
+          } else {
+            try {
+              const { text } = await this.readPdf(links.linkdownload);
+              codes = extractCodes(text);
+              statuses = extractProceduralMentions(text);
+            } catch {
+              parseFailures++;
+            }
           }
         }
         const date = parseSenadoDate(f.post_title);
@@ -290,9 +413,10 @@ export class SenadoAdapter {
         const dedupeKey = `senado-doc|${cat.id}|${f.ID}`;
         events.push({
           source: this.source,
+          sourceEventId: `${cat.id}:${f.ID}`,
           scope: cat.scope,
           chamber: "SENADO",
-          agendaUrl: url,
+          agendaUrl,
           date,
           kind: cat.label,
           body: `Senado — ${cat.label}`,
@@ -305,7 +429,8 @@ export class SenadoAdapter {
             provenance: {
               categoryId: cat.id,
               categoryEndpoint: `${AJAX}?juwpfisadmin=false&action=wpfd&task=files.getFiles&id=${cat.id}`,
-              documentUrl: url,
+              documentUrl: agendaUrl,
+              linkdownload: links?.linkdownload ?? null,
               officialSection: cat.label,
             },
           },
@@ -315,6 +440,11 @@ export class SenadoAdapter {
 
     if (parsePdfs && parseFailures) {
       gaps.push(`Senado · ${parseFailures} de ${parsed} PDF(s) de Pleno no se pudieron leer.`);
+    }
+    if (invalidAgendaLinks) {
+      gaps.push(
+        `Senado · ${invalidAgendaLinks} documento(s) no publicaron enlaces WPFD exactos; agendaUrl queda null y no se usa un permalink genérico.`,
+      );
     }
     if (successfulCategories === 0) {
       throw new Error(gaps.join(" | ") || "Senate agenda categories were unavailable");

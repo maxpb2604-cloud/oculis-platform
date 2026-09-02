@@ -21,6 +21,31 @@ export const MONTHS_ES: Record<string, string> = {
   dic: "12",
 };
 
+/** Calendar timezone used by the Dominican congressional sources. */
+export const DOMINICAN_TIME_ZONE = "America/Santo_Domingo";
+
+/**
+ * Return the Dominican Republic calendar day for a point in time. Scheduled jobs
+ * also run after 22:00 local time, when UTC is already on the following day; using
+ * a UTC ISO prefix there would request and label the wrong official-source window.
+ */
+export function dominicanTodayISO(now: Date = new Date()): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: DOMINICAN_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(now);
+  const value = (type: "year" | "month" | "day") => parts.find((part) => part.type === type)?.value;
+  const year = value("year");
+  const month = value("month");
+  const day = value("day");
+  if (!year || !month || !day) {
+    throw new Error(`Could not resolve calendar date in ${DOMINICAN_TIME_ZONE}`);
+  }
+  return `${year}-${month}-${day}`;
+}
+
 /** Resolve a Spanish month name (full or abbreviated) to "01".."12", or null. */
 export function spanishMonthToNum(name: string | null | undefined): string | null {
   if (!name) return null;

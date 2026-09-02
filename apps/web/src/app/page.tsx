@@ -1,88 +1,66 @@
-import Link from "next/link";
-import { getDashboardData, getInitiativesByProvince, getLegislatorsByProvince } from "@/lib/data";
-import { dict, langQuery, type Lang } from "@/lib/i18n";
+import type { Metadata } from "next";
 import { AppShell } from "@/components/app-shell";
-import { GeoOverview, KpiBand } from "@/components/dashboard";
-import { Panel, SectionHeading } from "@/components/report-ui";
-import { InitiativesTable } from "@/components/initiatives-table";
-import { EmptyState } from "@/components/ui/empty-state";
+import { ExecutiveBriefing } from "@/components/dashboard";
+import { CongressDirectoryPromo } from "@/components/congress-directory-promo";
+import { HomeProvinceDashboard } from "@/components/home-province-dashboard";
+import {
+  getHomeDirectoryPromoData,
+  getProvinceDashboardData,
+  getRecentInitiativeMovements,
+} from "@/lib/data";
+import { parseLang, type Lang } from "@/lib/i18n";
 
 export const dynamic = "force-dynamic";
 
-export default async function Page({ searchParams }: { searchParams: Promise<{ lang?: string }> }) {
-  const lang: Lang = (await searchParams).lang === "en" ? "en" : "es";
-  const t = dict[lang];
-  const [data, provinceFC, legislators] = await Promise.all([
-    getDashboardData(),
-    getInitiativesByProvince(),
-    getLegislatorsByProvince(),
+type PageProps = { searchParams: Promise<{ lang?: string }> };
+
+export async function generateMetadata({ searchParams }: PageProps): Promise<Metadata> {
+  const es = (await searchParams).lang !== "en";
+  return {
+    title: es ? "Tablero inicial" : "Main Dashboard",
+    description: es
+      ? "Tablero inicial del Congreso Nacional, sus legisladores y las iniciativas con provincia publicada."
+      : "Main dashboard for the National Congress, its legislators, and initiatives with a published province.",
+  };
+}
+
+export default async function Page({ searchParams }: PageProps) {
+  const lang: Lang = parseLang((await searchParams).lang);
+  const es = lang === "es";
+
+  const [provinceDashboard, directoryPromo, movements] = await Promise.all([
+    getProvinceDashboardData(lang),
+    getHomeDirectoryPromoData(),
+    getRecentInitiativeMovements(8),
   ]);
-  const empty = data.kpis.total === 0;
-  const q = langQuery(lang);
 
   return (
     <AppShell
       lang={lang}
-      title={lang === "es" ? "Resumen Ejecutivo" : "Executive Summary"}
-      subtitle={`${t.legislative} · ${t.source}`}
+      title={es ? "Tablero inicial" : "Main Dashboard"}
+      subtitle={es ? "Vista general del Congreso Nacional." : "Overview of the National Congress."}
     >
-      <KpiBand lang={lang} data={data} />
+      <HomeProvinceDashboard lang={lang} provinces={provinceDashboard} />
 
-      {empty ? (
-        <EmptyState
+      <div className="mt-12 sm:mt-16">
+        <CongressDirectoryPromo
+          portraits={directoryPromo.portraits}
+          composition={directoryPromo.composition}
           lang={lang}
-          className="mt-6"
-          title={
-            lang === "es"
-              ? "No hay iniciativas guardadas en esta base de datos"
-              : "No initiatives are stored in this database"
-          }
-          description={
-            lang === "es"
-              ? "Este resultado no determina la causa. El estado de fuentes indica cuáles nunca se ejecutaron, cuáles están en curso y cuáles terminaron completas, parciales o fallidas."
-              : "This result does not determine the cause. Source status shows which collectors never ran, are running, or finished as complete, partial, or failed."
-          }
-          action={
-            <Link
-              href={`/estado-fuentes${q}`}
-              className="rounded-lg border px-3 py-2 text-sm font-medium hover:bg-[var(--surface-2)]"
-              style={{ color: "var(--text)" }}
-            >
-              {lang === "es" ? "Ver estado de fuentes" : "View source status"}
-            </Link>
-          }
         />
-      ) : (
-        <>
-          <GeoOverview lang={lang} data={data} provinceFC={provinceFC} legislators={legislators} />
+      </div>
 
-          <SectionHeading
-            n="02"
-            title={lang === "es" ? "Iniciativas Recientes" : "Recent Initiatives"}
-          />
-          <Panel
-            title={t.recent}
-            flush
-            action={
-              <Link
-                href={`/initiatives${q}`}
-                className="text-xs font-medium hover:underline"
-                style={{ color: "var(--accent)", cursor: "pointer" }}
-              >
-                {lang === "es" ? "Ver todas" : "View all"}
-              </Link>
-            }
-          >
-            <InitiativesTable rows={data.recent} lang={lang} />
-          </Panel>
-        </>
-      )}
+      <div className="mt-12 sm:mt-16">
+        <ExecutiveBriefing lang={lang} movements={movements} />
+      </div>
 
       <footer
-        className="mt-10 flex items-center justify-between border-t pt-4 text-xs"
+        className="mt-12 flex flex-col gap-2 border-t pt-5 text-xs sm:flex-row sm:items-center sm:justify-between"
         style={{ color: "var(--text-muted)" }}
       >
-        <span className="serif italic">{t.tagline}</span>
+        <span className="serif italic">
+          {es ? "Evidencia oficial, sin predicciones." : "Official evidence, without predictions."}
+        </span>
         <span>© {new Date().getFullYear()} Ferdinand Herrera Consultants · Oculis Auribus</span>
       </footer>
     </AppShell>
