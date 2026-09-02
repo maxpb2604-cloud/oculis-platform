@@ -221,6 +221,94 @@ describe("initiative proponent reconciliation", () => {
     }
   });
 
+  it("accepts both exact reviewed Peravia roster literals without folding accents", async () => {
+    const reviewed = REVIEWED_SENADO_SIL_PERSON_BRIDGE.find(
+      (row) => row.rosterSourceId === "peravia",
+    );
+    assert.ok(reviewed);
+    const reviewedRosterLiterals = [
+      "Julito Fulcar Encarnación",
+      "Julito Fulcar Encarnacion",
+    ] as const;
+    assert.notEqual(
+      senateSilExactNameKey(reviewedRosterLiterals[0]),
+      senateSilExactNameKey(reviewedRosterLiterals[1]),
+      "the identity gate must accept two reviewed exact literals, not erase their accent difference",
+    );
+
+    for (const rosterLiteral of reviewedRosterLiterals) {
+      const handle = createDb();
+      try {
+        await handle.ensureSchema();
+        await replaceRosterSnapshot(
+          handle.db,
+          "roster-senado",
+          CURRENT_SENATE_ROSTER_2026_09_02.map((row) => ({
+            source: "roster-senado",
+            sourceId: row.sourceId,
+            chamber: "SENADO",
+            fullName: row.sourceId === "peravia" ? rosterLiteral : row.fullName,
+          })),
+          [],
+        );
+        const initiative = await upsertInitiative(handle.db, {
+          source: "senado-sil",
+          sourceId: `sen-peravia-${rosterLiteral}`,
+          kind: "LEGISLATIVE",
+          code: `SEN-PERAVIA-${rosterLiteral}`,
+          title: "Iniciativa de prueba del senador de Peravia",
+          raw: { payload: { ficha: { proponents: reviewed.officialName } } },
+        });
+        const summary = await linkInitiativeProponents(handle.db, {
+          senateCatalog: parseSenadoSilProponentCatalog(senateCatalogHtml(), {
+            observedAt: "2026-09-02T12:00:00.000Z",
+          }),
+        });
+
+        assert.equal(summary.ok, true);
+        assert.equal(summary.senado.replaced, 1);
+        const [linked] = await listInitiativeProponents(handle.db, initiative.id);
+        assert.equal(linked?.publishedName, "Julito Fulcar Encarnación");
+        assert.ok(linked?.legislatorId);
+        assert.equal(linked?.profile?.fullName, rosterLiteral);
+      } finally {
+        await handle.close();
+      }
+    }
+  });
+
+  it("rejects a shortened Peravia name that is not one of the exact roster literals", async () => {
+    const handle = createDb();
+    try {
+      await handle.ensureSchema();
+      await replaceRosterSnapshot(
+        handle.db,
+        "roster-senado",
+        CURRENT_SENATE_ROSTER_2026_09_02.map((row) => ({
+          source: "roster-senado",
+          sourceId: row.sourceId,
+          chamber: "SENADO",
+          fullName: row.sourceId === "peravia" ? "Julito Fulcar" : row.fullName,
+        })),
+        [],
+      );
+      const summary = await linkInitiativeProponents(handle.db, {
+        senateCatalog: parseSenadoSilProponentCatalog(senateCatalogHtml(), {
+          observedAt: "2026-09-02T12:00:00.000Z",
+        }),
+      });
+
+      assert.equal(summary.ok, false);
+      assert.equal(summary.senado.failures, 1);
+      assert.match(
+        summary.senado.failureExamples[0] ?? "",
+        /expected Julito Fulcar Encarnación or Julito Fulcar Encarnacion, observed Julito Fulcar/,
+      );
+    } finally {
+      await handle.close();
+    }
+  });
+
   it("is idempotent, preserves failed observations, and namespaces equal chamber ids", async () => {
     const handle = createDb();
     try {

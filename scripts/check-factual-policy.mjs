@@ -254,6 +254,40 @@ for (const required of [
     violations.push(`${cloudWorkflowPath}: missing manual full-publication recovery ${required}`);
   }
 }
+for (const required of [
+  "          - verify-documents-full",
+  "id: manual_full_verify_documents",
+  "inputs.mode == 'verify-documents-full'",
+  "timeout-minutes: 120",
+  "run: npm run verify-documents -w @oculis/worker -- --all --limit 100 --concurrency 3",
+]) {
+  if (!cloudWorkflow.includes(required)) {
+    violations.push(`${cloudWorkflowPath}: missing manual full-document verification ${required}`);
+  }
+}
+const manualMissingVerificationStepName =
+  "      - name: Verify deposited bill PDFs after manual prioritized discovery";
+const manualMissingVerificationStart = cloudWorkflow.indexOf(manualMissingVerificationStepName);
+if (manualMissingVerificationStart === -1) {
+  violations.push(`${cloudWorkflowPath}: missing manual prioritized document verification`);
+} else {
+  const nextStepStart = cloudWorkflow.indexOf(
+    "\n      - name:",
+    manualMissingVerificationStart + 1,
+  );
+  const manualMissingVerificationStep = cloudWorkflow.slice(
+    manualMissingVerificationStart,
+    nextStepStart === -1 ? undefined : nextStepStart,
+  );
+  if (!manualMissingVerificationStep.includes("inputs.mode == 'documents-missing'")) {
+    violations.push(`${cloudWorkflowPath}: prioritized document verification missing manual mode`);
+  }
+  if (manualMissingVerificationStep.includes("inputs.mode == 'daily'")) {
+    violations.push(
+      `${cloudWorkflowPath}: daily mode must not start a second PDF verification cycle`,
+    );
+  }
+}
 const documentVerificationStepName = "      - name: Verify deposited bill PDFs (byte-only)";
 const documentVerificationStart = cloudWorkflow.indexOf(documentVerificationStepName);
 if (documentVerificationStart === -1) {

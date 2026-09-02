@@ -38,6 +38,27 @@ interface SenadoLinkContext {
   profileIdByPersonSourceId: ReadonlyMap<string, number>;
 }
 
+/**
+ * Exact full-name literals reviewed for a stable Senate roster province slug.
+ *
+ * This is deliberately a per-identity allowlist. It does not fold accents, reuse the
+ * broader profile aliases used for committee parsing, or authorize approximate matching.
+ */
+const REVIEWED_SENATE_ROSTER_NAME_VARIANTS = new Map<string, readonly string[]>([
+  ["peravia", ["Julito Fulcar Encarnación", "Julito Fulcar Encarnacion"]],
+]);
+
+function reviewedSenateRosterNames(reviewed: {
+  rosterSourceId: string;
+  rosterOfficialName: string;
+}): readonly string[] {
+  return (
+    REVIEWED_SENATE_ROSTER_NAME_VARIANTS.get(reviewed.rosterSourceId) ?? [
+      reviewed.rosterOfficialName,
+    ]
+  );
+}
+
 export interface LinkSourceSummary {
   source: "sil-diputados" | "senado-sil";
   candidates: number;
@@ -203,12 +224,14 @@ async function prepareSenateContext(
   if (profilesBySlug.size !== 32) throw new Error("Active Senate roster contains duplicate slugs");
   for (const reviewed of REVIEWED_SENADO_SIL_PERSON_BRIDGE) {
     const profile = profilesBySlug.get(reviewed.rosterSourceId);
+    const expectedNames = reviewedSenateRosterNames(reviewed);
+    const observedNameKey = profile ? senateSilExactNameKey(profile.fullName) : null;
     if (
       !profile ||
-      senateSilExactNameKey(profile.fullName) !== senateSilExactNameKey(reviewed.rosterOfficialName)
+      !expectedNames.some((expectedName) => senateSilExactNameKey(expectedName) === observedNameKey)
     ) {
       throw new Error(
-        `Active Senate roster drift for ${reviewed.rosterSourceId}: expected ${reviewed.rosterOfficialName}, observed ${profile?.fullName ?? "missing"}`,
+        `Active Senate roster drift for ${reviewed.rosterSourceId}: expected ${expectedNames.join(" or ")}, observed ${profile?.fullName ?? "missing"}`,
       );
     }
   }

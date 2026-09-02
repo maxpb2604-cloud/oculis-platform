@@ -455,10 +455,12 @@ pero no bloquea ni cancela la ingestión principal.
 - Ejecuta `bootstrap` solamente para inicialización o recuperación controlada. Los modos
   manuales `daily`, `maintenance`, `roster`, `movements-incremental`, `movements`,
   `publications`, `publications-full`, `senate-corpus`, `senate-fichas`, `link-initiative-proponents`,
-  `documents-missing` y `documents` permiten repetir cada cobertura por separado.
+  `documents-missing`, `verify-documents-full` y `documents` permiten repetir cada cobertura por separado.
   `movements-incremental` ejecuta el detector de cambios de ambas cámaras; `movements` fuerza
   el safety net completo; `documents-missing` descubre y verifica solo la cola prioritaria;
-  `documents` hace descubrimiento y verificación completos. `publications` refresca tres
+  `verify-documents-full` reintenta en un ciclo manual de hasta 120 minutos la disponibilidad
+  de todos los PDF registrados que requieren verificación o renovación, sin alargar el modo
+  `daily`; `documents` hace descubrimiento y verificación completos. `publications` refresca tres
   páginas recientes; `publications-full` recorre las colecciones documentales completas como
   recuperación manual independiente, sin ejecutar el `bootstrap` de las demás fuentes.
   Para cobertura histórica de proponentes, conserva el orden documentado en
