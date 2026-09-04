@@ -57,6 +57,11 @@ export function officialCountMismatch(
   return officialReportedCount != null && officialReportedCount !== enumeratedUniqueRows;
 }
 
+/** Only an unbounded run claims to enumerate the global catalogue. */
+export function completeCatalogRequested(limit: number, maxPagesPerSlice: number): boolean {
+  return !Number.isFinite(limit) && !Number.isFinite(maxPagesPerSlice);
+}
+
 /** Upstream serial gaps are transparent coverage notes, not fabricated initiatives. */
 export function catalogCoverageNotes(upstreamCatalogOmissions: readonly number[]): string[] {
   if (upstreamCatalogOmissions.length === 0) return [];
@@ -77,6 +82,7 @@ export async function ingestSilDiputados(
     delayMs = 0,
     log = () => {},
   } = opts;
+  const isCompleteCatalogRequest = completeCatalogRequested(limit, maxPagesPerSlice);
   const adapter = new SilDiputadosAdapter();
   log(`  factual mode · concurrency ${concurrency}`);
 
@@ -179,7 +185,11 @@ export async function ingestSilDiputados(
 
     const officialCountDifference =
       officialReportedCount == null ? null : officialReportedCount - seen;
-    const countMismatch = officialCountMismatch(officialReportedCount, seen);
+    // A bounded slice is the requested unit of work for routine maintenance. It is
+    // not an attempted enumeration of the whole catalogue, so comparing its row
+    // count to the global total creates a false failure on every healthy run.
+    const countMismatch =
+      isCompleteCatalogRequest && officialCountMismatch(officialReportedCount, seen);
     if (countMismatch) {
       log(
         `  ⚠ global catalogue total ${officialReportedCount}, enumerated unique rows ${seen} (difference ${officialCountDifference})`,
@@ -198,6 +208,11 @@ export async function ingestSilDiputados(
     }
     const error = errorParts.length ? errorParts.join("; ") : undefined;
     const coverageNotes = catalogCoverageNotes(upstreamCatalogOmissions);
+    if (!isCompleteCatalogRequest) {
+      coverageNotes.push(
+        `Barrido operativo limitado completado: ${seen} fila(s) únicas observadas; el total global ${officialReportedCount ?? "no estuvo disponible"} se conserva como contexto y no se usa como denominador de este barrido.`,
+      );
+    }
     coverageNotes.forEach((note) => log(`  ℹ ${note}`));
     await recordIngestionRun(db, {
       source: adapter.source,
@@ -211,6 +226,7 @@ export async function ingestSilDiputados(
       error,
       details: {
         mode: enrich ? "OFFICIAL_DETAIL_AND_HISTORY" : "OFFICIAL_LIST_ONLY",
+        coverageScope: isCompleteCatalogRequest ? "FULL_CATALOG" : "BOUNDED_SLICE",
         maxPagesPerSlice: Number.isFinite(maxPagesPerSlice) ? maxPagesPerSlice : null,
         enrichmentFailures,
         catalogTotal: officialReportedCount,

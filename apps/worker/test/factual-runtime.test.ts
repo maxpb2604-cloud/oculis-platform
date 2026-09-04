@@ -13,6 +13,7 @@ import { VERIFIED_FEED_ACCOUNTS } from "../src/feed-accounts.seed.js";
 import { buildLegislativeSignals } from "../src/feed-signals.js";
 import { resolveExplicitEntities } from "../src/ingest-feed.js";
 import {
+  completeCatalogRequested,
   officialCountMismatch,
   persistInitiativeEvidence,
   toInitiativeRow,
@@ -151,6 +152,12 @@ describe("source requirements and account evidence", () => {
     assert.equal(officialCountMismatch(6209, 6206), true);
     assert.equal(officialCountMismatch(6206, 6206), false);
     assert.equal(officialCountMismatch(null, 6206), false);
+  });
+
+  it("compares the global total only for an unbounded catalogue request", () => {
+    assert.equal(completeCatalogRequested(Infinity, Infinity), true);
+    assert.equal(completeCatalogRequested(Infinity, 2), false);
+    assert.equal(completeCatalogRequested(100, Infinity), false);
   });
 
   it("requires every scheduled official publication source", () => {

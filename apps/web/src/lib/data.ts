@@ -61,7 +61,6 @@ import {
   listFeedAccounts,
   listRecentDepositedInitiativesByProvince,
   listRecentStatusEvents,
-  latestCongressMovementDate,
   readCongressMovementDay,
   resolveActiveLegislatorProfileIds,
   type FeedFilters as DbFeedFilters,
@@ -151,8 +150,8 @@ export function adaptCongressMovementDay(row: DbCongressMovementDay): CongressMo
 
 /**
  * Narrow data adapter for “Movimientos del Congreso”. When no date is requested, the
- * newest exact official movement date for that chamber wins. Dominican-Republic today
- * is used only when the chamber has no recorded filing or SOURCE_HISTORY event at all.
+ * page always opens on today's Dominican-Republic calendar date. A historical date is
+ * selected only when the user requests it explicitly.
  */
 export async function getCongressMovementDay(opts: {
   date?: string;
@@ -162,8 +161,7 @@ export async function getCongressMovementDay(opts: {
     throw new Error("date must be an exact ISO calendar date (YYYY-MM-DD)");
   }
   const d = await db();
-  const latest = opts.date === undefined ? await latestCongressMovementDate(d, opts.chamber) : null;
-  const selectedDate = opts.date ?? latest ?? todayISO();
+  const selectedDate = opts.date ?? todayISO();
   return adaptCongressMovementDay(
     await readCongressMovementDay(d, { date: selectedDate, chamber: opts.chamber }),
   );

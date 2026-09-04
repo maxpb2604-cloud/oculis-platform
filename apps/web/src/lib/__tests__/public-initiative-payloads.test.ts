@@ -88,22 +88,21 @@ describe("Agenda public deposit payload", () => {
     });
   }
 
-  it("passes the narrowed payload—not stored document metadata—to the client component", () => {
+  it("keeps deposit document metadata out of the Commissions & Agendas client surface", () => {
     const pageSource = readFileSync(
       fileURLToPath(new URL("../../app/hoy/page.tsx", import.meta.url)),
       "utf8",
     );
-    const clientSource = readFileSync(
-      fileURLToPath(new URL("../../components/hoy-chambers.tsx", import.meta.url)),
+    const commissionsSource = readFileSync(
+      fileURLToPath(new URL("../../components/commissions-agendas.tsx", import.meta.url)),
       "utf8",
     );
 
-    expect(pageSource).toContain("toPublicHoyDepositItem");
-    expect(pageSource).toContain("deposits={publicDeposits}");
-    expect(pageSource).toContain("senDeposits={publicSenDeposits}");
-    expect(clientSource).toContain("PublicHoyDepositItem[]");
+    expect(pageSource).toContain("CommissionsAgendas");
+    expect(pageSource).not.toContain("getDeposits");
+    expect(pageSource).not.toContain("toPublicHoyDepositItem");
     for (const privateField of ["docUrl", "docSource", "docType"]) {
-      expect(clientSource).not.toContain(privateField);
+      expect(commissionsSource).not.toContain(privateField);
     }
   });
 });

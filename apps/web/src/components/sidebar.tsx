@@ -197,7 +197,11 @@ function Navigation({ lang, onNavigate }: { lang: Lang; onNavigate?: () => void 
       label: es ? "Movimientos del Congreso" : "Congressional movements",
       icon: Broadcast,
     },
-    { href: "/hoy", label: es ? "Agenda" : "Agenda", icon: CalendarDots },
+    {
+      href: "/hoy",
+      label: es ? "Comisiones & Agendas" : "Committees & Agendas",
+      icon: CalendarDots,
+    },
     {
       href: "/regulatorio/consultas",
       label: es ? "Consultas públicas" : "Public consultations",

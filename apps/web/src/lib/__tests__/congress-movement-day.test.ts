@@ -4,7 +4,6 @@ vi.mock("server-only", () => ({}));
 
 const dbMocks = vi.hoisted(() => ({
   ensureSchema: vi.fn(async () => undefined),
-  latestCongressMovementDate: vi.fn(),
   readCongressMovementDay: vi.fn(),
 }));
 
@@ -13,7 +12,6 @@ vi.mock("@oculis/db", async (importOriginal) => {
   return {
     ...actual,
     createDb: () => ({ db: { test: true }, ensureSchema: dbMocks.ensureSchema }),
-    latestCongressMovementDate: dbMocks.latestCongressMovementDate,
     readCongressMovementDay: dbMocks.readCongressMovementDay,
   };
 });
@@ -135,30 +133,28 @@ describe("Congress movement-day web adapter", () => {
     ).rejects.toThrow("exact ISO calendar date");
   });
 
-  it("defaults to the chamber's newest exact official date", async () => {
-    const source = movementDay();
-    dbMocks.latestCongressMovementDate.mockResolvedValueOnce("2026-08-31");
+  it("defaults to today's Dominican-Republic calendar date", async () => {
+    const today = todayISO();
+    const source = { ...movementDay(), selectedDate: today };
     dbMocks.readCongressMovementDay.mockResolvedValueOnce(source);
 
     await expect(getCongressMovementDay({ chamber: "DIPUTADOS" })).resolves.toEqual(
       adaptCongressMovementDay(source),
     );
-    expect(dbMocks.latestCongressMovementDate).toHaveBeenCalledWith(expect.anything(), "DIPUTADOS");
     expect(dbMocks.readCongressMovementDay).toHaveBeenCalledWith(expect.anything(), {
-      date: "2026-08-31",
+      date: today,
       chamber: "DIPUTADOS",
     });
   });
 
-  it("falls back to Dominican-Republic today only when the chamber has no movement date", async () => {
-    const today = todayISO();
-    const source = { ...movementDay(), selectedDate: today };
-    dbMocks.latestCongressMovementDate.mockResolvedValueOnce(null);
+  it("honors an explicitly selected historical date", async () => {
+    const selectedDate = "2026-08-29";
+    const source = { ...movementDay(), selectedDate };
     dbMocks.readCongressMovementDay.mockResolvedValueOnce(source);
 
-    await getCongressMovementDay({ chamber: "SENADO" });
+    await getCongressMovementDay({ date: selectedDate, chamber: "SENADO" });
     expect(dbMocks.readCongressMovementDay).toHaveBeenLastCalledWith(expect.anything(), {
-      date: today,
+      date: selectedDate,
       chamber: "SENADO",
     });
   });

@@ -413,6 +413,7 @@ export function CongressMovements({ day, lang, today }: CongressMovementsProps) 
               {labels.chooseDate}
             </label>
             <input
+              key={day.selectedDate}
               id="movement-date"
               name="date"
               type="date"

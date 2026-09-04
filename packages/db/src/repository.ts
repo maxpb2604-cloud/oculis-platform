@@ -2294,21 +2294,124 @@ export interface ActivityUpsertResult {
   inserted: boolean;
 }
 
-/** Resolve an official code only when it identifies exactly one candidate in scope. */
+/**
+ * Resolve a complete official code without confusing the chamber holding a meeting
+ * with the chamber that owns the initiative record.
+ *
+ * Congressional agendas routinely discuss initiatives received from the other
+ * chamber (for example, a Senate `...-SE` code on a Diputados agenda). A globally
+ * unique exact code is therefore authoritative regardless of the activity chamber.
+ * The chamber is used only as a fail-closed tie-breaker for legacy duplicate rows.
+ */
 function uniqueInitiativeIdsByCode(
   rows: Array<{ id: number; code: string | null; chamber: string | null }>,
   chamber: string | null | undefined,
 ): Map<string, number> {
-  const candidates = new Map<string, number[]>();
+  const candidates = new Map<string, Array<{ id: number; chamber: string | null }>>();
   for (const row of rows) {
-    if (!row.code || (chamber && row.chamber !== chamber)) continue;
+    if (!row.code) continue;
     const ids = candidates.get(row.code) ?? [];
-    ids.push(row.id);
+    ids.push({ id: row.id, chamber: row.chamber });
     candidates.set(row.code, ids);
   }
   return new Map(
-    [...candidates].flatMap(([code, ids]) => (ids.length === 1 ? [[code, ids[0]!] as const] : [])),
+    [...candidates].flatMap(([code, rowsForCode]) => {
+      if (rowsForCode.length === 1) return [[code, rowsForCode[0]!.id] as const];
+      if (!chamber) return [];
+      const inChamber = rowsForCode.filter((row) => row.chamber === chamber);
+      return inChamber.length === 1 ? [[code, inChamber[0]!.id] as const] : [];
+    }),
   );
+}
+
+interface ActivityInitiativeLinkRow {
+  activityId: number;
+  code: string;
+  initiativeId: number | null;
+  title: string | null;
+  sourceUrl: string | null;
+}
+
+interface ActivityInitiativeCandidate {
+  id: number;
+  code: string | null;
+  chamber: string | null;
+  title: string;
+  sourceUrl: string | null;
+}
+
+function uniqueActivityInitiativeCandidate(
+  candidates: readonly ActivityInitiativeCandidate[],
+  chamber: string | null | undefined,
+): ActivityInitiativeCandidate | null {
+  if (candidates.length === 1) return candidates[0]!;
+  if (!chamber) return null;
+  const inChamber = candidates.filter((candidate) => candidate.chamber === chamber);
+  return inChamber.length === 1 ? inChamber[0]! : null;
+}
+
+/**
+ * Resolve legacy NULL links at read time as well as during the scheduled backfill.
+ * This makes an already stored cross-chamber agenda clickable immediately after the
+ * corrected code is deployed, without requiring an ad-hoc database mutation.
+ */
+async function resolveActivityInitiativeLinks(
+  db: Database,
+  links: readonly ActivityInitiativeLinkRow[],
+  chamberByActivity: ReadonlyMap<number, string | null>,
+): Promise<ActivityInitiativeLinkRow[]> {
+  const unresolvedCodes = [
+    ...new Set(
+      links
+        .filter((link) => link.initiativeId == null)
+        .map((link) => link.code)
+        .filter(Boolean),
+    ),
+  ];
+  if (unresolvedCodes.length === 0) return [...links];
+
+  const candidates: ActivityInitiativeCandidate[] = [];
+  // Keep parameter counts conservative for old plenary documents containing many codes.
+  for (let offset = 0; offset < unresolvedCodes.length; offset += 1_000) {
+    const batch = unresolvedCodes.slice(offset, offset + 1_000);
+    candidates.push(
+      ...(await db
+        .select({
+          id: initiatives.id,
+          code: initiatives.code,
+          chamber: sql<
+            string | null
+          >`coalesce(${initiatives.sourceChamber}, ${initiatives.chamber})`,
+          title: initiatives.title,
+          sourceUrl: initiatives.sourceUrl,
+        })
+        .from(initiatives)
+        .where(inArray(initiatives.code, batch))),
+    );
+  }
+  const candidatesByCode = new Map<string, ActivityInitiativeCandidate[]>();
+  for (const candidate of candidates) {
+    if (!candidate.code) continue;
+    const current = candidatesByCode.get(candidate.code) ?? [];
+    current.push(candidate);
+    candidatesByCode.set(candidate.code, current);
+  }
+
+  return links.map((link) => {
+    if (link.initiativeId != null) return link;
+    const candidate = uniqueActivityInitiativeCandidate(
+      candidatesByCode.get(link.code) ?? [],
+      chamberByActivity.get(link.activityId),
+    );
+    return candidate
+      ? {
+          ...link,
+          initiativeId: candidate.id,
+          title: candidate.title,
+          sourceUrl: candidate.sourceUrl,
+        }
+      : link;
+  });
 }
 
 /**
@@ -2397,7 +2500,13 @@ export async function upsertActivityEvent(
     const uniqueCodes = [...new Set(a.initiativeCodes.filter(Boolean))];
     if (uniqueCodes.length) {
       const matched = await tx
-        .select({ id: initiatives.id, code: initiatives.code, chamber: initiatives.chamber })
+        .select({
+          id: initiatives.id,
+          code: initiatives.code,
+          chamber: sql<
+            string | null
+          >`coalesce(${initiatives.sourceChamber}, ${initiatives.chamber})`,
+        })
         .from(initiatives)
         .where(inArray(initiatives.code, uniqueCodes));
       const byCode = uniqueInitiativeIdsByCode(matched, a.chamber);
@@ -2419,23 +2528,42 @@ export async function upsertActivityEvent(
  */
 export async function backfillActivityInitiativeIds(db: Database): Promise<number> {
   const res = await db.execute(sql`
-    with unique_matches as (
-      select ai.id as link_id, min(i.id)::int as initiative_id
+    with candidate_counts as (
+      select ai.id as link_id,
+             count(i.id)::int as global_count,
+             min(i.id)::int as global_id,
+             count(i.id) filter (
+               where ae.chamber is not null
+                 and coalesce(i.source_chamber, i.chamber) = ae.chamber
+             )::int as chamber_count,
+             min(i.id) filter (
+               where ae.chamber is not null
+                 and coalesce(i.source_chamber, i.chamber) = ae.chamber
+             )::int as chamber_id
       from activity_initiatives ai
       join activity_events ae on ae.id = ai.activity_id
       join initiatives i
         on i.code = ai.initiative_code
-       and (ae.chamber is null or i.chamber = ae.chamber)
       where ai.initiative_id is null
       group by ai.id
-      having count(*) = 1
+    ), unique_matches as (
+      select link_id,
+             case
+               when global_count = 1 then global_id
+               when chamber_count = 1 then chamber_id
+               else null
+             end as initiative_id
+        from candidate_counts
+       where global_count = 1 or chamber_count = 1
     )
     update activity_initiatives ai
     set initiative_id = matches.initiative_id
     from unique_matches matches
     where ai.id = matches.link_id
+    returning ai.id
   `);
-  return (res as unknown as { rowCount?: number }).rowCount ?? 0;
+  const result = res as unknown as { rows?: unknown[]; rowCount?: number };
+  return result.rows?.length ?? result.rowCount ?? 0;
 }
 
 export interface ActivityListItem {
@@ -2509,7 +2637,7 @@ export async function listActivity(
     .orderBy(sql`${activityEvents.eventDate} desc nulls last`, activityEvents.body)
     .limit(limit);
   const ids = rows.map((row) => row.id);
-  const links = ids.length
+  const rawLinks = ids.length
     ? await db
         .select({
           activityId: activityInitiatives.activityId,
@@ -2523,6 +2651,11 @@ export async function listActivity(
         .where(inArray(activityInitiatives.activityId, ids))
         .orderBy(activityInitiatives.activityId, activityInitiatives.id)
     : [];
+  const links = await resolveActivityInitiativeLinks(
+    db,
+    rawLinks,
+    new Map(rows.map((row) => [row.id, row.chamber])),
+  );
   const linksByActivity = new Map<number, ActivityListItem["initiatives"]>();
   for (const link of links) {
     const current = linksByActivity.get(link.activityId) ?? [];
@@ -2575,8 +2708,9 @@ export async function getActivityById(
     .limit(1);
   if (!row) return null;
 
-  const initiativesForActivity = await db
+  const rawInitiativesForActivity = await db
     .select({
+      activityId: activityInitiatives.activityId,
       code: activityInitiatives.initiativeCode,
       initiativeId: activityInitiatives.initiativeId,
       title: initiatives.title,
@@ -2586,6 +2720,11 @@ export async function getActivityById(
     .leftJoin(initiatives, eq(activityInitiatives.initiativeId, initiatives.id))
     .where(eq(activityInitiatives.activityId, id))
     .orderBy(activityInitiatives.id);
+  const initiativesForActivity = await resolveActivityInitiativeLinks(
+    db,
+    rawInitiativesForActivity,
+    new Map([[id, row.chamber]]),
+  );
 
   return {
     ...row,
@@ -5299,7 +5438,13 @@ export async function upsertFeedItem(
     const codeToId = new Map<string, number>();
     if (codes.length) {
       const rows = await tx
-        .select({ id: initiatives.id, code: initiatives.code, chamber: initiatives.chamber })
+        .select({
+          id: initiatives.id,
+          code: initiatives.code,
+          chamber: sql<
+            string | null
+          >`coalesce(${initiatives.sourceChamber}, ${initiatives.chamber})`,
+        })
         .from(initiatives)
         .where(inArray(initiatives.code, codes));
       for (const [code, id] of uniqueInitiativeIdsByCode(rows, item.chamber)) {
@@ -6493,17 +6638,26 @@ export async function initiativeByCode(
   return rows.length === 1 ? rows[0]! : null;
 }
 
-/** Resolve a complete official code only when it identifies one initiative in scope. */
+/**
+ * Resolve a complete official code globally. `chamber` is only a tie-breaker for
+ * duplicate legacy rows; it must never block a unique cross-chamber reference.
+ */
 export async function uniqueInitiativeIdByCode(
   db: Database,
   code: string,
   chamber?: string,
 ): Promise<number | null> {
-  const where = chamber
-    ? and(eq(initiatives.code, code), eq(initiatives.chamber, chamber))
-    : eq(initiatives.code, code);
-  const rows = await db.select({ id: initiatives.id }).from(initiatives).where(where).limit(2);
-  return rows.length === 1 ? rows[0]!.id : null;
+  const rows = await db
+    .select({
+      id: initiatives.id,
+      chamber: sql<string | null>`coalesce(${initiatives.sourceChamber}, ${initiatives.chamber})`,
+    })
+    .from(initiatives)
+    .where(eq(initiatives.code, code));
+  if (rows.length === 1) return rows[0]!.id;
+  if (!chamber) return null;
+  const inChamber = rows.filter((row) => row.chamber === chamber);
+  return inChamber.length === 1 ? inChamber[0]!.id : null;
 }
 
 /**

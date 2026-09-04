@@ -1,0 +1,26 @@
+# yaml-language-server: $schema=https://render.com/schema/render.yaml.json
+services:
+  - type: web
+    name: oculis-auribus
+    runtime: node
+    plan: free
+    region: virginia
+    buildCommand: npm ci && npm run build -w @oculis/web
+    startCommand: node_modules/.bin/next start apps/web
+    healthCheckPath: /api/health
+    autoDeployTrigger: commit
+    envVars:
+      - key: NODE_VERSION
+        value: 22.22.0
+      - key: NEXT_TELEMETRY_DISABLED
+        value: "1"
+      - key: OCULIS_AUTO_MIGRATE
+        value: "0"
+      - key: PG_POOL_MAX
+        value: "3"
+      - key: OCULIS_DB_APP_NAME
+        value: oculis-web-render
+      - key: DATABASE_URL
+        sync: false
+      - key: NEXT_PUBLIC_MAPBOX_TOKEN
+        sync: false

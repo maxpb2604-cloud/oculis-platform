@@ -8,11 +8,15 @@ import {
   CalendarBlank,
   Clock,
   FileText,
+  HashStraight,
+  Info,
+  ListChecks,
   MapPin,
   SealCheck,
 } from "@phosphor-icons/react/dist/ssr";
 import { AppShell } from "@/components/app-shell";
 import { CopyTextButton } from "@/components/copy-text-button";
+import { officialExpedienteReferences, publishedAgendaTopic } from "@/lib/agenda-topics";
 import { safeOfficialActivityUrl } from "@/lib/activity-links";
 import { getActivity } from "@/lib/data";
 import { formatISODate, formatOfficialTime } from "@/lib/format";
@@ -29,6 +33,7 @@ type AgendaSearchParams = {
   from?: string;
   to?: string;
   chamber?: string;
+  view?: string;
   returnTo?: string;
 };
 
@@ -110,6 +115,7 @@ export default async function AgendaDetailPage({
   }
   const returnChamber = sp.chamber === "senado" || agenda.chamber === "SENADO" ? "senado" : null;
   if (returnChamber) back.set("chamber", returnChamber);
+  if (sp.view === "week" || sp.view === "day") back.set("view", sp.view);
   const backQuery = back.toString();
   const backHref =
     sp.returnTo === "inicio"
@@ -127,8 +133,8 @@ export default async function AgendaDetailPage({
           ? "Volver a Movimientos del Congreso"
           : "Back to Congressional movements"
         : es
-          ? "Volver a la agenda"
-          : "Back to the agenda";
+          ? "Volver a Comisiones & Agendas"
+          : "Back to Committees & Agendas";
   const scopeLabel =
     agenda.scope === "COMMITTEE"
       ? es
@@ -153,6 +159,11 @@ export default async function AgendaDetailPage({
         : es
           ? "Agenda del pleno"
           : "Floor agenda";
+  const agendaTopic = publishedAgendaTopic(agenda.description, agenda.body);
+  const expedienteReferences = officialExpedienteReferences(agenda.raw);
+  const hasPublishedTopics = Boolean(
+    agendaTopic || agenda.initiatives.length || expedienteReferences.length,
+  );
 
   return (
     <AppShell
@@ -261,58 +272,150 @@ export default async function AgendaDetailPage({
 
         <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,1.5fr)_minmax(280px,0.7fr)]">
           <div className="space-y-5">
-            <section className="rounded-xl border p-5 sm:p-6" aria-labelledby="agenda-description">
-              <h2 id="agenda-description" className="serif text-xl font-semibold">
-                {es ? "Contenido de la reunión" : "Meeting agenda"}
-              </h2>
-              <p className="mt-3 select-text whitespace-pre-wrap text-sm leading-relaxed">
-                {agenda.description || missing}
-              </p>
-              {agenda.description && (
+            <section className="rounded-xl border p-5 sm:p-6" aria-labelledby="agenda-topics">
+              <div className="flex items-start gap-3">
+                <span
+                  className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg"
+                  style={{ background: "var(--accent-soft)", color: "var(--accent)" }}
+                >
+                  <ListChecks size={22} aria-hidden />
+                </span>
+                <div>
+                  <p className="eyebrow">{es ? "Agenda oficial" : "Official agenda"}</p>
+                  <h2 id="agenda-topics" className="serif mt-1 text-xl font-semibold sm:text-2xl">
+                    {es ? "Temas pautados para esta reunión" : "Topics scheduled for this meeting"}
+                  </h2>
+                  <p
+                    className="mt-1 text-sm leading-relaxed"
+                    style={{ color: "var(--text-muted)" }}
+                  >
+                    {es
+                      ? "Contenido publicado por la cámara para la fecha de esta comisión."
+                      : "Content published by the chamber for this committee date."}
+                  </p>
+                </div>
+              </div>
+
+              {agendaTopic && (
+                <div
+                  className="mt-5 rounded-lg border p-4 sm:p-5"
+                  style={{ background: "var(--surface-2)" }}
+                >
+                  <p className="eyebrow">{es ? "Tema publicado" : "Published topic"}</p>
+                  <p className="mt-2 select-text whitespace-pre-wrap text-[15px] font-medium leading-relaxed">
+                    {agendaTopic}
+                  </p>
+                </div>
+              )}
+
+              {agenda.initiatives.length > 0 && (
+                <div className="mt-5">
+                  <h3 className="text-sm font-semibold">
+                    {es
+                      ? `Iniciativas incluidas (${agenda.initiatives.length})`
+                      : `Initiatives included (${agenda.initiatives.length})`}
+                  </h3>
+                  <ul className="mt-3 grid gap-2 text-sm">
+                    {agenda.initiatives.map((initiative) => (
+                      <li
+                        key={`${initiative.code}-${initiative.initiativeId ?? "unresolved"}`}
+                        className="rounded-lg border px-4 py-3"
+                      >
+                        <div className="flex items-start gap-3">
+                          <FileText
+                            size={19}
+                            className="mt-0.5 shrink-0"
+                            style={{ color: "var(--accent)" }}
+                            aria-hidden
+                          />
+                          <div className="min-w-0">
+                            <p
+                              className="font-mono text-[11px]"
+                              style={{ color: "var(--text-muted)" }}
+                            >
+                              {initiative.code}
+                            </p>
+                            {initiative.initiativeId ? (
+                              <Link
+                                href={initiativeDetailHref(initiative.initiativeId, lang)}
+                                className="mt-1 inline-flex font-semibold leading-relaxed underline-offset-2 hover:underline"
+                                style={{ color: "var(--accent)" }}
+                              >
+                                {initiative.title ||
+                                  (es ? "Abrir ficha de la iniciativa" : "Open initiative record")}
+                              </Link>
+                            ) : (
+                              <p className="mt-1 font-medium leading-relaxed">
+                                {initiative.title ||
+                                  (es
+                                    ? "La fuente no publicó un título enlazable."
+                                    : "The source did not publish a linkable title.")}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {expedienteReferences.length > 0 && (
+                <div className="mt-5">
+                  <h3 className="text-sm font-semibold">
+                    {es ? "Expedientes citados por la agenda" : "Files cited by the agenda"}
+                  </h3>
+                  <ul className="mt-3 flex flex-wrap gap-2">
+                    {expedienteReferences.map((reference) => (
+                      <li
+                        key={reference}
+                        className="inline-flex items-center gap-2 rounded-full border px-3 py-1.5 font-mono text-xs"
+                      >
+                        <HashStraight size={15} style={{ color: "var(--accent)" }} aria-hidden />
+                        {es ? `Expediente ${reference}` : `File ${reference}`}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {!hasPublishedTopics && (
+                <div className="notice mt-5 text-sm leading-relaxed" data-tone="warning">
+                  {es
+                    ? "La agenda oficial no detalla los temas ni identifica iniciativas específicas para esta reunión."
+                    : "The official agenda does not detail topics or identify specific initiatives for this meeting."}
+                </div>
+              )}
+
+              <div
+                className="mt-5 flex gap-2.5 rounded-lg px-3 py-3 text-xs leading-relaxed"
+                style={{ background: "var(--accent-soft)", color: "var(--text-muted)" }}
+              >
+                <Info
+                  size={18}
+                  className="shrink-0"
+                  style={{ color: "var(--accent)" }}
+                  aria-hidden
+                />
+                <p>
+                  {es
+                    ? agenda.initiatives.length
+                      ? "Estos son los asuntos e iniciativas que aparecen en la agenda oficial. La agenda no confirma qué fue debatido o decidido durante la reunión."
+                      : "Este es el asunto que aparece en la agenda oficial. La fuente no enumera iniciativas específicas y Oculis no las completa por inferencia."
+                    : agenda.initiatives.length
+                      ? "These are the matters and initiatives listed in the official agenda. The agenda does not confirm what was debated or decided during the meeting."
+                      : "This is the matter listed in the official agenda. The source does not enumerate specific initiatives, and Oculis does not infer them."}
+                </p>
+              </div>
+
+              {agendaTopic && (
                 <CopyTextButton
-                  text={agenda.description}
+                  text={agendaTopic}
                   lang={lang}
                   className="mt-4"
-                  ariaLabel={es ? "contenido de la reunión" : "meeting agenda"}
-                  idleLabel={es ? "Copiar contenido" : "Copy content"}
+                  ariaLabel={es ? "temas pautados" : "scheduled topics"}
+                  idleLabel={es ? "Copiar temas" : "Copy topics"}
                 />
-              )}
-            </section>
-
-            <section className="rounded-xl border p-5 sm:p-6" aria-labelledby="agenda-initiatives">
-              <h2 id="agenda-initiatives" className="serif text-xl font-semibold">
-                {es ? "Iniciativas mencionadas" : "Initiatives mentioned"}
-              </h2>
-              {agenda.initiatives.length ? (
-                <ul className="mt-4 divide-y text-sm">
-                  {agenda.initiatives.map((initiative) => (
-                    <li
-                      key={`${initiative.code}-${initiative.initiativeId ?? "unresolved"}`}
-                      className="py-3 first:pt-0 last:pb-0"
-                    >
-                      {initiative.initiativeId ? (
-                        <Link
-                          href={initiativeDetailHref(initiative.initiativeId, lang)}
-                          className="font-medium leading-relaxed underline-offset-2 hover:underline"
-                          style={{ color: "var(--accent)" }}
-                        >
-                          {[initiative.code, initiative.title].filter(Boolean).join(" — ")}
-                        </Link>
-                      ) : (
-                        <span>
-                          {[initiative.code, initiative.title].filter(Boolean).join(" — ")} ·{" "}
-                          {missing}
-                        </span>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="mt-3 text-sm" style={{ color: "var(--text-muted)" }}>
-                  {es
-                    ? "La fuente no identifica una iniciativa en esta actividad."
-                    : "The source does not identify an initiative in this activity."}
-                </p>
               )}
             </section>
           </div>

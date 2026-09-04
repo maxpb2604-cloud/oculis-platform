@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createDb, type DbHandle } from "../src/client.js";
 import {
+  backfillActivityInitiativeIds,
   beginIngestionRun,
   beginInitiativeProponentReconciliationRun,
   countDepositedInitiativesByProvince,
@@ -2473,6 +2474,75 @@ describe("source snapshot upserts", () => {
     expect(row?.initiativeCount).toBe(1);
   });
 
+  it("links an exact cross-chamber initiative code published in an agenda", async () => {
+    const senate = await upsertInitiative(
+      h.db,
+      fixture({
+        source: "senado-sil",
+        sourceId: "cross-chamber-senate",
+        code: "01755-2026-SLO-SE",
+        chamber: "SENADO",
+      }),
+    );
+    const activity = await upsertActivityEvent(h.db, {
+      source: "dip-oficial",
+      scope: "PLENARY",
+      chamber: "DIPUTADOS",
+      date: "2026-08-26",
+      kind: "Orden del día",
+      body: "Pleno",
+      description: "Iniciativa recibida del Senado.",
+      initiativeCodes: ["01755-2026-SLO-SE"],
+      dedupeKey: "cross-chamber-agenda-link",
+      raw: {},
+    });
+
+    const detail = await getActivityById(h.db, activity.id);
+    expect(detail?.initiatives).toEqual([
+      expect.objectContaining({
+        code: "01755-2026-SLO-SE",
+        initiativeId: senate.id,
+      }),
+    ]);
+  });
+
+  it("backfills a unique cross-chamber agenda reference after its initiative arrives", async () => {
+    const activity = await upsertActivityEvent(h.db, {
+      source: "senado",
+      scope: "PLENARY",
+      chamber: "SENADO",
+      date: "2026-07-08",
+      kind: "Orden del día",
+      body: "Pleno",
+      description: "Proyecto remitido por la Cámara de Diputados.",
+      initiativeCodes: ["06038-2024-2028-CD"],
+      dedupeKey: "cross-chamber-backfill",
+      raw: {},
+    });
+    expect((await getActivityById(h.db, activity.id))?.initiatives[0]?.initiativeId).toBeNull();
+
+    const diputados = await upsertInitiative(
+      h.db,
+      fixture({
+        sourceId: "cross-chamber-diputados",
+        code: "06038-2024-2028-CD",
+        chamber: "DIPUTADOS",
+      }),
+    );
+    const [storedBeforeBackfill] = await h.db
+      .select({ initiativeId: activityInitiatives.initiativeId })
+      .from(activityInitiatives)
+      .where(eq(activityInitiatives.activityId, activity.id));
+    expect(storedBeforeBackfill?.initiativeId).toBeNull();
+    expect((await getActivityById(h.db, activity.id))?.initiatives[0]?.initiativeId).toBe(
+      diputados.id,
+    );
+    expect(await backfillActivityInitiativeIds(h.db)).toBe(1);
+    expect((await getActivityById(h.db, activity.id))?.initiatives[0]?.initiativeId).toBe(
+      diputados.id,
+    );
+  });
+
   it("upgrades a legacy committee row to an exact source event and keeps its local URL stable", async () => {
     const base = {
       source: "sil-actividad",
@@ -2659,6 +2729,41 @@ describe("source snapshot upserts", () => {
     expect(row?.publishedAt).toBeNull();
     expect(row?.observedAt).toEqual(expect.any(String));
     expect(row?.sortAt).toBe(row?.observedAt);
+  });
+
+  it("links a globally unique initiative mentioned by a cross-chamber feed item", async () => {
+    const senate = await upsertInitiative(
+      h.db,
+      fixture({
+        source: "senado-sil",
+        sourceId: "cross-chamber-feed-senate",
+        code: "01756-2026-SLO-SE",
+        chamber: "SENADO",
+      }),
+    );
+    const feed = await upsertFeedItem(
+      h.db,
+      {
+        source: "dip-oficial",
+        sourceId: "cross-chamber-feed",
+        kind: "OFFICIAL",
+        title: "Proyecto recibido del Senado",
+        chamber: "DIPUTADOS",
+      },
+      [
+        {
+          entityType: "INITIATIVE",
+          initiativeCode: "01756-2026-SLO-SE",
+          label: "01756-2026-SLO-SE",
+        },
+      ],
+    );
+    const [link] = await h.db
+      .select()
+      .from(feedItemEntities)
+      .where(eq(feedItemEntities.feedItemId, feed.id));
+
+    expect(link?.initiativeId).toBe(senate.id);
   });
 
   it("leaves code links unresolved when the exact code is not unique in scope", async () => {
