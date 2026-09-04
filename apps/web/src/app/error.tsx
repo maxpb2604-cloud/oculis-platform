@@ -34,6 +34,7 @@ export default function Error({
             : "An error occurred loading this page. You can retry."}
         </p>
         <button
+          type="button"
           onClick={reset}
           className="mt-5 rounded-lg px-4 py-2 text-sm font-medium"
           style={{ background: "var(--accent)", color: "#fff", cursor: "pointer" }}

@@ -144,8 +144,7 @@ a.dateArrow:hover {
   font-variant-numeric: tabular-nums;
 }
 
-.dateForm button,
-.quickDates a {
+.dateForm button {
   display: inline-flex;
   min-height: 44px;
   align-items: center;
@@ -160,27 +159,17 @@ a.dateArrow:hover {
   cursor: pointer;
 }
 
-.dateForm button:hover,
-.quickDates a:hover,
-.quickDates a[aria-current="date"] {
+.dateForm button:hover {
   border-color: var(--accent);
   background: var(--accent-soft);
   color: var(--accent);
-}
-
-.quickDates {
-  display: flex;
-  grid-column: 1;
-  flex-wrap: wrap;
-  gap: 8px;
-  padding-left: 54px;
 }
 
 .chamberRail {
   display: inline-grid;
   min-width: min(100%, 455px);
   grid-column: 2;
-  grid-row: 1 / span 2;
+  grid-row: 1;
   grid-template-columns: 1.15fr 0.85fr;
   gap: 5px;
   padding: 5px;
@@ -423,10 +412,6 @@ a.dateArrow:hover {
   .dateNavigation {
     grid-row-start: 2;
   }
-
-  .quickDates {
-    grid-row-start: 3;
-  }
 }
 
 @container congress-movements (max-width: 880px) {
@@ -454,10 +439,6 @@ a.dateArrow:hover {
 
   .dateForm label {
     grid-column: 1 / -1;
-  }
-
-  .quickDates {
-    padding-left: 54px;
   }
 
   .resultsHeader {
@@ -514,10 +495,6 @@ a.dateArrow:hover {
 
   .dateForm button {
     padding-inline: 12px;
-  }
-
-  .quickDates {
-    padding-left: 50px;
   }
 
   .movementActions {

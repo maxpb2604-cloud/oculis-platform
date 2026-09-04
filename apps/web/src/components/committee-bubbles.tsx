@@ -164,6 +164,7 @@ export function CommitteeBubbles({
         <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {filtered.map((g) => (
             <button
+              type="button"
               key={g.name}
               onClick={() => setOpenName(g.name)}
               className="card group flex flex-col gap-3 rounded-2xl p-4 text-left transition-all hover:-translate-y-0.5 hover:shadow-lg"
@@ -242,6 +243,7 @@ export function CommitteeBubbles({
                 </div>
               </div>
               <button
+                type="button"
                 onClick={() => setOpenName(null)}
                 aria-label={es ? "Cerrar" : "Close"}
                 className="shrink-0 rounded-lg px-2.5 py-1.5 text-xs font-semibold hover:bg-[var(--surface-2)]"

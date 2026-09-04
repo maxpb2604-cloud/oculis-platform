@@ -87,6 +87,7 @@ export function FeedFilters({
                 {activeLabel ?? entityFilter}
               </span>
               <button
+                type="button"
                 onClick={() =>
                   navigate({ initiativeCode: null, legislatorSourceId: null, commissionName: null })
                 }

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { useDeferredValue, useMemo, useState } from "react";
 import {
   ArrowRight,
@@ -181,7 +181,6 @@ export function CommissionsAgendas({
 }) {
   const lang = es ? "es" : "en";
   const locale = es ? "es-DO" : "en-US";
-  const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const chamber: Chamber = searchParams.get("chamber") === "senado" ? "senadores" : "diputados";
@@ -309,7 +308,7 @@ export function CommissionsAgendas({
         </div>
         <ChamberToggle
           value={chamber}
-          onChange={(next) => router.replace(pageHref({ chamber: next }), { scroll: false })}
+          hrefFor={(next) => pageHref({ chamber: next })}
           lang={lang}
         />
       </section>
@@ -350,7 +349,7 @@ export function CommissionsAgendas({
                         ? "Día"
                         : "Day";
                 return (
-                  <Link
+                  <a
                     key={view}
                     href={pageHref({ view })}
                     aria-current={selected ? "page" : undefined}
@@ -366,7 +365,7 @@ export function CommissionsAgendas({
                     }
                   >
                     {label}
-                  </Link>
+                  </a>
                 );
               })}
             </div>
@@ -399,26 +398,26 @@ export function CommissionsAgendas({
           <div className="card overflow-hidden">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3 sm:px-5">
               <div className="flex items-center gap-2">
-                <Link
+                <a
                   href={pageHref({ date: previousDate })}
                   className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg border transition-colors hover:bg-[var(--surface-2)]"
                   aria-label={es ? `${periodNoun} anterior` : `Previous ${periodNoun}`}
                 >
                   <CaretLeft size={18} aria-hidden />
-                </Link>
-                <Link
+                </a>
+                <a
                   href={pageHref({ date: nextDate })}
                   className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg border transition-colors hover:bg-[var(--surface-2)]"
                   aria-label={es ? `${periodNoun} siguiente` : `Next ${periodNoun}`}
                 >
                   <CaretRight size={18} aria-hidden />
-                </Link>
-                <Link
+                </a>
+                <a
                   href={pageHref({ date: today })}
                   className="inline-flex min-h-11 items-center rounded-lg border px-3 text-xs font-semibold transition-colors hover:bg-[var(--surface-2)]"
                 >
                   {es ? "Ir a hoy" : "Go to today"}
-                </Link>
+                </a>
               </div>
               <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-[var(--text-muted)]">
                 <span className="inline-flex items-center gap-1.5">
@@ -470,7 +469,7 @@ export function CommissionsAgendas({
                         }
                       >
                         <div className="flex items-start justify-between gap-1">
-                          <Link
+                          <a
                             href={pageHref({ date: cell.iso })}
                             aria-label={formatLongDate(cell.iso, es)}
                             aria-current={selected ? "date" : undefined}
@@ -487,7 +486,7 @@ export function CommissionsAgendas({
                             }
                           >
                             {cell.day}
-                          </Link>
+                          </a>
                           {meetings.length > 0 && (
                             <MeetingCount
                               count={meetings.length}
@@ -520,12 +519,12 @@ export function CommissionsAgendas({
                             );
                           })}
                           {meetings.length > 2 && (
-                            <Link
+                            <a
                               href={pageHref({ date: cell.iso })}
                               className="px-1.5 text-[10px] font-semibold text-[var(--text-muted)] hover:text-[var(--accent)]"
                             >
                               +{meetings.length - 2} {es ? "más" : "more"}
-                            </Link>
+                            </a>
                           )}
                         </div>
                       </div>
@@ -544,7 +543,7 @@ export function CommissionsAgendas({
                       className="min-h-[250px] min-w-0 bg-[var(--surface)] p-3"
                       style={selected ? { boxShadow: "inset 0 0 0 2px var(--accent)" } : undefined}
                     >
-                      <Link
+                      <a
                         href={pageHref({ date: iso })}
                         aria-current={selected ? "date" : undefined}
                         className="flex min-h-11 items-center justify-between gap-2 rounded-lg px-2 transition-colors hover:bg-[var(--surface-2)]"
@@ -564,7 +563,7 @@ export function CommissionsAgendas({
                             publicAgenda={meetings.some(hasPublicAgenda)}
                           />
                         )}
-                      </Link>
+                      </a>
                       <div className="mt-2 space-y-2">
                         {meetings.length > 0 ? (
                           meetings
@@ -583,12 +582,12 @@ export function CommissionsAgendas({
                           </p>
                         )}
                         {meetings.length > 4 && (
-                          <Link
+                          <a
                             href={pageHref({ date: iso, view: "day" })}
                             className="inline-flex min-h-9 items-center px-2 text-xs font-semibold text-[var(--accent)] hover:underline"
                           >
                             +{meetings.length - 4} {es ? "reuniones" : "meetings"}
-                          </Link>
+                          </a>
                         )}
                       </div>
                     </div>

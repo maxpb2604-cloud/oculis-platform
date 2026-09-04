@@ -243,6 +243,7 @@ export function ProvinceBubbleMap({
                 </div>
               </div>
               <button
+                type="button"
                 onClick={() => setSel(null)}
                 className="rounded-md px-2 py-1 text-[11px] font-semibold text-white/70 hover:text-white"
                 style={{ background: "rgba(255,255,255,0.08)" }}
@@ -268,6 +269,7 @@ export function ProvinceBubbleMap({
           {/* Sticky close button at the bottom */}
           <div className="border-t p-3" style={{ borderColor: "rgba(255,255,255,0.12)" }}>
             <button
+              type="button"
               onClick={() => setSel(null)}
               className="w-full rounded-lg py-2 text-[13px] font-semibold text-white transition hover:brightness-110"
               style={{ background: "rgba(255,255,255,0.12)" }}

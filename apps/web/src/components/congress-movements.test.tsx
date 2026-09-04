@@ -6,6 +6,7 @@ import {
   CongressMovements,
   congressMovementPdfHref,
   congressMovementsHref,
+  shiftCongressMovementDate,
 } from "./congress-movements";
 
 vi.mock("@/components/ui/primitives", () => ({
@@ -104,6 +105,9 @@ describe("CongressMovements", () => {
     expect(html).toContain('value="2026-08-31"');
     expect(html).toContain('aria-label="Seleccionar cámara legislativa"');
     expect(html).toContain('aria-current="page"');
+    expect(html).toContain('href="/feed?date=2026-08-30&amp;chamber=DIPUTADOS"');
+    expect(html).toContain('aria-label="Ya estás en el día de hoy"');
+    expect(html).toContain('aria-disabled="true"');
     expect(html).toContain("Cámara de Diputados");
     expect(html).toContain("Senado de la República");
     expect(html).toContain("Abrir PDF oficial");
@@ -112,7 +116,7 @@ describe("CongressMovements", () => {
     expect(html).not.toContain("Publicaciones registradas en catálogos monitoreados");
   });
 
-  it("keeps Today but omits the retired latest-record shortcut in both languages", () => {
+  it("omits the retired Today and latest-record shortcuts in both languages", () => {
     const spanish = renderToStaticMarkup(
       <CongressMovements
         day={{ ...day, selectedDate: "2026-08-29" }}
@@ -128,12 +132,18 @@ describe("CongressMovements", () => {
       />,
     );
 
-    expect(spanish).toContain(">Hoy</a>");
+    expect(spanish).not.toContain(">Hoy</a>");
     expect(spanish).not.toContain("Última fecha con registros");
     expect(spanish).not.toContain("Publicaciones registradas en catálogos monitoreados");
-    expect(english).toContain(">Today</a>");
+    expect(english).not.toContain(">Today</a>");
     expect(english).not.toContain("Latest date with records");
     expect(english).not.toContain("Publications recorded in monitored catalogs");
+  });
+
+  it("moves through adjacent calendar days instead of skipping empty dates", () => {
+    expect(shiftCongressMovementDate("2026-08-31", -1)).toBe("2026-08-30");
+    expect(shiftCongressMovementDate("2026-08-31", 1)).toBe("2026-09-01");
+    expect(shiftCongressMovementDate("2024-03-01", -1)).toBe("2024-02-29");
   });
 
   it("uses action-first linked headlines and keeps the complete initiative in its detail page", () => {

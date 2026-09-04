@@ -30,14 +30,12 @@ const copy = {
     dateLead: "Movimientos con fecha oficial y depósitos registrados por las fuentes del Congreso.",
     movements: "Movimientos registrados",
     initiatives: "Iniciativas afectadas",
-    dateNavigation: "Navegar por fechas con movimientos registrados",
-    previous: "Día anterior con movimientos",
-    next: "Siguiente día con movimientos",
-    noPrevious: "No hay una fecha anterior disponible",
-    noNext: "No hay una fecha posterior disponible",
+    dateNavigation: "Navegar día por día",
+    previous: "Día anterior",
+    next: "Día siguiente",
+    noNext: "Ya estás en el día de hoy",
     chooseDate: "Elegir otra fecha",
     viewDate: "Ver fecha",
-    today: "Hoy",
     chamberNavigation: "Seleccionar cámara legislativa",
     diputados: "Cámara de Diputados",
     senado: "Senado de la República",
@@ -64,14 +62,12 @@ const copy = {
     dateLead: "Source-dated movements and filings recorded from official congressional sources.",
     movements: "Recorded movements",
     initiatives: "Affected initiatives",
-    dateNavigation: "Browse dates with recorded movements",
-    previous: "Previous day with movements",
-    next: "Next day with movements",
-    noPrevious: "No earlier date is available",
-    noNext: "No later date is available",
+    dateNavigation: "Browse one day at a time",
+    previous: "Previous day",
+    next: "Next day",
+    noNext: "You are already viewing today",
     chooseDate: "Choose another date",
     viewDate: "View date",
-    today: "Today",
     chamberNavigation: "Select legislative chamber",
     diputados: "Chamber of Deputies",
     senado: "Senate of the Republic",
@@ -113,26 +109,36 @@ export function congressMovementsHref({
   return `/feed?${params.toString()}`;
 }
 
+export function shiftCongressMovementDate(date: string, amount: -1 | 1): string {
+  const [year, month, day] = date.split("-").map(Number);
+  const shifted = new Date(Date.UTC(year!, month! - 1, day!));
+  shifted.setUTCDate(shifted.getUTCDate() + amount);
+  return shifted.toISOString().slice(0, 10);
+}
+
 function DateLink({
   direction,
-  date,
+  selectedDate,
+  today,
   chamber,
   lang,
 }: {
   direction: "previous" | "next";
-  date: string | null;
+  selectedDate: string;
+  today: string;
   chamber: CongressMovementChamber;
   lang: Lang;
 }) {
   const labels = copy[lang];
   const isPrevious = direction === "previous";
   const label = isPrevious ? labels.previous : labels.next;
-  const unavailable = isPrevious ? labels.noPrevious : labels.noNext;
   const Icon = isPrevious ? ArrowLeft : ArrowRight;
+  const date = shiftCongressMovementDate(selectedDate, isPrevious ? -1 : 1);
+  const unavailable = !isPrevious && date > today;
 
-  if (!date) {
+  if (unavailable) {
     return (
-      <span className={styles.dateArrow} aria-label={unavailable} aria-disabled="true">
+      <span className={styles.dateArrow} aria-label={labels.noNext} aria-disabled="true">
         <Icon size={18} aria-hidden="true" />
       </span>
     );
@@ -145,14 +151,14 @@ function DateLink({
     year: "numeric",
   });
   return (
-    <Link
+    <a
       href={congressMovementsHref({ date, chamber, lang })}
       className={styles.dateArrow}
       aria-label={`${label}: ${humanDate}`}
       title={`${label}: ${humanDate}`}
     >
       <Icon size={18} aria-hidden="true" />
-    </Link>
+    </a>
   );
 }
 
@@ -174,7 +180,7 @@ function ChamberNavigation({
   return (
     <nav className={styles.chamberRail} aria-label={labels.chamberNavigation}>
       {chambers.map((item) => (
-        <Link
+        <a
           key={item.key}
           href={congressMovementsHref({ date, chamber: item.key, lang })}
           className={styles.chamberButton}
@@ -182,7 +188,7 @@ function ChamberNavigation({
           data-active={item.key === chamber ? "true" : "false"}
         >
           {item.label}
-        </Link>
+        </a>
       ))}
     </nav>
   );
@@ -402,7 +408,8 @@ export function CongressMovements({ day, lang, today }: CongressMovementsProps) 
         <nav className={styles.dateNavigation} aria-label={labels.dateNavigation}>
           <DateLink
             direction="previous"
-            date={day.previousAvailableDate}
+            selectedDate={day.selectedDate}
+            today={today}
             chamber={day.chamber}
             lang={lang}
           />
@@ -427,20 +434,12 @@ export function CongressMovements({ day, lang, today }: CongressMovementsProps) 
 
           <DateLink
             direction="next"
-            date={day.nextAvailableDate}
+            selectedDate={day.selectedDate}
+            today={today}
             chamber={day.chamber}
             lang={lang}
           />
         </nav>
-
-        <div className={styles.quickDates}>
-          <Link
-            href={congressMovementsHref({ date: today, chamber: day.chamber, lang })}
-            aria-current={day.selectedDate === today ? "date" : undefined}
-          >
-            {labels.today}
-          </Link>
-        </div>
 
         <ChamberNavigation chamber={day.chamber} date={day.selectedDate} lang={lang} />
       </div>

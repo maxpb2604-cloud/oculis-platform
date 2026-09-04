@@ -52,6 +52,7 @@ export function Button({
 }) {
   return (
     <button
+      type={props.type ?? "button"}
       className={classes(
         "ui-button",
         variant === "primary" && "ui-button-primary",
