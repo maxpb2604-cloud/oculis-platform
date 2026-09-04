@@ -22,5 +22,3 @@ services:
         value: oculis-web-render
       - key: DATABASE_URL
         sync: false
-      - key: NEXT_PUBLIC_MAPBOX_TOKEN
-        sync: false
