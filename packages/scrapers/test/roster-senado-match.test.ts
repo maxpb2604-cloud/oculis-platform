@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { matchCardSlug, normalizeRosterName, parseProfileName } from "../src/roster-senado.js";
+import {
+  matchCardSlug,
+  matchCommissionMemberSlug,
+  normalizeRosterName,
+  parseProfileName,
+} from "../src/roster-senado.js";
 
 // A few real senator cards (short forms from the /senadores/ index).
 const CARDS = [
@@ -38,6 +43,33 @@ describe("roster-senado: matchCardSlug", () => {
 
   it("returns null when nothing meaningfully overlaps", () => {
     expect(matchCardSlug("Juan Carlos Mejía", CARDS)).toBeNull();
+  });
+});
+
+describe("roster-senado: reviewed commission identity literals", () => {
+  const currentCards = [
+    { slug: "bahoruco", name: "Andrés Guillermo Lama Pérez", role: null },
+    { slug: "santiago", name: "Daniel Enrique De Jesús Rivera Reyes", role: null },
+    { slug: "azua", name: "Lía Ynocencia Díaz De Díaz", role: null },
+  ];
+
+  it("links only exact reviewed Senate commission literals", () => {
+    expect(matchCommissionMemberSlug("Andrés Gullermo Lama Pérez", currentCards)).toBe("bahoruco");
+    expect(matchCommissionMemberSlug("Daniel Enrique Rivera", currentCards)).toBe("santiago");
+    expect(matchCommissionMemberSlug("Lia Diaz Santana De Dìaz", currentCards)).toBe("azua");
+  });
+
+  it("fails closed if the reviewed target is absent or duplicated", () => {
+    expect(
+      matchCommissionMemberSlug("Andrés Gullermo Lama Pérez", currentCards.slice(1)),
+    ).toBeNull();
+    expect(
+      matchCommissionMemberSlug("Andrés Gullermo Lama Pérez", [
+        currentCards[0]!,
+        { ...currentCards[0]!, name: "Otra tarjeta" },
+      ]),
+    ).toBeNull();
+    expect(matchCommissionMemberSlug("Andrés Lama", currentCards)).toBeNull();
   });
 });
 

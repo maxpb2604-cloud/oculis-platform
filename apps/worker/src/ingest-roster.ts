@@ -53,12 +53,7 @@ export function rosterMinimumError(source: string, count: number): string | null
 
 const SENATE_ROSTER_NO_EFFECTIVE_DATE =
   "roster-senado: el listado HTML de comisiones no publica una fecha exacta de vigencia; no se infiere ni se fabrica una.";
-const SENATE_ROSTER_EXACT_UNRESOLVED_COVERAGE =
-  "roster-senado: 50 de 251 membresías no tienen una coincidencia exacta y única de nombre; legislatorSourceId queda null.";
-const SENATE_ROSTER_AUDITED_COVERAGE = new Set([
-  SENATE_ROSTER_NO_EFFECTIVE_DATE,
-  SENATE_ROSTER_EXACT_UNRESOLVED_COVERAGE,
-]);
+const SENATE_ROSTER_AUDITED_COVERAGE = new Set([SENATE_ROSTER_NO_EFFECTIVE_DATE]);
 
 function hasExactAuditedSenateCoverage(reportedGaps: readonly string[]): boolean {
   return (
@@ -110,7 +105,7 @@ export function rosterSnapshotError(source: string, result: RosterResult): strin
     );
   if (
     result.memberships.length !== 251 ||
-    unresolvedMemberships !== 50 ||
+    unresolvedMemberships !== 0 ||
     legislatorSourceIds.size !== 32 ||
     uniqueMemberships.size !== 251 ||
     !structurallyValidRows ||
@@ -121,17 +116,17 @@ export function rosterSnapshotError(source: string, result: RosterResult): strin
       `se observaron ${result.legislators.length} legisladores, ` +
       `${result.memberships.length} membresías, ${unresolvedMemberships} sin coincidencia ` +
       `(${legislatorSourceIds.size}/${uniqueMemberships.size} claves únicas) y ` +
-      `${result.gaps.length} notas; se requieren exactamente 32/251/50, claves únicas ` +
-      "y las dos notas auditadas"
+      `${result.gaps.length} notas; se requieren exactamente 32/251/0, claves únicas ` +
+      "y la nota auditada sobre vigencia"
     );
   }
   return null;
 }
 
 /**
- * Keep the two audited upstream limitations visible without treating them as structural
- * drift. The exception applies only to the exact 32/251 snapshot with exactly 50
- * unresolved memberships; every other source message remains a structural gap.
+ * Keep the audited missing effective-date limitation visible without treating it as
+ * structural drift. Every membership must resolve to one of the exact 32 current seats;
+ * every other source message remains a structural gap.
  */
 export function classifyRosterGaps(
   source: string,
@@ -142,7 +137,7 @@ export function classifyRosterGaps(
     source === "roster-senado" &&
     counts.legislators === 32 &&
     counts.memberships === 251 &&
-    counts.unresolvedMemberships === 50;
+    counts.unresolvedMemberships === 0;
   const coverageNotes = auditedSenateSnapshot
     ? reportedGaps.filter((gap) => SENATE_ROSTER_AUDITED_COVERAGE.has(gap))
     : [];

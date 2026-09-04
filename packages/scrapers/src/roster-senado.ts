@@ -21,6 +21,35 @@ export const SENADO_ROSTER_URL = `${ORIGIN}/senadores-2024-2028/`;
 const SENADO_ROSTER_PERIOD = "2024-2028";
 const SENADO_COMMITTEES_URL = `${ORIGIN}/comisiones/lista-de-comisiones/`;
 
+/**
+ * Exact identity literals published by the Senate's commission-composition page that
+ * differ from the matching current-period profile. Each row was reviewed against the
+ * unique province profile below; this is deliberately an allow-list, never fuzzy name
+ * matching. Accent-only variants share one normalized key.
+ */
+const REVIEWED_COMMISSION_MEMBER_ALIASES: readonly {
+  officialLiteral: string;
+  rosterSourceId: string;
+}[] = [
+  { officialLiteral: "Andrés Guillermo Lama", rosterSourceId: "bahoruco" },
+  { officialLiteral: "Andrés Gullermo Lama Pérez", rosterSourceId: "bahoruco" },
+  {
+    officialLiteral: "Cristóbal Venerado Castillo Liriano",
+    rosterSourceId: "hato-mayor",
+  },
+  { officialLiteral: "Daniel Enrique Rivera", rosterSourceId: "santiago" },
+  { officialLiteral: "Daniel Enrique Rivera Reyes", rosterSourceId: "santiago" },
+  {
+    officialLiteral: "Ginette Altagracia Bournigal De Jiménez",
+    rosterSourceId: "puerto-plata",
+  },
+  { officialLiteral: "Héctor Acosta Restituyo", rosterSourceId: "monsenor-nouel" },
+  { officialLiteral: "Lía Díaz Santana De Díaz", rosterSourceId: "azua" },
+  { officialLiteral: "Odalis Rodriguez Rodrígez", rosterSourceId: "valverde" },
+  { officialLiteral: "Odalis Rodriguez Rodríguez", rosterSourceId: "valverde" },
+  { officialLiteral: "Omar Fernández Domínguez", rosterSourceId: "distrito-nacional" },
+];
+
 /** Province slug (from /provincia/{slug}) → display name aligned with the map dataset. */
 const SLUG_TO_PROVINCE: Record<string, string> = {
   azua: "Azua",
@@ -152,7 +181,7 @@ export class SenadoRosterAdapter {
     // A membership is linked to a profile only on one exact normalized full-name match.
     let unresolved = 0;
     for (const m of memberships) {
-      m.legislatorSourceId = matchCardSlug(m.legislatorName, resolvedCards);
+      m.legislatorSourceId = matchCommissionMemberSlug(m.legislatorName, resolvedCards);
       if (!m.legislatorSourceId) unresolved++;
     }
     if (unresolved > 0) {
@@ -322,7 +351,7 @@ export function parseSenadoCommissionMemberships(
       let identity = numbered[1]!.trim();
       let cargo: string | null = null;
       const cargoMatch = identity.match(
-        /,\s*(VICE\s*PRESIDENT[EA]|PRESIDENT[EA]|SECRETARI[OA]|MIEMBRO)\s*,?$/i,
+        /(?:,\s*|\s+)(VICE\s*PRESIDENT[EA]|PRESIDENT[EA]|SECRETARI[OA]|MIEMBRO)\s*,?$/i,
       );
       if (cargoMatch) {
         cargo = cargoMatch[1]!.trim();
@@ -493,6 +522,27 @@ export function matchCardSlug(memberName: string, cards: Card[]): string | null 
     ),
   );
   return matches.length === 1 ? matches[0]!.slug : null;
+}
+
+/**
+ * Resolve a commission member by an exact published profile alias first, then by the
+ * small reviewed allow-list above. The target must still exist exactly once in the live
+ * 32-seat roster, so stale or duplicated profile data fails closed.
+ */
+export function matchCommissionMemberSlug(memberName: string, cards: Card[]): string | null {
+  const direct = matchCardSlug(memberName, cards);
+  if (direct) return direct;
+
+  const key = normalizeRosterName(memberName);
+  if (!key) return null;
+  const reviewedTargets = new Set(
+    REVIEWED_COMMISSION_MEMBER_ALIASES.filter(
+      (row) => normalizeRosterName(row.officialLiteral) === key,
+    ).map((row) => row.rosterSourceId),
+  );
+  if (reviewedTargets.size !== 1) return null;
+  const target = [...reviewedTargets][0]!;
+  return cards.filter((card) => card.slug === target).length === 1 ? target : null;
 }
 
 function cleanName(value: string): string | null {

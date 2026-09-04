@@ -11,13 +11,10 @@ import {
 
 const NO_EFFECTIVE_DATE =
   "roster-senado: el listado HTML de comisiones no publica una fecha exacta de vigencia; no se infiere ni se fabrica una.";
-const EXACT_UNRESOLVED_COVERAGE =
-  "roster-senado: 50 de 251 membresías no tienen una coincidencia exacta y única de nombre; legislatorSourceId queda null.";
-
 function senateSnapshot({
   membershipCount = 251,
-  unresolvedMemberships = 50,
-  gaps = [NO_EFFECTIVE_DATE, EXACT_UNRESOLVED_COVERAGE],
+  unresolvedMemberships = 0,
+  gaps = [NO_EFFECTIVE_DATE],
 }: {
   membershipCount?: number;
   unresolvedMemberships?: number;
@@ -71,24 +68,24 @@ describe("roster cardinality thresholds", () => {
 });
 
 describe("roster gap classification", () => {
-  it("marks only the two audited 32/251 Senate gaps as COMPLETE coverage notes", () => {
+  it("marks only the audited effective-date omission as a COMPLETE coverage note", () => {
     const assessment = classifyRosterGaps(
       "roster-senado",
-      { legislators: 32, memberships: 251, unresolvedMemberships: 50 },
-      [NO_EFFECTIVE_DATE, EXACT_UNRESOLVED_COVERAGE],
+      { legislators: 32, memberships: 251, unresolvedMemberships: 0 },
+      [NO_EFFECTIVE_DATE],
     );
 
     assert.equal(assessment.outcome, "COMPLETE");
     assert.deepEqual(assessment.gaps, []);
-    assert.deepEqual(assessment.coverageNotes, [NO_EFFECTIVE_DATE, EXACT_UNRESOLVED_COVERAGE]);
+    assert.deepEqual(assessment.coverageNotes, [NO_EFFECTIVE_DATE]);
   });
 
-  it("keeps a 49/251 mismatch structural and PARTIAL", () => {
+  it("keeps any unresolved membership structural and PARTIAL", () => {
     const mismatch =
-      "roster-senado: 49 de 251 membresías no tienen una coincidencia exacta y única de nombre; legislatorSourceId queda null.";
+      "roster-senado: 1 de 251 membresías no tienen una coincidencia exacta y única de nombre; legislatorSourceId queda null.";
     const assessment = classifyRosterGaps(
       "roster-senado",
-      { legislators: 32, memberships: 251, unresolvedMemberships: 49 },
+      { legislators: 32, memberships: 251, unresolvedMemberships: 1 },
       [NO_EFFECTIVE_DATE, mismatch],
     );
 
@@ -97,41 +94,41 @@ describe("roster gap classification", () => {
     assert.deepEqual(assessment.gaps, [NO_EFFECTIVE_DATE, mismatch]);
   });
 
-  it("keeps every new message structural even beside the two audited notes", () => {
+  it("keeps every new message structural beside the audited note", () => {
     const newGap = "roster-senado: la estructura oficial cambió.";
     const assessment = classifyRosterGaps(
       "roster-senado",
-      { legislators: 32, memberships: 251, unresolvedMemberships: 50 },
-      [NO_EFFECTIVE_DATE, EXACT_UNRESOLVED_COVERAGE, newGap],
+      { legislators: 32, memberships: 251, unresolvedMemberships: 0 },
+      [NO_EFFECTIVE_DATE, newGap],
     );
 
     assert.equal(assessment.outcome, "PARTIAL");
-    assert.deepEqual(assessment.coverageNotes, [NO_EFFECTIVE_DATE, EXACT_UNRESOLVED_COVERAGE]);
+    assert.deepEqual(assessment.coverageNotes, [NO_EFFECTIVE_DATE]);
     assert.deepEqual(assessment.gaps, [newGap]);
   });
 });
 
 describe("Senate roster snapshot replacement gate", () => {
-  it("accepts only the exact audited 32/251/50 snapshot and its two known notes", () => {
+  it("accepts only the exact audited 32/251/0 snapshot and its known note", () => {
     assert.equal(rosterSnapshotError("roster-senado", senateSnapshot()), null);
     assert.match(
       rosterSnapshotError("roster-senado", senateSnapshot({ membershipCount: 250 })) ?? "",
-      /exactamente 32\/251\/50/,
+      /exactamente 32\/251\/0/,
     );
     assert.match(
-      rosterSnapshotError("roster-senado", senateSnapshot({ unresolvedMemberships: 49 })) ?? "",
-      /exactamente 32\/251\/50/,
+      rosterSnapshotError("roster-senado", senateSnapshot({ unresolvedMemberships: 1 })) ?? "",
+      /exactamente 32\/251\/0/,
     );
     assert.match(
-      rosterSnapshotError("roster-senado", senateSnapshot({ unresolvedMemberships: 51 })) ?? "",
-      /exactamente 32\/251\/50/,
+      rosterSnapshotError("roster-senado", senateSnapshot({ unresolvedMemberships: 50 })) ?? "",
+      /exactamente 32\/251\/0/,
     );
     assert.match(
       rosterSnapshotError(
         "roster-senado",
-        senateSnapshot({ gaps: [NO_EFFECTIVE_DATE, EXACT_UNRESOLVED_COVERAGE, "drift"] }),
+        senateSnapshot({ gaps: [NO_EFFECTIVE_DATE, "drift"] }),
       ) ?? "",
-      /dos notas auditadas/,
+      /nota auditada/,
     );
     const duplicatedSeat = senateSnapshot();
     duplicatedSeat.legislators[31] = {
@@ -165,8 +162,8 @@ describe("Senate roster snapshot replacement gate", () => {
 
       for (const partial of [
         senateSnapshot({ membershipCount: 250 }),
-        senateSnapshot({ unresolvedMemberships: 49 }),
-        senateSnapshot({ unresolvedMemberships: 51 }),
+        senateSnapshot({ unresolvedMemberships: 1 }),
+        senateSnapshot({ unresolvedMemberships: 50 }),
       ]) {
         const rejected = await runRosterSource(
           handle.db,

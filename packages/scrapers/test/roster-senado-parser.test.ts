@@ -117,7 +117,9 @@ describe("roster-senado: commission composition", () => {
         <p>Texto explicativo de la comisión.</p>
         <p><strong>1. RICARDO DE LOS SANTOS POLANCO, Presidente</strong><br />
         2. PEDRO MANUEL CATRAIN BONILLA<br />
-        3. CRISTÓBAL VENERADO CASTILLO LIRIANO,</p>
+        3. CRISTÓBAL VENERADO CASTILLO LIRIANO,<br />
+        4. HÉCTOR ACOSTA RESTITUYO Vicepresidenta<br />
+        5. PEDRO ANTONIO TINEO NÚÑEZ Vicepresidente</p>
       </div>
       <h5 class="et_pb_toggle_title">Salud Pública</h5>
       <div class="et_pb_toggle_content"><p>Sin composición numerada.</p></div>`;
@@ -137,6 +139,16 @@ describe("roster-senado: commission composition", () => {
         commissionName: "Administración interior",
         legislatorName: "Cristóbal Venerado Castillo Liriano",
         cargo: null,
+      }),
+      expect.objectContaining({
+        commissionName: "Administración interior",
+        legislatorName: "Héctor Acosta Restituyo",
+        cargo: "Vicepresidenta",
+      }),
+      expect.objectContaining({
+        commissionName: "Administración interior",
+        legislatorName: "Pedro Antonio Tineo Núñez",
+        cargo: "Vicepresidente",
       }),
     ]);
   });

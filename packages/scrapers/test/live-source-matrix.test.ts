@@ -28,8 +28,7 @@ interface SmokeRow {
 type FactualGapKind =
   | "DIPUTADOS_DAILY_PDF_NOT_PUBLISHED"
   | "SENATE_COMMISSION_DATE_NOT_PUBLISHED"
-  | "SENATE_ROSTER_EFFECTIVE_DATE_NOT_PUBLISHED"
-  | "SENATE_ROSTER_EXACT_MEMBERSHIP_UNMATCHED";
+  | "SENATE_ROSTER_EFFECTIVE_DATE_NOT_PUBLISHED";
 
 interface SmokeContract {
   /** A source must explicitly declare whether an empty official collection is valid. */
@@ -68,7 +67,6 @@ const SENATE_AGENDA_CONTRACT = requiredNonemptyWithFactualGaps(
 );
 const SENATE_ROSTER_CONTRACT = requiredNonemptyWithFactualGaps(
   "SENATE_ROSTER_EFFECTIVE_DATE_NOT_PUBLISHED",
-  "SENATE_ROSTER_EXACT_MEMBERSHIP_UNMATCHED",
 );
 
 function splitReportedGaps(gaps: readonly string[]): string[] {
@@ -101,13 +99,7 @@ function matchesFactualGapKind(gap: string, kind: FactualGapKind): boolean {
       gap,
     );
   }
-  // This is the audited 2024-2028 official roster snapshot: 32 seats expose 251
-  // committee memberships, of which 50 do not have one unique literal profile-name
-  // match. The call site separately pins both snapshot cardinalities, so any source or
-  // parser drift remains a hard failure.
-  return /^roster-senado: 50 de 251 membresías no tienen una coincidencia exacta y única de nombre; legislatorSourceId queda null\.$/.test(
-    gap,
-  );
+  return false;
 }
 
 function structuralGaps(gaps: readonly string[], contract: SmokeContract): string[] {
@@ -282,8 +274,19 @@ describe("read-only official source matrix gate", () => {
     });
   });
 
-  it("tolerates only the audited Senate roster mismatch cardinality", () => {
-    const audited = completedSmokeRow(
+  it("keeps any unresolved Senate roster membership as a structural failure", () => {
+    const complete = completedSmokeRow(
+      observedAt,
+      "roster-senado",
+      url,
+      {
+        count: 32,
+        secondaryCount: 251,
+        gaps: [],
+      },
+      SENATE_ROSTER_CONTRACT,
+    );
+    const unresolved = completedSmokeRow(
       observedAt,
       "roster-senado",
       url,
@@ -291,29 +294,15 @@ describe("read-only official source matrix gate", () => {
         count: 32,
         secondaryCount: 251,
         gaps: [
-          "roster-senado: 50 de 251 membresías no tienen una coincidencia exacta y única de nombre; legislatorSourceId queda null.",
-        ],
-      },
-      SENATE_ROSTER_CONTRACT,
-    );
-    const drift = completedSmokeRow(
-      observedAt,
-      "roster-senado",
-      url,
-      {
-        count: 32,
-        secondaryCount: 250,
-        gaps: [
-          "roster-senado: 49 de 250 membresías no tienen una coincidencia exacta y única de nombre; legislatorSourceId queda null.",
+          "roster-senado: 1 de 251 membresías no tienen una coincidencia exacta y única de nombre; legislatorSourceId queda null.",
         ],
       },
       SENATE_ROSTER_CONTRACT,
     );
 
-    expect(audited).toMatchObject({ ok: true, structuralGaps: [] });
-    expect(audited.gaps).toHaveLength(1);
-    expect(drift).toMatchObject({ ok: false });
-    expect(drift.structuralGaps).toHaveLength(1);
+    expect(complete).toMatchObject({ ok: true, structuralGaps: [] });
+    expect(unresolved).toMatchObject({ ok: false });
+    expect(unresolved.structuralGaps).toHaveLength(1);
   });
 });
 
