@@ -84,9 +84,8 @@ describe("formatISODateTime", () => {
 
 describe("formatOfficialTime", () => {
   it("shows a readable time without source-level seconds", () => {
-    expect(formatOfficialTime("09:30:00", "es")).toMatch(/9:30/i);
-    expect(formatOfficialTime("09:30:00", "es")).not.toContain(":00");
-    expect(formatOfficialTime("16:05", "en")).toMatch(/4:05/i);
+    expect(formatOfficialTime("09:30:00", "es")).toBe("9:30 a. m.");
+    expect(formatOfficialTime("16:05", "en")).toBe("4:05 PM");
   });
 
   it("fails closed for absent or malformed times", () => {

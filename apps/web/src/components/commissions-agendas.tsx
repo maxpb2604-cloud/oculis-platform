@@ -25,6 +25,13 @@ import {
   weekDates,
   type CommissionCalendarView,
 } from "@/lib/commission-calendar";
+import {
+  formatCommissionDayNumber as formatDayNumber,
+  formatCommissionLongDate as formatLongDate,
+  formatCommissionMonth as formatMonth,
+  formatCommissionWeek as formatWeek,
+  formatCommissionWeekday as formatWeekday,
+} from "@/lib/commission-calendar-labels";
 import { formatOfficialTime } from "@/lib/format";
 
 export interface CommissionSummary {
@@ -42,58 +49,6 @@ const WEEKDAYS = {
   es: ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"],
   en: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
 };
-
-function formatLongDate(iso: string, es: boolean) {
-  const formatted = new Intl.DateTimeFormat(es ? "es-DO" : "en-US", {
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-    timeZone: "UTC",
-  }).format(new Date(`${iso}T12:00:00Z`));
-  return formatted.charAt(0).toLocaleUpperCase(es ? "es-DO" : "en-US") + formatted.slice(1);
-}
-
-function formatMonth(iso: string, es: boolean) {
-  const formatted = new Intl.DateTimeFormat(es ? "es-DO" : "en-US", {
-    month: "long",
-    year: "numeric",
-    timeZone: "UTC",
-  }).format(new Date(`${iso.slice(0, 7)}-01T12:00:00Z`));
-  return formatted.charAt(0).toLocaleUpperCase(es ? "es-DO" : "en-US") + formatted.slice(1);
-}
-
-function formatWeek(isoDates: string[], es: boolean): string {
-  const locale = es ? "es-DO" : "en-US";
-  const formatPart = (iso: string, includeYear: boolean) =>
-    new Intl.DateTimeFormat(locale, {
-      day: "numeric",
-      month: "short",
-      ...(includeYear ? { year: "numeric" as const } : {}),
-      timeZone: "UTC",
-    }).format(new Date(`${iso}T12:00:00Z`));
-  const first = isoDates[0]!;
-  const last = isoDates.at(-1)!;
-  const sameYear = first.slice(0, 4) === last.slice(0, 4);
-  const range = `${formatPart(first, !sameYear)} – ${formatPart(last, true)}`;
-  return es ? `Semana del ${range}` : `Week of ${range}`;
-}
-
-function formatWeekday(iso: string, es: boolean): string {
-  const formatted = new Intl.DateTimeFormat(es ? "es-DO" : "en-US", {
-    weekday: "long",
-    timeZone: "UTC",
-  }).format(new Date(`${iso}T12:00:00Z`));
-  return formatted.charAt(0).toLocaleUpperCase(es ? "es-DO" : "en-US") + formatted.slice(1);
-}
-
-function formatDayNumber(iso: string, es: boolean): string {
-  return new Intl.DateTimeFormat(es ? "es-DO" : "en-US", {
-    day: "numeric",
-    month: "short",
-    timeZone: "UTC",
-  }).format(new Date(`${iso}T12:00:00Z`));
-}
 
 function displayMeetingTime(item: ActivityItem, lang: "es" | "en"): string | null {
   if (!item.eventTime) return null;
@@ -127,7 +82,6 @@ function sortMeetings(items: ActivityItem[]): ActivityItem[] {
 function groupCommissions(
   commissions: CommissionSummary[],
   meetings: ActivityItem[],
-  locale: string,
 ): CommissionGroup[] {
   const groups = new Map<string, CommissionGroup>();
 
@@ -158,7 +112,7 @@ function groupCommissions(
     .sort(
       (first, second) =>
         Number(second.meetings.length > 0) - Number(first.meetings.length > 0) ||
-        first.name.localeCompare(second.name, locale),
+        (first.key < second.key ? -1 : first.key > second.key ? 1 : 0),
     );
 }
 
@@ -257,8 +211,8 @@ export function CommissionsAgendas({
   const activeDays = new Set(periodItems.map((item) => item.eventDate).filter(Boolean)).size;
   const publicAgendaCount = periodItems.filter(hasPublicAgenda).length;
   const directory = useMemo(
-    () => groupCommissions(commissions, monthItems, locale),
-    [commissions, monthItems, locale],
+    () => groupCommissions(commissions, monthItems),
+    [commissions, monthItems],
   );
   const visibleDirectory = deferredQuery
     ? directory.filter((commission) =>
@@ -273,10 +227,10 @@ export function CommissionsAgendas({
   const grid = buildMonthGrid(selectedDate);
   const periodTitle =
     calendarView === "day"
-      ? formatLongDate(selectedDate, es)
+      ? formatLongDate(selectedDate, lang)
       : calendarView === "week"
-        ? formatWeek(selectedWeek, es)
-        : formatMonth(selectedDate, es);
+        ? formatWeek(selectedWeek, lang)
+        : formatMonth(selectedDate, lang);
   const previousDate = shiftCalendarView(selectedDate, calendarView, -1);
   const nextDate = shiftCalendarView(selectedDate, calendarView, 1);
   const periodNoun =
@@ -471,7 +425,7 @@ export function CommissionsAgendas({
                         <div className="flex items-start justify-between gap-1">
                           <a
                             href={pageHref({ date: cell.iso })}
-                            aria-label={formatLongDate(cell.iso, es)}
+                            aria-label={formatLongDate(cell.iso, lang)}
                             aria-current={selected ? "date" : undefined}
                             className="tnum inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold transition-colors hover:bg-[var(--accent-soft)]"
                             style={
@@ -550,10 +504,10 @@ export function CommissionsAgendas({
                       >
                         <span>
                           <span className="block text-xs font-semibold">
-                            {formatWeekday(iso, es)}
+                            {formatWeekday(iso, lang)}
                           </span>
                           <span className="tnum mt-0.5 block text-[11px] text-[var(--text-muted)]">
-                            {formatDayNumber(iso, es)}
+                            {formatDayNumber(iso, lang)}
                           </span>
                         </span>
                         {meetings.length > 0 && (
@@ -626,7 +580,7 @@ export function CommissionsAgendas({
                   {es ? "Agenda del día" : "Agenda for the day"}
                 </p>
                 <h3 className="serif mt-1.5 text-lg font-semibold">
-                  {formatLongDate(selectedDate, es)}
+                  {formatLongDate(selectedDate, lang)}
                 </h3>
                 <p className="mt-1 text-xs text-[var(--text-muted)]">
                   {selectedMeetings.length} {meetingCountLabel(selectedMeetings.length, es)}
@@ -742,7 +696,7 @@ export function CommissionsAgendas({
                     {referenceMeeting?.eventDate ? (
                       <div className="flex items-center gap-2 text-[var(--text-muted)]">
                         <CalendarBlank size={15} aria-hidden />
-                        <span>{formatLongDate(referenceMeeting.eventDate, es)}</span>
+                        <span>{formatLongDate(referenceMeeting.eventDate, lang)}</span>
                       </div>
                     ) : (
                       <span className="text-[var(--text-muted)]">
@@ -786,7 +740,7 @@ export function CommissionsAgendas({
       {openCommission && (
         <CommissionDialog
           commission={openCommission}
-          month={formatMonth(selectedDate, es)}
+          month={formatMonth(selectedDate, lang)}
           es={es}
           agendaHref={agendaHref}
           onClose={() => setOpenCommissionKey(null)}
@@ -994,7 +948,7 @@ function CommissionDialog({
             {commission.meetings.map((meeting) => (
               <div key={meeting.id}>
                 <div className="px-5 pt-4 text-[11px] font-semibold text-[var(--text-muted)] sm:px-6">
-                  {meeting.eventDate ? formatLongDate(meeting.eventDate, es) : null}
+                  {meeting.eventDate ? formatLongDate(meeting.eventDate, es ? "es" : "en") : null}
                 </div>
                 <MeetingLink meeting={meeting} href={agendaHref(meeting)} es={es} />
               </div>

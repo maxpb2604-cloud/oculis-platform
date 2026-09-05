@@ -75,9 +75,7 @@ export function formatOfficialTime(value: string | null | undefined, lang: Lang)
   const second = match[3] == null ? 0 : Number(match[3]);
   if (hour > 23 || minute > 59 || second > 59) return missing;
 
-  return new Intl.DateTimeFormat(lang === "es" ? "es-DO" : "en-US", {
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-  }).format(new Date(2000, 0, 1, hour, minute, second));
+  const twelveHour = hour % 12 || 12;
+  const meridiem = lang === "es" ? (hour < 12 ? "a. m." : "p. m.") : hour < 12 ? "AM" : "PM";
+  return `${twelveHour}:${String(minute).padStart(2, "0")} ${meridiem}`;
 }
