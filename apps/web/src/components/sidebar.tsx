@@ -10,7 +10,6 @@ import {
   Buildings,
   CalendarDots,
   Database,
-  FileMagnifyingGlass,
   Gavel,
   House,
   List,
@@ -203,11 +202,10 @@ function Navigation({ lang, onNavigate }: { lang: Lang; onNavigate?: () => void 
       icon: CalendarDots,
     },
     {
-      href: "/regulatorio/consultas",
-      label: es ? "Consultas públicas" : "Public consultations",
-      icon: FileMagnifyingGlass,
+      href: "/initiatives",
+      label: es ? "Librería de Iniciativas" : "Initiative Library",
+      icon: List,
     },
-    { href: "/initiatives", label: es ? "Iniciativas" : "Initiatives", icon: List },
     {
       href: "/regulatorio",
       label: es ? "Instrumentos regulatorios" : "Regulatory instruments",
@@ -215,7 +213,7 @@ function Navigation({ lang, onNavigate }: { lang: Lang; onNavigate?: () => void 
     },
     {
       href: "/congreso",
-      label: es ? "Legisladores y comisiones" : "Legislators and committees",
+      label: es ? "Directorio de Congresistas" : "Congressional Directory",
       icon: UserList,
     },
     {

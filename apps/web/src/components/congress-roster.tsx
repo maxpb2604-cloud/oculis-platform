@@ -9,21 +9,11 @@
  */
 import { useCallback, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import Link from "next/link";
 import { ChamberToggle, type Chamber } from "@/components/ui/chamber-toggle";
 import { LegislatorProfileTrigger } from "@/components/legislator-profile-provider";
 import { Button, SelectField, StatusPill } from "@/components/ui/primitives";
-import {
-  ArrowRight,
-  Buildings,
-  CalendarDots,
-  MagnifyingGlass,
-  UserList,
-  X,
-} from "@/components/ui/icons";
+import { ArrowRight, Buildings, MagnifyingGlass, UserList, X } from "@/components/ui/icons";
 import type { CongressCommission, LegislatorSummary } from "@/lib/data";
-import { activityDetailHref } from "@/lib/activity-links";
-import { formatISODate, formatOfficialTime } from "@/lib/format";
 import { partyColor, partyDisplayLabel } from "@/lib/party-presentation";
 
 function chamberLabel(chamber: string, es: boolean, long = false): string {
@@ -179,8 +169,8 @@ export function CongressRoster({
           </h2>
           <p className="page-subtitle mt-3">
             {es
-              ? "Elija una cámara y luego el tipo de información. Dentro de cada comisión verá únicamente las agendas vinculadas por nombre completo y cámara, sin coincidencias aproximadas."
-              : "Choose a chamber and then the type of information. Each committee shows only agendas linked by full name and chamber, without approximate matches."}
+              ? "Elija una cámara y luego el tipo de información. Dentro de cada comisión verá su composición y podrá abrir el perfil de cada integrante."
+              : "Choose a chamber and then the type of information. Each committee shows its composition and lets you open every member's profile."}
           </p>
         </div>
         <div className="min-w-0">
@@ -243,8 +233,8 @@ export function CongressRoster({
             title={es ? "Comisiones" : "Committees"}
             description={
               es
-                ? `${chamberCommissionCount} órganos · integrantes y agendas exactas vinculadas`
-                : `${chamberCommissionCount} bodies · members and exact linked agendas`
+                ? `${chamberCommissionCount} órganos · integrantes y composición oficial`
+                : `${chamberCommissionCount} bodies · members and official composition`
             }
             onClick={() => {
               setTab("comisiones");
@@ -580,9 +570,6 @@ function LegCard({ l, es }: { l: LegislatorSummary; es: boolean }) {
 
 function CommissionCard({ c, es }: { c: CongressCommission; es: boolean }) {
   const [open, setOpen] = useState(false);
-  const lang = es ? "es" : "en";
-  // Older server-rendered payloads can remain in a browser during a rolling deploy.
-  const agendas = [...(c.agendas ?? [])].sort((a, b) => b.eventDate.localeCompare(a.eventDate));
   const panelId = `commission-${c.chamber.toLowerCase()}-${norm(c.name).replace(/[^a-z0-9]+/g, "-")}`;
   return (
     <article className="card overflow-hidden">
@@ -597,19 +584,6 @@ function CommissionCard({ c, es }: { c: CongressCommission; es: boolean }) {
           <h3 className="serif text-base font-semibold leading-snug sm:text-lg">{c.name}</h3>
           <div className="mt-1 text-xs leading-relaxed text-[var(--text-muted)]">
             {c.members.length} {es ? "miembros" : "members"}
-            {agendas.length > 0 && (
-              <>
-                {" · "}
-                {agendas.length}{" "}
-                {es
-                  ? agendas.length === 1
-                    ? "agenda vinculada"
-                    : "agendas vinculadas"
-                  : agendas.length === 1
-                    ? "linked agenda"
-                    : "linked agendas"}
-              </>
-            )}
           </div>
         </div>
         <span className="inline-flex shrink-0 items-center gap-1.5 text-xs font-semibold text-[var(--accent)]">
@@ -623,76 +597,10 @@ function CommissionCard({ c, es }: { c: CongressCommission; es: boolean }) {
       </button>
       {open && (
         <div id={panelId} className="border-t px-4 py-5 sm:px-5">
-          <section aria-label={es ? "Reuniones registradas" : "Recorded meetings"}>
-            <h4 className="text-sm font-semibold">
-              {es ? "Agendas de esta comisión" : "This committee's agendas"}
-            </h4>
-            <p className="mt-1 max-w-3xl text-xs leading-relaxed text-[var(--text-muted)]">
-              {es
-                ? "Cada enlace abre la reunión de la fecha indicada. Desde allí puede abrir el PDF oficial exacto cuando la fuente lo haya publicado y Oculis lo haya verificado."
-                : "Each link opens the meeting for the stated date. From there, you can open the exact official PDF when the source has published it and Oculis has verified it."}
-            </p>
-            {agendas.length > 0 ? (
-              <ul className="mt-4 grid gap-3 sm:grid-cols-2">
-                {agendas.map((agenda) => {
-                  const date = formatISODate(agenda.eventDate, lang, {
-                    day: "numeric",
-                    month: "short",
-                    year: "numeric",
-                  });
-                  const time = agenda.eventTime ? formatOfficialTime(agenda.eventTime, lang) : null;
-                  return (
-                    <li key={agenda.id}>
-                      <Link
-                        href={activityDetailHref(agenda.id, lang)}
-                        aria-label={
-                          es
-                            ? `Abrir agenda de ${c.name} del ${date}`
-                            : `Open ${c.name} agenda for ${date}`
-                        }
-                        className="flex min-h-16 items-center justify-between gap-3 rounded-[var(--radius-md)] border px-3 py-3 text-sm transition-colors hover:border-[var(--accent)] hover:bg-[var(--accent-soft)]"
-                      >
-                        <span className="flex min-w-0 items-start gap-2.5">
-                          <CalendarDots
-                            size={20}
-                            aria-hidden="true"
-                            className="mt-0.5 shrink-0 text-[var(--accent)]"
-                          />
-                          <span className="min-w-0">
-                            <span className="block font-semibold text-[var(--text)]">
-                              {es ? `Agenda del ${date}` : `Agenda for ${date}`}
-                            </span>
-                            {(time || agenda.kind) && (
-                              <span className="mt-0.5 block truncate text-xs text-[var(--text-muted)]">
-                                {[time, agenda.kind].filter(Boolean).join(" · ")}
-                              </span>
-                            )}
-                          </span>
-                        </span>
-                        <ArrowRight
-                          size={17}
-                          aria-hidden="true"
-                          className="shrink-0 text-[var(--accent)]"
-                        />
-                      </Link>
-                    </li>
-                  );
-                })}
-              </ul>
-            ) : (
-              <div className="notice mt-4 text-sm" data-tone="warning">
-                {es
-                  ? "Oculis todavía no tiene una agenda pública vinculada por coincidencia exacta para esta comisión. Esto no significa que la comisión no se reúna."
-                  : "Oculis does not yet have a public agenda linked by an exact match for this committee. This does not mean the committee does not meet."}
-              </div>
-            )}
-          </section>
-          <h4 className="mb-3 mt-6 border-t pt-5 text-sm font-semibold">
-            {es ? "Integrantes" : "Members"}
-          </h4>
+          <h4 className="mb-3 text-sm font-semibold">{es ? "Integrantes" : "Members"}</h4>
           <ul className="grid gap-2 sm:grid-cols-2">
             {c.members.map((m, i) => {
-              const party = m.party ? partyDisplayLabel(m.party, null, lang) : null;
+              const party = m.party ? partyDisplayLabel(m.party, null, es ? "es" : "en") : null;
               const color = partyColor(m.party);
               return (
                 <li

@@ -18,13 +18,11 @@ export async function generateMetadata({
   return lang === "es"
     ? {
         title: "Actores del Congreso",
-        description:
-          "Directorio de legisladores y comisiones con agendas oficiales vinculadas por fecha.",
+        description: "Directorio de legisladores y composición de las comisiones del Congreso.",
       }
     : {
         title: "People and bodies in Congress",
-        description:
-          "Directory of legislators and committees with official agendas linked by date.",
+        description: "Directory of legislators and congressional committee membership.",
       };
 }
 
@@ -43,8 +41,8 @@ export default async function CongresoPage({
       title={es ? "Actores del Congreso" : "People and bodies in Congress"}
       subtitle={
         es
-          ? "Encuentre legisladores, conozca sus comisiones y abra la agenda exacta de cada reunión vinculada"
-          : "Find legislators, review their committees, and open the exact agenda for each linked meeting"
+          ? "Encuentre legisladores y consulte la composición oficial de cada comisión"
+          : "Find legislators and review the official membership of every committee"
       }
     >
       {legislators.length === 0 ? (

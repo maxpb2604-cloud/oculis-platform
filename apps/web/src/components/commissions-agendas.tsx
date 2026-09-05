@@ -424,8 +424,12 @@ export function CommissionsAgendas({
                       >
                         <div className="flex items-start justify-between gap-1">
                           <a
-                            href={pageHref({ date: cell.iso })}
-                            aria-label={formatLongDate(cell.iso, lang)}
+                            href={pageHref({ date: cell.iso, view: "day" })}
+                            aria-label={
+                              es
+                                ? `${formatLongDate(cell.iso, lang)} · abrir vista diaria`
+                                : `${formatLongDate(cell.iso, lang)} · open day view`
+                            }
                             aria-current={selected ? "date" : undefined}
                             className="tnum inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold transition-colors hover:bg-[var(--accent-soft)]"
                             style={
@@ -474,7 +478,7 @@ export function CommissionsAgendas({
                           })}
                           {meetings.length > 2 && (
                             <a
-                              href={pageHref({ date: cell.iso })}
+                              href={pageHref({ date: cell.iso, view: "day" })}
                               className="px-1.5 text-[10px] font-semibold text-[var(--text-muted)] hover:text-[var(--accent)]"
                             >
                               +{meetings.length - 2} {es ? "más" : "more"}
@@ -498,7 +502,12 @@ export function CommissionsAgendas({
                       style={selected ? { boxShadow: "inset 0 0 0 2px var(--accent)" } : undefined}
                     >
                       <a
-                        href={pageHref({ date: iso })}
+                        href={pageHref({ date: iso, view: "day" })}
+                        aria-label={
+                          es
+                            ? `${formatLongDate(iso, lang)} · abrir vista diaria`
+                            : `${formatLongDate(iso, lang)} · open day view`
+                        }
                         aria-current={selected ? "date" : undefined}
                         className="flex min-h-11 items-center justify-between gap-2 rounded-lg px-2 transition-colors hover:bg-[var(--surface-2)]"
                       >
