@@ -78,7 +78,7 @@ import { initiativeProceduralFacts } from "./initiative-procedural-facts";
 import { selectHomeDirectoryPortraits } from "./home-directory-promo";
 import type { Lang } from "./i18n";
 import { resolvePartyPresentation } from "./party-presentation";
-import { isExplicitlyActiveRegulation } from "./regulatory-status";
+import { classifyRegulatoryActivity, type RegulatoryActivityState } from "./regulatory-status";
 
 export type FeedFilters = Omit<DbFeedFilters, "category">;
 export type FeedCursor = DbFeedCursor;
@@ -1161,36 +1161,94 @@ export const getCommissionsWithMembers = unstable_cache(
 export interface RegulatoryInstitutionSummary {
   key: string;
   count: number;
+  openCount: number;
   activeCount: number;
+  upcomingCount: number;
+  inProcessCount: number;
+  unknownCount: number;
   statusReportedCount: number;
+  deadlineReportedCount: number;
   latestPublishedAt: string | null;
+}
+
+function normalizedRegulationIdentity(item: RegulationFact): string {
+  const title = item.title
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+  return `${item.institution}|${title}`;
+}
+
+function deduplicateRegulationFacts(items: RegulationFact[]): RegulationFact[] {
+  const unique = new Map<string, RegulationFact>();
+  for (const item of items) {
+    const key = normalizedRegulationIdentity(item);
+    const current = unique.get(key);
+    if (!current || (current.source === "reg-rumr" && item.source !== "reg-rumr")) {
+      unique.set(key, item);
+    }
+  }
+  return [...unique.values()].sort((a, b) =>
+    (b.publishedAt ?? "").localeCompare(a.publishedAt ?? ""),
+  );
+}
+
+const REGULATORY_STATE_RANK: Record<RegulatoryActivityState, number> = {
+  OPEN: 0,
+  UPCOMING: 1,
+  IN_PROCESS: 2,
+  UNKNOWN: 3,
+  CLOSED: 4,
+};
+
+function sortRegulationsByRelevance(items: RegulationFact[]): RegulationFact[] {
+  return [...items].sort(
+    (a, b) =>
+      REGULATORY_STATE_RANK[a.activityState] - REGULATORY_STATE_RANK[b.activityState] ||
+      (b.publishedAt ?? "").localeCompare(a.publishedAt ?? ""),
+  );
 }
 
 export async function getRegulatoryOverview(opts: { institution?: string } = {}) {
   const d = await db();
   const rawKpis = await regulatoryKpis(d);
   const rows = rawKpis.total > 0 ? await listRegulations(d, { limit: rawKpis.total }) : [];
-  const facts = rows.map(toRegulationFact);
+  const today = todayISO();
+  const facts = deduplicateRegulationFacts(rows.map((row) => toRegulationFact(row, today)));
   const groups = new Map<string, RegulatoryInstitutionSummary>();
 
   for (const item of facts) {
     const summary = groups.get(item.institution) ?? {
       key: item.institution,
       count: 0,
+      openCount: 0,
       activeCount: 0,
+      upcomingCount: 0,
+      inProcessCount: 0,
+      unknownCount: 0,
       statusReportedCount: 0,
+      deadlineReportedCount: 0,
       latestPublishedAt: null,
     };
     summary.count += 1;
     if (item.status?.trim()) summary.statusReportedCount += 1;
-    if (isExplicitlyActiveRegulation(item.status)) summary.activeCount += 1;
+    if (item.deadline) summary.deadlineReportedCount += 1;
+    if (item.activityState === "OPEN") {
+      summary.openCount += 1;
+      summary.activeCount += 1;
+    }
+    if (item.activityState === "UPCOMING") summary.upcomingCount += 1;
+    if (item.activityState === "IN_PROCESS") summary.inProcessCount += 1;
+    if (item.activityState === "UNKNOWN") summary.unknownCount += 1;
     if (!summary.latestPublishedAt && item.publishedAt)
       summary.latestPublishedAt = item.publishedAt;
     groups.set(item.institution, summary);
   }
 
   const byInstitution = [...groups.values()].sort(
-    (a, b) => b.count - a.count || a.key.localeCompare(b.key),
+    (a, b) => b.openCount - a.openCount || b.count - a.count || a.key.localeCompare(b.key),
   );
   const requestedInstitution = opts.institution?.trim();
   const selectedInstitution = requestedInstitution
@@ -1199,28 +1257,43 @@ export async function getRegulatoryOverview(opts: { institution?: string } = {})
 
   return {
     kpis: {
-      total: rawKpis.total,
-      consultas: rawKpis.consultas,
-      institutions: rawKpis.institutions,
-      active: byInstitution.reduce((total, item) => total + item.activeCount, 0),
+      total: facts.length,
+      consultas: facts.filter((item) => item.isConsulta).length,
+      institutions: byInstitution.length,
+      active: facts.filter((item) => item.activityState === "OPEN").length,
+      openToday: facts.filter((item) => item.activityState === "OPEN").length,
+      upcoming: facts.filter((item) => item.activityState === "UPCOMING").length,
+      inProcess: facts.filter((item) => item.activityState === "IN_PROCESS").length,
+      unknown: facts.filter((item) => item.activityState === "UNKNOWN").length,
+      withDeadline: facts.filter((item) => item.deadline).length,
     },
     byInstitution,
+    openByInstitution: byInstitution.filter((item) => item.openCount > 0),
     recent: facts.slice(0, 40),
     selectedInstitution,
     selectedRegulations: selectedInstitution
-      ? facts.filter((item) => item.institution === selectedInstitution)
+      ? sortRegulationsByRelevance(
+          facts.filter((item) => item.institution === selectedInstitution),
+        )
       : [],
   };
 }
 
 export async function getConsultas() {
   const d = await db();
-  const rows = await listRegulations(d, { consultaOnly: true, limit: 100 });
-  return rows.map(toRegulationFact);
+  const rawKpis = await regulatoryKpis(d);
+  const rows = await listRegulations(d, {
+    consultaOnly: true,
+    limit: Math.max(rawKpis.consultas, 100),
+  });
+  return sortRegulationsByRelevance(
+    deduplicateRegulationFacts(rows.map((row) => toRegulationFact(row, todayISO()))),
+  );
 }
 
 export interface RegulationFact {
   id: number;
+  source: string;
   institution: string;
   regType: string | null;
   title: string;
@@ -1229,13 +1302,16 @@ export interface RegulationFact {
   publishedAt: string | null;
   deadline: string | null;
   url: string | null;
+  activityState: RegulatoryActivityState;
 }
 
 function toRegulationFact(
   row: Awaited<ReturnType<typeof listRegulations>>[number],
+  today: string,
 ): RegulationFact {
   return {
     id: row.id,
+    source: row.source,
     institution: row.institution,
     regType: row.regType,
     title: row.title,
@@ -1244,6 +1320,7 @@ function toRegulationFact(
     publishedAt: row.publishedAt,
     deadline: row.deadline,
     url: safeHttpUrl(row.url),
+    activityState: classifyRegulatoryActivity(row, today),
   };
 }
 

@@ -5,7 +5,10 @@
  * crucially, **public consultations** of draft norms (where there's still room to
  * intervene). Adapters map each source into a canonical `RawRegulation`.
  *
- * Phase-1 adapters:
+ * Official-registry and direct-source adapters:
+ *  - RumrAdapter          — national Registro Único de Mejora Regulatoria.
+ *  - MispasConsultasAdapter — current MISPAS consultation notices and deadlines.
+ *  - SbConsultasAdapter   — Superintendencia de Bancos consultation catalog.
  *  - MispasAdapter        — MISPAS (Salud) official transparency WPFD catalog.
  *  - ProconsumidorAdapter — PROCONSUMIDOR public-consultations page (static HTML).
  *  - IndotelAdapter       — INDOTEL (telecom) WordPress JSON Feed: resoluciones + consulta pública.
@@ -30,6 +33,11 @@ export interface RawRegulation {
   deadline: string | null;
   url: string | null;
   raw: unknown;
+}
+
+export interface RegulatoryCollection {
+  regulations: RawRegulation[];
+  gaps: string[];
 }
 
 /** Extract a regulation type only when the title literally names it. */
@@ -412,6 +420,275 @@ function parseSpanishLongDate(s: string): string | null {
   if (!m) return null;
   const mm = spanishMonthToNum(m[2]!);
   return mm ? buildISODate(m[1]!, mm, m[3]!) : null;
+}
+
+function parseNumericDate(s: string): string | null {
+  const match = s.match(/\b(\d{1,2})\s*\/\s*(\d{1,2})\s*\/\s*(\d{4})\b/);
+  return match ? buildISODate(match[1]!, match[2]!.padStart(2, "0"), match[3]!) : null;
+}
+
+function absoluteUrl(value: string | null | undefined, base: string): string | null {
+  if (!value) return null;
+  try {
+    return new URL(decodeHtmlEntities(value), base).toString();
+  } catch {
+    return null;
+  }
+}
+
+// --- Registro Único de Mejora Regulatoria (RUMR) ---
+interface RumrRelation extends Array<string | number> {
+  0: number;
+  1: string;
+}
+
+interface RumrInitiative {
+  id?: number;
+  x_name?: unknown;
+  x_studio_descripcion?: unknown;
+  x_studio_institucion?: RumrRelation | false | null;
+  x_studio_stage_id?: RumrRelation | false | null;
+  x_studio_tipos_de_regulacion?: RumrRelation | false | null;
+  x_studio_accin_regulatoria?: unknown;
+  x_studio_inicio_consulta_publica?: unknown;
+  x_studio_finalizacion_consulta_publica?: unknown;
+}
+
+interface RumrPage {
+  data?: RumrInitiative[];
+  meta?: { page?: number; totalPages?: number; totalItems?: number };
+}
+
+const RUMR_INSTITUTION_ALIASES: Readonly<Record<string, string>> = {
+  "Instituto Dominicano de las Telecomunicaciones (INDOTEL)": "INDOTEL",
+  "Ministerio de Medio Ambiente y Recursos Naturales (MIMARENA)": "MIMARENA",
+  "Superintendencia de Salud y Riesgos Laborales (SISALRIL)": "SISALRIL",
+  "Superintendencia de Seguros (SUPERSEGURO)": "SUPERSEGURO",
+  "Superintendencia del Mercado de Valores (SIMV)": "SIMV",
+};
+
+function rumrRelationLabel(value: RumrRelation | false | null | undefined): string | null {
+  return Array.isArray(value) && typeof value[1] === "string" ? cleanTitle(value[1]) : null;
+}
+
+export function rumrInstitutionKey(value: RumrInitiative["x_studio_institucion"]): string | null {
+  const label = rumrRelationLabel(value);
+  if (!label) return null;
+  if (RUMR_INSTITUTION_ALIASES[label]) return RUMR_INSTITUTION_ALIASES[label]!;
+  const acronym = label.match(/\(([A-ZÁÉÍÓÚÑ0-9-]{2,20})\)\s*$/)?.[1];
+  return acronym ?? label;
+}
+
+/** Parse one official RUMR API page. Institution-less demo/test rows are excluded. */
+export function parseRumrInitiatives(payload: unknown): RawRegulation[] {
+  if (!payload || typeof payload !== "object") return [];
+  const page = payload as RumrPage;
+  if (!Array.isArray(page.data)) return [];
+  const portal = "https://regulaciones.digital.gob.do";
+  return page.data.flatMap((item): RawRegulation[] => {
+    const id = Number(item.id);
+    const title = typeof item.x_name === "string" ? cleanTitle(item.x_name) : "";
+    const institution = rumrInstitutionKey(item.x_studio_institucion);
+    if (!Number.isSafeInteger(id) || id <= 0 || !title || !institution) return [];
+    const status = rumrRelationLabel(item.x_studio_stage_id);
+    const regType = rumrRelationLabel(item.x_studio_tipos_de_regulacion);
+    const publishedAt =
+      typeof item.x_studio_inicio_consulta_publica === "string"
+        ? extractLeadingISODate(item.x_studio_inicio_consulta_publica)
+        : null;
+    const deadline =
+      typeof item.x_studio_finalizacion_consulta_publica === "string"
+        ? extractLeadingISODate(item.x_studio_finalizacion_consulta_publica)
+        : null;
+    const final = normalizeSourceText(status ?? "") === "finalizada";
+    return [
+      {
+        source: "reg-rumr",
+        sourceId: String(id),
+        institution,
+        regType,
+        title,
+        status,
+        sourceCategory:
+          typeof item.x_studio_accin_regulatoria === "string"
+            ? cleanTitle(item.x_studio_accin_regulatoria)
+            : "Registro Único de Mejora Regulatoria",
+        isConsulta: Boolean(publishedAt || deadline),
+        publishedAt,
+        deadline,
+        url: `${portal}/${final ? "inventario-regulatorio" : "agenda-regulatoria"}/${id}`,
+        raw: {
+          payload: item,
+          provenance: {
+            sourceUrl: `${portal}/`,
+            officialSection: "Registro Único de Mejora Regulatoria",
+          },
+        },
+      },
+    ];
+  });
+}
+
+function normalizeSourceText(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase();
+}
+
+/** National registry: every institution currently represented in the official RUMR. */
+export class RumrAdapter {
+  readonly source = "reg-rumr";
+  readonly institution = "RUMR";
+  constructor(
+    private readonly api = "https://odoo-rumr-services-feat-adding-consulta-filter-rur5zv5axa-ue.a.run.app",
+  ) {}
+
+  private pageUrl(page: number) {
+    return `${this.api}/initiatives/?page=${page}&size=100&files=0`;
+  }
+
+  async collect(): Promise<RegulatoryCollection> {
+    const first = await fetchJson<RumrPage>(this.pageUrl(1), { timeoutMs: 30_000 });
+    const totalPages = Math.max(1, Number(first.meta?.totalPages) || 1);
+    const regulations = parseRumrInitiatives(first);
+    for (let page = 2; page <= totalPages; page++) {
+      const payload = await fetchJson<RumrPage>(this.pageUrl(page), { timeoutMs: 30_000 });
+      regulations.push(...parseRumrInitiatives(payload));
+    }
+    if (regulations.length === 0) {
+      throw new Error("RUMR · el registro oficial no devolvió iniciativas institucionales.");
+    }
+    return { regulations, gaps: [] };
+  }
+}
+
+// --- MISPAS current public consultations ---
+interface MispasPost {
+  id?: number;
+  date?: string;
+  link?: string;
+  title?: { rendered?: string };
+  content?: { rendered?: string };
+}
+
+function lastSpanishParenthesizedDate(value: string): string | null {
+  const matches = [
+    ...strip(value).matchAll(/\((\d{1,2})\)\s+de\s+([A-Za-zñÑáéíóúÁÉÍÓÚ]+)\s+de\s+(\d{4})/g),
+  ];
+  const match = matches.at(-1);
+  if (!match) return null;
+  const month = spanishMonthToNum(match[2]!);
+  return month ? buildISODate(match[1]!, month, match[3]!) : null;
+}
+
+export function parseMispasConsultations(payload: unknown): RawRegulation[] {
+  if (!Array.isArray(payload)) return [];
+  const base = "https://www.msp.gob.do";
+  return (payload as MispasPost[]).flatMap((post): RawRegulation[] => {
+    const id = Number(post.id);
+    const title = cleanTitle(post.title?.rendered ?? "");
+    if (!Number.isSafeInteger(id) || id <= 0 || !/^llamado a consulta p[uú]blica\b/i.test(title)) {
+      return [];
+    }
+    const publishedAt = extractLeadingISODate(post.date);
+    const deadline = lastSpanishParenthesizedDate(post.content?.rendered ?? "");
+    return [
+      {
+        source: "reg-mispas-consultas",
+        sourceId: String(id),
+        institution: "MISPAS",
+        regType: explicitRegTypeFromTitle(title),
+        title,
+        status: "Consulta pública",
+        sourceCategory: "Consultas públicas",
+        isConsulta: true,
+        publishedAt,
+        deadline,
+        url: absoluteUrl(post.link, base),
+        raw: {
+          payload: post,
+          provenance: {
+            sourceUrl: `${base}/web/Transparencia/`,
+            officialSection: "Llamados a consulta pública",
+          },
+        },
+      },
+    ];
+  });
+}
+
+export class MispasConsultasAdapter {
+  readonly source = "reg-mispas-consultas";
+  readonly institution = "MISPAS";
+  constructor(
+    private readonly endpoint = "https://www.msp.gob.do/web/Transparencia/wp-json/wp/v2/posts?search=consulta%20publica&per_page=100&orderby=date&order=desc&_fields=id,date,link,title,content",
+  ) {}
+
+  async collect(): Promise<RegulatoryCollection> {
+    const payload = await fetchJson<unknown>(this.endpoint, { timeoutMs: 30_000 });
+    const regulations = parseMispasConsultations(payload);
+    if (regulations.length === 0) {
+      throw new Error("MISPAS consultas · la fuente oficial no devolvió llamados verificables.");
+    }
+    return { regulations, gaps: [] };
+  }
+}
+
+// --- Superintendencia de Bancos public consultations ---
+export function parseSbConsultations(html: string, pageUrl: string): RawRegulation[] {
+  const regulations: RawRegulation[] = [];
+  const blocks = html.split(
+    /<div\b[^>]*class=["'][^"']*\bdownloadable_document_card\b[^"']*["'][^>]*>/gi,
+  );
+  for (const block of blocks.slice(1)) {
+    const titleMatch = block.match(
+      /<a\b[^>]*class=["'][^"']*\btitle\b[^"']*["'][^>]*>([\s\S]*?)<\/a>/i,
+    );
+    const detailHref =
+      block.match(/<a\b[^>]*class=["'][^"']*\btitle\b[^"']*["'][^>]*href=["']([^"']+)["']/i)?.[1] ??
+      block.match(/<a\b[^>]*href=["']([^"']+)["'][^>]*class=["'][^"']*\btitle\b/i)?.[1];
+    const title = titleMatch ? cleanTitle(titleMatch[1]!) : "";
+    if (!title) continue;
+    const publication =
+      block.match(/Publicaci[oó]n:\s*<span[^>]*class=["']value["'][^>]*>([^<]+)/i)?.[1] ?? "";
+    const expiration =
+      block.match(/Vencimiento:\s*<span[^>]*class=["']value["'][^>]*>([^<]+)/i)?.[1] ?? "";
+    regulations.push({
+      source: "reg-sb-consultas",
+      sourceId: absoluteUrl(detailHref, pageUrl) ?? title,
+      institution: "SB",
+      regType: explicitRegTypeFromTitle(title),
+      title,
+      status: "Consulta pública",
+      sourceCategory: "Consultas públicas",
+      isConsulta: true,
+      publishedAt: parseNumericDate(publication),
+      deadline: parseNumericDate(expiration),
+      url: absoluteUrl(detailHref, pageUrl),
+      raw: {
+        payload: { title, publication, expiration },
+        provenance: { sourceUrl: pageUrl, officialSection: "Consultas públicas" },
+      },
+    });
+  }
+  return regulations;
+}
+
+export class SbConsultasAdapter {
+  readonly source = "reg-sb-consultas";
+  readonly institution = "SB";
+  constructor(private readonly page = "https://sb.gob.do/regulacion/consultas-publicas/") {}
+
+  async collect(): Promise<RegulatoryCollection> {
+    const html = await fetchText(this.page, { timeoutMs: 30_000 });
+    const regulations = parseSbConsultations(html, this.page);
+    if (regulations.length === 0) {
+      throw new Error("SB consultas · la fuente oficial no devolvió consultas verificables.");
+    }
+    return { regulations, gaps: [] };
+  }
 }
 
 /** From a Joomla/ZOO category index, return the path of the category with the
@@ -840,6 +1117,9 @@ export class IntrantAdapter {
 /** Registry of available regulatory adapters (extend as more institutions are added). */
 export function regulatoryAdapters() {
   return [
+    new RumrAdapter(),
+    new MispasConsultasAdapter(),
+    new SbConsultasAdapter(),
     new MispasAdapter(),
     new ProconsumidorAdapter(),
     new IndotelAdapter(),

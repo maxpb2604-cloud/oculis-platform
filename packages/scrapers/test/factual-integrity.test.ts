@@ -3,7 +3,10 @@ import {
   explicitRegTypeFromTitle,
   canonicalLink,
   MispasAdapter,
+  parseMispasConsultations,
   parseMispasWpfdCategories,
+  parseRumrInitiatives,
+  parseSbConsultations,
   parseRichRssXml,
   parseIntrantDocuments,
   rssDateToIso,
@@ -93,6 +96,75 @@ describe("factual extraction policy", () => {
         fileType: "PDF",
       },
     ]);
+  });
+
+  it("maps named RUMR institutions, stages and consultation windows without demo rows", () => {
+    const rows = parseRumrInitiatives({
+      data: [
+        {
+          id: 22,
+          x_name: "Reglamento de ejemplo",
+          x_studio_institucion: [3, "Ministerio de Medio Ambiente y Recursos Naturales (MIMARENA)"],
+          x_studio_stage_id: [5, "Agenda"],
+          x_studio_tipos_de_regulacion: [7, "DECRETO: REGLAMENTO"],
+          x_studio_accin_regulatoria: "Modificación",
+          x_studio_inicio_consulta_publica: "2026-09-01",
+          x_studio_finalizacion_consulta_publica: "2026-09-30",
+        },
+        { id: 23, x_name: "Prueba sin institución", x_studio_institucion: false },
+      ],
+    });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      source: "reg-rumr",
+      sourceId: "22",
+      institution: "MIMARENA",
+      status: "Agenda",
+      regType: "DECRETO: REGLAMENTO",
+      isConsulta: true,
+      publishedAt: "2026-09-01",
+      deadline: "2026-09-30",
+      url: "https://regulaciones.digital.gob.do/agenda-regulatoria/22",
+    });
+  });
+
+  it("extracts MISPAS consultation publication and final response deadline", () => {
+    const rows = parseMispasConsultations([
+      {
+        id: 91,
+        date: "2026-08-21T17:30:26",
+        link: "/web/Transparencia/consulta-91/",
+        title: { rendered: "Llamado a Consulta P&uacute;blica del anteproyecto Reglamento 91" },
+        content: {
+          rendered:
+            "Desde el lunes veinticuatro (24) de agosto de 2026 hasta el lunes veintis&eacute;is (26) de octubre de 2026.",
+        },
+      },
+    ]);
+    expect(rows[0]).toMatchObject({
+      institution: "MISPAS",
+      isConsulta: true,
+      publishedAt: "2026-08-21",
+      deadline: "2026-10-26",
+      url: "https://www.msp.gob.do/web/Transparencia/consulta-91/",
+    });
+  });
+
+  it("parses Superintendencia de Bancos publication and deadline dates", () => {
+    const rows = parseSbConsultations(
+      `<div class="downloadable_document_card card">
+        <a class="title" href="/regulacion/consultas-publicas/circular-9/">Carta Circular 9</a>
+        Publicación: <span class="value">31 / 07 / 2026</span>
+        Vencimiento: <span class="value">31 / 08 / 2026</span>
+      </div>`,
+      "https://sb.gob.do/regulacion/consultas-publicas/",
+    );
+    expect(rows[0]).toMatchObject({
+      institution: "SB",
+      publishedAt: "2026-07-31",
+      deadline: "2026-08-31",
+      url: "https://sb.gob.do/regulacion/consultas-publicas/circular-9/",
+    });
   });
 
   it("collects every MISPAS WPFD page without exposing placeholder legends", async () => {

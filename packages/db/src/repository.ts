@@ -2913,6 +2913,7 @@ export async function upsertRegulation(
 
 export interface RegulationListItem {
   id: number;
+  source: string;
   institution: string;
   regType: string | null;
   title: string;
@@ -2935,6 +2936,7 @@ export async function listRegulations(
   const rows = await db
     .select({
       id: regulations.id,
+      source: regulations.source,
       institution: regulations.institution,
       regType: regulations.regType,
       title: regulations.title,

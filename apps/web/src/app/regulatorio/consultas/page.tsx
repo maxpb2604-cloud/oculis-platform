@@ -46,6 +46,10 @@ export default async function ConsultasPage({
   const consultas = (await getConsultas()) as RegulationItem[];
   const byInstitution = new Set(consultas.map((consulta) => consulta.institution)).size;
   const withDeadline = consultas.filter((consulta) => consulta.deadline).length;
+  const openToday = consultas.filter((consulta) => consulta.activityState === "OPEN").length;
+  const inProcess = consultas.filter(
+    (consulta) => consulta.activityState === "IN_PROCESS" || consulta.activityState === "UPCOMING",
+  ).length;
   const langSuffix = lang === "en" ? "?lang=en" : "";
 
   return (
@@ -148,11 +152,16 @@ export default async function ConsultasPage({
             </ButtonLink>
           </section>
 
-          <div className="mt-8 grid gap-5 border-b pb-8 sm:grid-cols-3">
+          <div className="mt-8 grid gap-5 border-b pb-8 sm:grid-cols-2 xl:grid-cols-4">
             <Kpi
-              value={consultas.length}
-              label={es ? "Consultas registradas" : "Recorded consultations"}
-              accent="var(--accent)"
+              value={openToday}
+              label={es ? "Vigentes hoy" : "Open today"}
+              accent="var(--verified)"
+            />
+            <Kpi
+              value={inProcess}
+              label={es ? "Próximas o en proceso" : "Upcoming or in process"}
+              accent="var(--warn)"
             />
             <Kpi
               value={byInstitution}
@@ -168,7 +177,11 @@ export default async function ConsultasPage({
 
           <div className="mt-8">
             <Panel
-              title={es ? "Consultas públicas registradas" : "Recorded public consultations"}
+              title={
+                es
+                  ? `Consultas públicas · ${consultas.length}`
+                  : `Public consultations · ${consultas.length}`
+              }
               flush
             >
               <RegulationList
@@ -184,8 +197,8 @@ export default async function ConsultasPage({
           </div>
           <Notice className="mt-5 text-sm" tone="warning">
             {es
-              ? "Antes de preparar una respuesta, confirme el plazo y los requisitos en el enlace oficial. Oculis no completa fechas ausentes ni interpreta si una consulta continúa abierta."
-              : "Before preparing a response, confirm the deadline and requirements through the official link. Oculis does not fill missing dates or interpret whether a consultation remains open."}
+              ? "Antes de preparar una respuesta, confirme los requisitos en el enlace oficial. Oculis clasifica “vigente hoy” únicamente cuando el plazo publicado incluye la fecha actual o la fuente declara expresamente que está abierta."
+              : "Before preparing a response, confirm the requirements through the official link. Oculis classifies a consultation as “open today” only when the published window includes the current date or the source expressly states it is open."}
           </Notice>
         </>
       )}

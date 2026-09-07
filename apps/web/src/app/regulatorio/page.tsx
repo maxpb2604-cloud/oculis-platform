@@ -27,7 +27,7 @@ type RegulatorioSearchParams = { lang?: string; institution?: string };
 
 const INSTITUTION_PRESENTATION: Record<
   string,
-  { name: string; nameEn: string; logo: string; width: number; height: number }
+  { name: string; nameEn: string; logo?: string; width?: number; height?: number }
 > = {
   MISPAS: {
     name: "Ministerio de Salud Pública",
@@ -71,6 +71,26 @@ const INSTITUTION_PRESENTATION: Record<
     width: 419,
     height: 170,
   },
+  MIMARENA: {
+    name: "Ministerio de Medio Ambiente y Recursos Naturales",
+    nameEn: "Ministry of Environment and Natural Resources",
+  },
+  SUPERSEGURO: {
+    name: "Superintendencia de Seguros",
+    nameEn: "Superintendency of Insurance",
+  },
+  SIMV: {
+    name: "Superintendencia del Mercado de Valores",
+    nameEn: "Securities Market Superintendency",
+  },
+  SISALRIL: {
+    name: "Superintendencia de Salud y Riesgos Laborales",
+    nameEn: "Superintendency of Health and Labor Risks",
+  },
+  SB: {
+    name: "Superintendencia de Bancos",
+    nameEn: "Superintendency of Banks",
+  },
 };
 
 export async function generateMetadata({
@@ -100,8 +120,14 @@ export default async function RegulatorioPage({
   const params = await searchParams;
   const lang: Lang = parseLang(params.lang);
   const es = lang === "es";
-  const { kpis, byInstitution, recent, selectedInstitution, selectedRegulations } =
-    await getRegulatoryOverview({ institution: params.institution });
+  const {
+    kpis,
+    byInstitution,
+    openByInstitution,
+    recent,
+    selectedInstitution,
+    selectedRegulations,
+  } = await getRegulatoryOverview({ institution: params.institution });
   const sources = SOURCE_REGISTRY.filter((source) => source.id.startsWith("reg-"));
   const langSuffix = lang === "en" ? "?lang=en" : "";
   const hasData = kpis.total > 0;
@@ -119,7 +145,7 @@ export default async function RegulatorioPage({
       title={es ? "Monitoreo regulatorio" : "Regulatory monitoring"}
       subtitle={
         es
-          ? "Instrumentos y consultas públicas organizados desde sus fuentes oficiales"
+          ? "Iniciativas administrativas, consultas públicas y plazos de instituciones reguladoras"
           : "Instruments and public consultations organized from their official sources"
       }
     >
@@ -198,12 +224,12 @@ export default async function RegulatorioPage({
               </div>
               <h2 className="section-title mt-2 max-w-[30ch]">
                 {es
-                  ? "Siga la actividad regulatoria institución por institución"
+                  ? "Qué está vigente hoy y qué institución lo está tramitando"
                   : "Follow regulatory activity institution by institution"}
               </h2>
               <p className="page-subtitle mt-3">
                 {es
-                  ? "Seleccione una institución para consultar sus iniciativas y revise debajo las publicaciones más recientes de todas las fuentes monitoreadas."
+                  ? "Una iniciativa solo figura como vigente cuando una fuente oficial publica un estado abierto o un plazo que incluye el día de hoy. Las propuestas en agenda o borrador se muestran aparte."
                   : "Select an institution to review its initiatives, then browse the latest publications from every monitored source below."}
               </p>
             </div>
@@ -213,29 +239,73 @@ export default async function RegulatorioPage({
             </ButtonLink>
           </section>
 
-          <div className="mt-8 grid gap-5 border-b pb-8 sm:grid-cols-3">
+          <div className="mt-8 grid gap-5 border-b pb-8 sm:grid-cols-2 xl:grid-cols-4">
             <Kpi
-              value={kpis.total}
-              label={es ? "Iniciativas depositadas" : "Filed initiatives"}
-              accent="var(--accent)"
-            />
-            <Kpi
-              value={kpis.active}
-              label={es ? "Activas reportadas" : "Reported active"}
+              value={kpis.openToday}
+              label={es ? "Consultas vigentes hoy" : "Consultations open today"}
               accent="var(--verified)"
             />
             <Kpi
-              value={kpis.institutions}
-              label={es ? "Instituciones con registros" : "Institutions with records"}
+              value={kpis.inProcess}
+              label={es ? "Propuestas en proceso" : "Proposals in process"}
               accent="var(--warn)"
+            />
+            <Kpi
+              value={kpis.institutions}
+              label={es ? "Instituciones observadas" : "Observed institutions"}
+              accent="var(--accent)"
+            />
+            <Kpi
+              value={kpis.total}
+              label={es ? "Expedientes únicos" : "Unique records"}
+              accent="var(--text-muted)"
             />
           </div>
 
           <SectionHeading
-            title={es ? "Instituciones monitoreadas" : "Monitored institutions"}
+            title={es ? "Vigentes hoy por institución" : "Open today by institution"}
             description={
               es
-                ? "Cada tarjeta abre las iniciativas regulatorias depositadas por esa institución."
+                ? "Conteo sustentado por el plazo o estado publicado en la fuente oficial."
+                : "Count supported by the deadline or status published by the official source."
+            }
+          />
+          {openByInstitution.length ? (
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {openByInstitution.map((item) => (
+                <Link
+                  key={item.key}
+                  href={regulatoryHref(item.key)}
+                  className="card elev flex items-center justify-between gap-4 p-5 transition hover:border-[var(--verified)]"
+                >
+                  <div>
+                    <div className="eyebrow text-[var(--verified)]">
+                      {es ? "Vigentes hoy" : "Open today"}
+                    </div>
+                    <div className="mt-2 text-lg font-semibold">{item.key}</div>
+                    <p className="mt-1 text-xs text-[var(--text-muted)]">
+                      {INSTITUTION_PRESENTATION[item.key]?.[es ? "name" : "nameEn"] ?? item.key}
+                    </p>
+                  </div>
+                  <div className="tnum text-4xl font-semibold text-[var(--verified)]">
+                    {item.openCount}
+                  </div>
+                </Link>
+              ))}
+            </div>
+          ) : (
+            <Notice tone="warning">
+              {es
+                ? `No hay una consulta cuya vigencia hoy esté demostrada por fecha o estado. ${kpis.unknown} expediente(s) siguen sin datos suficientes para clasificarlos.`
+                : `No consultation is proven open today by date or status. ${kpis.unknown} record(s) still lack enough data to classify them.`}
+            </Notice>
+          )}
+
+          <SectionHeading
+            title={es ? "Directorio regulatorio" : "Regulatory directory"}
+            description={
+              es
+                ? "Incluye toda institución actualmente representada en el registro nacional y las fuentes institucionales directas configuradas por Oculis."
                 : "Each card opens the regulatory initiatives filed by that institution."
             }
           />
@@ -310,8 +380,8 @@ export default async function RegulatorioPage({
 
           <Notice className="mt-6 text-sm">
             {es
-              ? "“Activas reportadas” solo cuenta iniciativas cuya fuente declara expresamente un estado activo, vigente o abierto. Un estado ausente no se presume activo ni inactivo."
-              : "“Reported active” counts only initiatives whose source explicitly reports an active, in-force, or open status. A missing status is not assumed active or inactive."}
+              ? "“Vigente hoy” significa que el día actual cae dentro del plazo oficial publicado o que la fuente declara expresamente que la consulta está abierta. “En proceso” identifica etapas como agenda, borrador o iniciativa; no implica que el período para comentar esté abierto."
+              : "“Open today” means today falls within the official published window or the source expressly states the consultation is open. “In process” identifies stages such as agenda, draft, or initiative; it does not mean the comment period is open."}
           </Notice>
         </>
       )}
@@ -342,7 +412,7 @@ function InstitutionCard({
 }) {
   const es = lang === "es";
   const presentation = INSTITUTION_PRESENTATION[item.key];
-  const reportedLabel = es ? "Estado oficial informado" : "Official status reported";
+  const deadlineLabel = es ? "Plazo oficial informado" : "Official deadline reported";
 
   return (
     <Link
@@ -354,12 +424,12 @@ function InstitutionCard({
     >
       <article className="flex h-full flex-col">
         <div className="flex min-h-28 items-center justify-center border-b bg-white px-6 py-5">
-          {presentation ? (
+          {presentation?.logo ? (
             <Image
               src={presentation.logo}
               alt={`${es ? "Logo de" : "Logo of"} ${presentation.name}`}
-              width={presentation.width}
-              height={presentation.height}
+              width={presentation.width ?? 320}
+              height={presentation.height ?? 100}
               className="h-16 w-full object-contain"
             />
           ) : (
@@ -385,18 +455,21 @@ function InstitutionCard({
           </div>
           <dl className="mt-5 grid grid-cols-2 divide-x border-y py-3">
             <div className="pr-4">
-              <dt className="eyebrow">{es ? "Depositadas" : "Filed"}</dt>
+              <dt className="eyebrow">{es ? "Expedientes" : "Records"}</dt>
               <dd className="tnum mt-1 text-2xl font-semibold">{item.count.toLocaleString()}</dd>
             </div>
             <div className="pl-4">
-              <dt className="eyebrow">{es ? "Activas" : "Active"}</dt>
+              <dt className="eyebrow">{es ? "Vigentes hoy" : "Open today"}</dt>
               <dd className="tnum mt-1 text-2xl font-semibold text-[var(--verified)]">
                 {item.activeCount.toLocaleString()}
               </dd>
             </div>
           </dl>
           <p className="mt-3 text-[11px] leading-relaxed text-[var(--text-muted)]">
-            {reportedLabel}: {item.statusReportedCount}/{item.count}
+            {deadlineLabel}: {item.deadlineReportedCount}/{item.count}
+          </p>
+          <p className="mt-1 text-[11px] leading-relaxed text-[var(--text-muted)]">
+            {es ? "En proceso regulatorio" : "In regulatory process"}: {item.inProcessCount}
           </p>
           <p className="mt-1 text-[11px] leading-relaxed text-[var(--text-muted)]">
             {es ? "Última publicación" : "Latest publication"}:{" "}

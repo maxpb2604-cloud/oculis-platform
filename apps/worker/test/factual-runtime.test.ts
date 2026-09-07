@@ -323,6 +323,7 @@ describe("cloud monitoring lanes", () => {
     for (const mode of [
       "movements-incremental",
       "movements",
+      "regulatory",
       "documents-missing",
       "verify-documents-full",
       "documents",
@@ -332,6 +333,15 @@ describe("cloud monitoring lanes", () => {
     ]) {
       assert.match(workflow, new RegExp(`^ {10}- ${mode}$`, "m"));
     }
+  });
+
+  it("can refresh only regulatory sources without launching unrelated maintenance", () => {
+    const workflow = cloudWorkflow();
+    const regulatory = workflowStep(workflow, "maintenance_regulatory");
+    const initiatives = workflowStep(workflow, "maintenance_initiatives");
+    assert.match(regulatory, /inputs\.mode == 'regulatory'/);
+    assert.match(regulatory, /npm run ingest -w @oculis\/worker -- --regulatory/);
+    assert.doesNotMatch(initiatives, /inputs\.mode == 'regulatory'/);
   });
 
   it("exposes a manual full publication recovery distinct from recent refresh and bootstrap", () => {

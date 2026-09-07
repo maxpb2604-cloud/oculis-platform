@@ -146,6 +146,22 @@ const ENGLISH_SOURCE_PRESENTATIONS: Record<string, EnglishSourcePresentation> = 
     owner: "MISPAS",
     coverage: "Official technical standards and regulations in the Transparency portal",
   },
+  "reg-rumr": {
+    label: "Single Registry for Regulatory Improvement",
+    owner: "National Competitiveness Council",
+    coverage:
+      "National inventory of initiatives, responsible institution, stage, and published consultation windows",
+  },
+  "reg-mispas-consultas": {
+    label: "Regulatory consultations · MISPAS",
+    owner: "MISPAS",
+    coverage: "Official public-consultation notices, publication dates, and deadlines",
+  },
+  "reg-sb-consultas": {
+    label: "Regulatory consultations · Superintendency of Banks",
+    owner: "Superintendency of Banks",
+    coverage: "Official public-consultation catalog with publication dates and deadlines",
+  },
   "reg-proconsumidor": regulatoryPresentation("PROCONSUMIDOR"),
   "reg-indotel": regulatoryPresentation("INDOTEL"),
   "reg-indocal": regulatoryPresentation("INDOCAL"),

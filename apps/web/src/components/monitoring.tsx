@@ -446,6 +446,7 @@ export function DepositList({
 
 export interface RegulationItem {
   id: number;
+  source: string;
   institution: string;
   regType: string | null;
   title: string;
@@ -454,13 +455,61 @@ export interface RegulationItem {
   publishedAt: string | null;
   deadline: string | null;
   url: string | null;
+  activityState: "OPEN" | "UPCOMING" | "IN_PROCESS" | "CLOSED" | "UNKNOWN";
+}
+
+function regulatoryStatePresentation(state: RegulationItem["activityState"], lang: Lang) {
+  const es = lang === "es";
+  switch (state) {
+    case "OPEN":
+      return {
+        label: es ? "Vigente hoy" : "Open today",
+        background: "color-mix(in srgb, var(--verified) 15%, transparent)",
+        color: "var(--verified)",
+      };
+    case "UPCOMING":
+      return {
+        label: es ? "Próxima" : "Upcoming",
+        background: "var(--accent-soft)",
+        color: "var(--accent)",
+      };
+    case "IN_PROCESS":
+      return {
+        label: es ? "En proceso" : "In process",
+        background: "color-mix(in srgb, var(--warn) 15%, transparent)",
+        color: "var(--warn)",
+      };
+    case "CLOSED":
+      return {
+        label: es ? "Cerrada / histórica" : "Closed / historical",
+        background: "var(--surface-2)",
+        color: "var(--text-muted)",
+      };
+    default:
+      return {
+        label: es ? "Estado por confirmar" : "Status to confirm",
+        background: "var(--surface-2)",
+        color: "var(--text-muted)",
+      };
+  }
+}
+
+function regulationSourceLabel(source: string, lang: Lang): string {
+  const labels: Record<string, [string, string]> = {
+    "reg-rumr": ["Registro nacional RUMR", "National RUMR registry"],
+    "reg-mispas-consultas": ["Consulta oficial MISPAS", "Official MISPAS consultation"],
+    "reg-sb-consultas": ["Consulta oficial SB", "Official SB consultation"],
+  };
+  return (
+    labels[source]?.[lang === "es" ? 0 : 1] ??
+    (lang === "es" ? "Fuente institucional" : "Institutional source")
+  );
 }
 
 export function RegulationRow({ item, lang = "es" }: { item: RegulationItem; lang?: Lang }) {
   const sourceUrl = safeHttpUrl(item.url);
   const missing = lang === "es" ? "No informado" : "Not reported";
-  const consultation =
-    item.isConsulta == null ? missing : item.isConsulta ? (lang === "es" ? "Sí" : "Yes") : "No";
+  const state = regulatoryStatePresentation(item.activityState, lang);
   return (
     <div className="flex items-start gap-3 border-b px-5 py-3 last:border-0">
       <div className="min-w-0 flex-1">
@@ -482,20 +531,26 @@ export function RegulationRow({ item, lang = "es" }: { item: RegulationItem; lan
               {t(lang, "publicConsultation")}
             </span>
           )}
+          <span
+            className="rounded-full px-2 py-0.5 text-[11px] font-semibold"
+            style={{ background: state.background, color: state.color }}
+          >
+            {state.label}
+          </span>
         </div>
         <div className="mt-1 text-sm font-medium leading-snug">{item.title}</div>
         <div
           className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] leading-5"
           style={{ color: "var(--text-muted)" }}
         >
+          {item.status && (
+            <span>
+              {lang === "es" ? "Etapa/estado oficial" : "Official stage/status"}: {item.status}
+            </span>
+          )}
+          <span>{regulationSourceLabel(item.source, lang)}</span>
           <span>
-            {lang === "es" ? "Estado" : "Status"}: {item.status ?? missing}
-          </span>
-          <span>
-            {lang === "es" ? "Consulta pública" : "Public consultation"}: {consultation}
-          </span>
-          <span>
-            {t(lang, "deadline")}: {item.deadline ?? missing}
+            {t(lang, "deadline")}: {item.deadline ? formatISODate(item.deadline, lang) : missing}
           </span>
           {sourceUrl ? (
             <a
@@ -521,7 +576,8 @@ export function RegulationRow({ item, lang = "es" }: { item: RegulationItem; lan
       </div>
       <div className="shrink-0 text-right">
         <div className="tnum text-[13px]" style={{ color: "var(--text-muted)" }}>
-          {lang === "es" ? "Fecha" : "Date"}: {item.publishedAt ?? missing}
+          {lang === "es" ? "Inicio / publicación" : "Start / publication"}:{" "}
+          {item.publishedAt ? formatISODate(item.publishedAt, lang) : missing}
         </div>
       </div>
     </div>

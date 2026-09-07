@@ -22,6 +22,9 @@ export const REQUIRED_SOURCE_SETS = {
     "feed-legislative",
   ],
   regulatory: [
+    "reg-rumr",
+    "reg-mispas-consultas",
+    "reg-sb-consultas",
     "reg-proconsumidor",
     "reg-indotel",
     "reg-indocal",
