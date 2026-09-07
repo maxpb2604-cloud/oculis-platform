@@ -27,7 +27,14 @@ type RegulatorioSearchParams = { lang?: string; institution?: string };
 
 const INSTITUTION_PRESENTATION: Record<
   string,
-  { name: string; nameEn: string; logo?: string; width?: number; height?: number }
+  {
+    name: string;
+    nameEn: string;
+    logo?: string;
+    width?: number;
+    height?: number;
+    logoBackground?: string;
+  }
 > = {
   MISPAS: {
     name: "Ministerio de Salud Pública",
@@ -105,6 +112,7 @@ const INSTITUTION_PRESENTATION: Record<
     logo: "/assets/oculis/institutions/sb.svg",
     width: 366,
     height: 44,
+    logoBackground: "#0d3048",
   },
 };
 
@@ -438,7 +446,10 @@ function InstitutionCard({
       }`}
     >
       <article className="flex h-full flex-col">
-        <div className="flex min-h-28 items-center justify-center border-b bg-white px-6 py-5">
+        <div
+          className="flex min-h-28 items-center justify-center border-b px-6 py-5"
+          style={{ backgroundColor: presentation?.logoBackground ?? "#ffffff" }}
+        >
           {presentation?.logo ? (
             <Image
               src={presentation.logo}

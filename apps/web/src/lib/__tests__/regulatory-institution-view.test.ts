@@ -24,6 +24,11 @@ describe("regulatory institution view", () => {
     expect(pageSource).toContain(`/assets/oculis/institutions/${asset}`);
   });
 
+  it("renders the official white SB logo on its required dark background", () => {
+    expect(pageSource).toContain('logoBackground: "#0d3048"');
+    expect(pageSource).toContain("presentation?.logoBackground");
+  });
+
   it("links every institution card to a filtered initiative list", () => {
     expect(pageSource).toContain('query.set("institution", institution)');
     expect(pageSource).toContain('id="institution-regulations"');
