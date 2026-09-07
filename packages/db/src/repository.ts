@@ -4,7 +4,11 @@
  */
 import { and, eq, ilike, inArray, isNotNull, isNull, notInArray, or, sql } from "drizzle-orm";
 import { createHash } from "node:crypto";
-import { isDepositedBillDocumentType, officialDepositedBillPdfUrl } from "@oculis/core";
+import {
+  classifyLegislativeValidity,
+  isDepositedBillDocumentType,
+  officialDepositedBillPdfUrl,
+} from "@oculis/core";
 import type { Database } from "./client.js";
 import {
   activityEvents,
@@ -1476,37 +1480,57 @@ export const countByStatus = (db: Database) => countBy(db, sql`status`);
 export const countByChamber = (db: Database) => countBy(db, sql`chamber`);
 export const countByProvince = (db: Database) => countBy(db, sql`province`);
 
+function dominicanTodayISO(): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Santo_Domingo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+}
+
 export interface ProvinceInitiativeCountsRow {
   /** Province name exactly as published by the source. */
   province: string;
   total: number;
-  /** Initiatives whose source condition is literally `VIGENTE` after trim/case normalization. */
+  /** Pending legislative initiatives inside their two-legislature validity window. */
   active: number;
 }
 
 /**
  * Factual initiative totals by source-literal province for the HOME map.
  *
- * `active` deliberately uses only the source's `condition` field. Procedural `status`
- * is not consulted and no legislative state is inferred.
+ * `active` applies the same two-ordinary-legislature rule used by initiative detail
+ * and legislator profiles. A reintroduction is counted through its new filing row.
  */
 export async function countInitiativesByProvinceWithActive(
   db: Database,
+  asOf = dominicanTodayISO(),
 ): Promise<ProvinceInitiativeCountsRow[]> {
   const rows = await db
     .select({
       province: initiatives.province,
-      total: sql<number>`count(*)::int`,
-      active: sql<number>`count(*) filter (
-        where upper(trim(${initiatives.condition})) = 'VIGENTE'
-      )::int`,
+      filedAt: initiatives.filedAt,
+      legislature: initiatives.legislature,
+      expiresAt: initiatives.expiresAt,
+      condition: initiatives.condition,
+      status: initiatives.status,
     })
     .from(initiatives)
     .where(isNotNull(initiatives.province))
-    .groupBy(initiatives.province)
     .orderBy(initiatives.province);
 
-  return rows.filter((row): row is ProvinceInitiativeCountsRow => row.province !== null);
+  const counts = new Map<string, { total: number; active: number }>();
+  for (const row of rows) {
+    if (row.province == null) continue;
+    const current = counts.get(row.province) ?? { total: 0, active: 0 };
+    current.total += 1;
+    if (classifyLegislativeValidity(row, asOf).state === "VIGENTE") current.active += 1;
+    counts.set(row.province, current);
+  }
+  return [...counts.entries()]
+    .sort(([a], [b]) => a.localeCompare(b, "es-DO"))
+    .map(([province, count]) => ({ province, ...count }));
 }
 
 export interface ProvinceDepositedInitiativeCountRow {
@@ -1720,6 +1744,7 @@ export interface InitiativeListItem {
   titleEn: string | null;
   sourceCategory: string | null;
   status: string | null;
+  condition: string | null;
   chamber: string | null;
   sponsor: string | null;
   sponsorRole: string | null;
@@ -1732,6 +1757,8 @@ export interface InitiativeListItem {
   party: string | null;
   province: string | null;
   filedAt: string | null;
+  expiresAt: string | null;
+  legislature: string | null;
   sourceUrl: string | null;
   /** Latest official deposited bill-text PDF, never an agenda/report attachment. */
   preferredDocumentId: number | null;
@@ -2157,12 +2184,15 @@ export async function listInitiatives(
       titleEn: currentEnglishInitiativeTitleSql().as("title_en"),
       sourceCategory: initiatives.sourceCategory,
       status: initiatives.status,
+      condition: initiatives.condition,
       chamber: initiatives.chamber,
       sponsor: initiatives.sponsor,
       sponsorRole: initiatives.sponsorRole,
       party: effectiveInitiativeSponsorPartySql().as("sponsor_party"),
       province: effectiveInitiativeSponsorProvinceSql().as("sponsor_province"),
       filedAt: initiatives.filedAt,
+      expiresAt: initiatives.expiresAt,
+      legislature: initiatives.legislature,
       sourceUrl: initiatives.sourceUrl,
       raw: initiatives.raw,
     })
@@ -4644,12 +4674,15 @@ export async function listRecentInitiatives(
       titleEn: currentEnglishInitiativeTitleSql().as("title_en"),
       sourceCategory: initiatives.sourceCategory,
       status: initiatives.status,
+      condition: initiatives.condition,
       chamber: initiatives.chamber,
       sponsor: initiatives.sponsor,
       sponsorRole: initiatives.sponsorRole,
       party: effectiveInitiativeSponsorPartySql().as("sponsor_party"),
       province: effectiveInitiativeSponsorProvinceSql().as("sponsor_province"),
       filedAt: initiatives.filedAt,
+      expiresAt: initiatives.expiresAt,
+      legislature: initiatives.legislature,
       sourceUrl: initiatives.sourceUrl,
       filteredProponentRelationship: sql<null>`null`,
       raw: initiatives.raw,
@@ -5231,9 +5264,9 @@ export type LegislatorInitiativeStats =
       coverage: "partial" | "complete";
       /** Initiatives with a published filing date and this exact official proponent id. */
       deposited: number;
-      /** Deposited initiatives whose current official condition is literally VIGENTE. */
+      /** Pending initiatives inside their two-legislature validity window. */
       active: number;
-      /** Deposited initiatives with another condition or no published condition. */
+      /** Filed initiatives that are no longer current, concluded, or need confirmation. */
       otherConditionOrUnpublished: number;
     }
   | {
@@ -5255,6 +5288,7 @@ export type LegislatorInitiativeStats =
 export async function getLegislatorInitiativeStats(
   db: Database,
   legislator: number | Pick<RosterMember, "id">,
+  asOf = dominicanTodayISO(),
 ): Promise<LegislatorInitiativeStats> {
   const profileId = typeof legislator === "number" ? legislator : legislator.id;
   if (!Number.isSafeInteger(profileId) || profileId < 1 || profileId > POSTGRES_INTEGER_MAX) {
@@ -5287,14 +5321,16 @@ export async function getLegislatorInitiativeStats(
           and ${initiativeProponents.personNamespace} = ${compatibility.personNamespace}`
     : sql``;
 
-  const result = await db.execute(sql`
-    select
-      count(distinct ${initiatives.id})::int as deposited,
-      count(distinct ${initiatives.id}) filter (
-        where upper(trim(coalesce(${initiatives.condition}, ''))) = 'VIGENTE'
-      )::int as active
-    from ${initiatives}
-    where ${initiatives.filedAt} is not null
+  const linkedInitiatives = await db
+    .select({
+      id: initiatives.id,
+      filedAt: initiatives.filedAt,
+      legislature: initiatives.legislature,
+      expiresAt: initiatives.expiresAt,
+      condition: initiatives.condition,
+      status: initiatives.status,
+    })
+    .from(initiatives).where(sql`${initiatives.filedAt} is not null
       and trim(${initiatives.filedAt}) <> ''
       and exists (
         select 1
@@ -5302,11 +5338,11 @@ export async function getLegislatorInitiativeStats(
          where ${initiativeProponents.initiativeId} = ${initiatives.id}
            and ${initiativeProponents.legislatorId} = ${profileId}
            ${compatibleRelation}
-      )
-  `);
-  const row = (result as unknown as { rows: Array<{ deposited: number; active: number }> }).rows[0];
-  const deposited = Number(row?.deposited ?? 0);
-  const active = Number(row?.active ?? 0);
+      )`);
+  const deposited = linkedInitiatives.length;
+  const active = linkedInitiatives.filter(
+    (initiative) => classifyLegislativeValidity(initiative, asOf).state === "VIGENTE",
+  ).length;
   if (deposited === 0) {
     if (!compatibility) {
       return {

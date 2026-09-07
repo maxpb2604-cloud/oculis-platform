@@ -163,7 +163,7 @@ export default async function SourceStatusPage({
           </p>
           <p>
             {es
-              ? `${health.optionalTotal} conexiones opcionales (${health.optionalLimited} sin ciclo completo vigente) y ${health.knownGaps} brechas conocidas permanecen visibles por transparencia. No se cuentan como fallos de las fuentes requeridas.`
+              ? `${health.optionalTotal} conexiones opcionales (${health.optionalLimited} sin ciclo completo actual) y ${health.knownGaps} brechas conocidas permanecen visibles por transparencia. No se cuentan como fallos de las fuentes requeridas.`
               : `${health.optionalTotal} optional connections (${health.optionalLimited} without a current complete cycle) and ${health.knownGaps} known gaps remain visible for transparency. They are not counted as required-source failures.`}
           </p>
         </Notice>

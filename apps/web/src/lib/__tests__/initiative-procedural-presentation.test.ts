@@ -51,7 +51,7 @@ describe("initiative procedural presentation", () => {
       endLegislature: "2028-PLO",
       startEvidenceDate: "2027-09-01",
       legalBasis: ["CRD-89", "CRD-100", "CRD-104"] as const,
-      methodVersion: "oculis-constitutional-expiry-v1" as const,
+      methodVersion: "oculis-constitutional-expiry-v2" as const,
     };
 
     expect(expirationPresentation(fact, "es")).toMatchObject({

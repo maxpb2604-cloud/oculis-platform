@@ -6,6 +6,7 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
 import { unstable_cache } from "next/cache";
+import { classifyLegislativeValidity, type LegislativeValidity } from "@oculis/core";
 export { SOURCE_REGISTRY, type SourceRegistryEntry } from "@oculis/scrapers";
 import { SOURCE_REGISTRY as SCRAPER_SOURCE_REGISTRY } from "@oculis/scrapers";
 import {
@@ -190,6 +191,7 @@ export interface InitiativeListItem {
   /** Reviewed English translation for this exact current official title, if available. */
   titleEn: string | null;
   status: string | null;
+  legislativeValidity: LegislativeValidity;
   sponsor: string | null;
   sponsorRole: string | null;
   sponsorLegislatorSourceId: string | null;
@@ -214,6 +216,7 @@ function toInitiativeListItem(row: DbInitiativeListItem): InitiativeListItem {
     title: row.title,
     titleEn: row.titleEn,
     status: row.status,
+    legislativeValidity: classifyLegislativeValidity(row, todayISO()),
     sponsor: row.sponsor,
     sponsorRole: row.sponsorRole,
     sponsorLegislatorSourceId: row.sponsorLegislatorSourceId,
@@ -834,6 +837,8 @@ export async function getInitiative(id: number) {
   const proceduralFacts = initiativeProceduralFacts({
     type: ini.type,
     status: ini.status,
+    condition: ini.condition,
+    filedAt: ini.filedAt,
     expiresAt,
     initiated,
     initiatedAt,
@@ -851,6 +856,10 @@ export async function getInitiative(id: number) {
       sourceEventId: event.sourceEventId,
     })),
   });
+  const legislativeValidity = classifyLegislativeValidity(
+    { condition: ini.condition, status: ini.status, filedAt: ini.filedAt, expiresAt, legislature },
+    todayISO(),
+  );
   return {
     id: ini.id,
     source: ini.source,
@@ -868,6 +877,7 @@ export async function getInitiative(id: number) {
     currentChamber: ini.currentChamber,
     currentBody: ini.currentBody,
     condition: ini.condition,
+    legislativeValidity,
     sourceCategory: ini.sourceCategory,
     subjectMatter: ini.subjectMatter,
     sponsor: ini.sponsor,
@@ -1272,9 +1282,7 @@ export async function getRegulatoryOverview(opts: { institution?: string } = {})
     recent: facts.slice(0, 40),
     selectedInstitution,
     selectedRegulations: selectedInstitution
-      ? sortRegulationsByRelevance(
-          facts.filter((item) => item.institution === selectedInstitution),
-        )
+      ? sortRegulationsByRelevance(facts.filter((item) => item.institution === selectedInstitution))
       : [],
   };
 }

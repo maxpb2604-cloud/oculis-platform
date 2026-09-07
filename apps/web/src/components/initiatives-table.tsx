@@ -214,6 +214,7 @@ export function InitiativesTable({
                   {t.status}
                 </span>
                 <StatusPill value={row.status ?? missing} />
+                <LegislativeValidityPill validity={row.legislativeValidity} lang={lang} />
               </div>
 
               <div className="mt-2 min-w-0 text-xs sm:mt-0 xl:px-4 xl:py-4 xl:text-sm">
@@ -312,6 +313,45 @@ function StatusPill({ value }: { value: string }) {
       style={{ background: "var(--accent-soft)", color: "var(--accent)" }}
     >
       {value}
+    </span>
+  );
+}
+
+function LegislativeValidityPill({
+  validity,
+  lang,
+}: {
+  validity: InitiativeCatalogRow["legislativeValidity"];
+  lang: Lang;
+}) {
+  const es = lang === "es";
+  const labels = {
+    VIGENTE: es ? "Vigente · 2 legislaturas" : "Active · 2 legislatures",
+    NO_VIGENTE: es ? "No vigente · 2 legislaturas" : "Not active · 2 legislatures",
+    CONCLUIDA: es ? "Trámite concluido" : "Proceeding concluded",
+    POR_CONFIRMAR: es ? "Vigencia por confirmar" : "Validity pending confirmation",
+  } as const;
+  const colors = {
+    VIGENTE: { color: "var(--verified)", background: "var(--verified-soft)" },
+    NO_VIGENTE: { color: "var(--text-muted)", background: "var(--surface-2)" },
+    CONCLUIDA: { color: "var(--accent)", background: "var(--accent-soft)" },
+    POR_CONFIRMAR: { color: "var(--warn)", background: "var(--warn-soft)" },
+  } as const;
+  return (
+    <span
+      className="mt-2 inline-flex max-w-full rounded-full px-2.5 py-1 text-[10px] font-semibold leading-tight"
+      style={colors[validity.state]}
+      title={
+        validity.basis === "OFFICIAL"
+          ? es
+            ? "Basado en la fuente oficial"
+            : "Based on the official source"
+          : es
+            ? "Calculado por la regla de dos legislaturas"
+            : "Calculated under the two-legislature rule"
+      }
+    >
+      {labels[validity.state]}
     </span>
   );
 }

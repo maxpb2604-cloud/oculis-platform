@@ -285,7 +285,7 @@ export function LegislatorInitiativeStatsPanel({
               color="var(--verified)"
             />
             <InitiativeStat
-              label={es ? "No marcadas vigentes" : "Not marked active"}
+              label={es ? "Otras iniciativas" : "Other initiatives"}
               value={stats.otherConditionOrUnpublished}
               color="var(--text)"
             />
@@ -295,8 +295,8 @@ export function LegislatorInitiativeStatsPanel({
             style={{ color: "var(--text-muted)" }}
           >
             {es
-              ? "Mínimo verificable: se cuentan solo iniciativas con fecha de depósito publicada y una relación exacta de proponente conservada con su evidencia oficial. Oculis no compara nombres por similitud. La cobertura histórica aún puede ser incompleta. “No marcadas vigentes” reúne otras condiciones oficiales o ninguna condición publicada; no significa que estén archivadas."
-              : "Verified minimum: only initiatives with a published filing date and an exact sponsor relationship retained with its official evidence are counted. Oculis does not use approximate name matching. Historical coverage may still be incomplete. “Not marked active” includes other official conditions or no published condition; it does not mean the initiatives were archived."}
+              ? "Mínimo verificable: se cuentan solo iniciativas con fecha de depósito publicada y una relación exacta de proponente conservada con su evidencia oficial. “Vigentes” aplica la regla de dos legislaturas desde el depósito. “Otras iniciativas” incluye las no vigentes, las concluidas y aquellas cuya vigencia todavía no puede confirmarse. Una reintroducción cuenta como un expediente nuevo."
+              : "Verified minimum: only initiatives with a published filing date and an exact sponsor relationship retained with its official evidence are counted. “Active” applies the two-legislature rule from filing. “Other initiatives” includes records that are no longer active, concluded, or not yet classifiable. A reintroduction counts as a new filing."}
           </p>
           {initiativesHref && (
             <Link

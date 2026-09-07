@@ -46,11 +46,11 @@ describe("legislator initiative statistics", () => {
     expect(html).toContain("Iniciativas depositadas");
     expect(html).toContain("Depositadas vinculadas");
     expect(html).toContain("Vigentes");
-    expect(html).toContain("No marcadas vigentes");
+    expect(html).toContain("Otras iniciativas");
     expect(html).toContain(">14<");
     expect(html).toContain(">9<");
     expect(html).toContain(">5<");
-    expect(html).toContain("no significa que estén archivadas");
+    expect(html).toContain("regla de dos legislaturas");
     expect(html).toContain("Mínimo verificable");
     expect(html).toContain('href="/initiatives?legislator=77"');
     expect(html).toContain("Ver iniciativas depositadas");
@@ -91,7 +91,7 @@ describe("legislator initiative statistics", () => {
     );
 
     expect(exact).toContain("Filed initiatives");
-    expect(exact).toContain("Not marked active");
+    expect(exact).toContain("Other initiatives");
     expect(exact).toContain("exact sponsor relationship retained with its official evidence");
     expect(exact).toContain("Verified minimum");
     expect(exact).toContain('href="/initiatives?legislator=91&amp;lang=en"');

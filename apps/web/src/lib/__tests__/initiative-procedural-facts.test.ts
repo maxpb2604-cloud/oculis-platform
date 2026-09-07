@@ -2,10 +2,11 @@ import { describe, expect, it } from "vitest";
 import { initiativeProceduralFacts } from "@/lib/initiative-procedural-facts";
 
 describe("initiativeProceduralFacts", () => {
-  it("resolves the captured filed initiative without inventing an expiry date", () => {
+  it("counts the filing legislature even when the source says consideration has not started", () => {
     const facts = initiativeProceduralFacts({
       type: "Proyecto de Ley",
       status: "Depositado",
+      filedAt: "2026-08-31",
       expiresAt: null,
       initiated: "NO",
       initiatedAt: null,
@@ -33,10 +34,14 @@ describe("initiativeProceduralFacts", () => {
       evidenceStatus: "Depositado",
       evidenceDate: "2026-08-31",
     });
-    expect(facts.expiration).toEqual({
-      state: "COUNT_NOT_STARTED",
-      basis: "OFFICIAL",
-      reason: "SOURCE_REPORTS_NOT_INITIATED",
+    expect(facts.expiration).toMatchObject({
+      state: "PROJECTED",
+      basis: "DERIVED",
+      reason: "TWO_ORDINARY_LEGISLATURES",
+      date: "2027-07-26",
+      startLegislature: "2026-SLO",
+      endLegislature: "2027-PLO",
+      startEvidenceDate: "2026-08-31",
     });
   });
 
@@ -79,6 +84,7 @@ describe("initiativeProceduralFacts", () => {
         status: "En comisión",
         initiated: "Sí",
         initiatedAt,
+        filedAt: initiatedAt,
         legislature,
         sourceChamber: "DIPUTADOS",
         originChamber: "DIPUTADOS",
@@ -95,69 +101,40 @@ describe("initiativeProceduralFacts", () => {
     },
   );
 
-  it("does not apply the two-legislature rule to another initiative type", () => {
+  it("applies the platform's legislative validity rule to every filed legislative initiative", () => {
     expect(
       initiativeProceduralFacts({
         type: "Resolución interna",
         status: "Depositada",
         initiated: "NO",
+        filedAt: "2026-08-20",
         legislature: "2026-SLO",
         sourceChamber: "SENADO",
       }).expiration,
-    ).toEqual({
-      state: "RULE_NOT_APPLICABLE",
-      basis: "DERIVED",
-      reason: "TYPE_NOT_COVERED_BY_TWO_LEGISLATURE_RULE",
+    ).toMatchObject({
+      state: "PROJECTED",
+      reason: "TWO_ORDINARY_LEGISLATURES",
+      startLegislature: "2026-SLO",
     });
   });
 
-  it.each([null, "", "Categoría experimental", "Proyecto de Leyenda"])(
-    "does not claim that the rule is inapplicable when type %j is missing or unknown",
-    (type) => {
-      expect(
-        initiativeProceduralFacts({
-          type,
-          status: "Depositada",
-          initiated: "NO",
-          sourceChamber: "SENADO",
-        }).expiration,
-      ).toEqual({
-        state: "REVIEW_REQUIRED",
-        basis: "DERIVED",
-        reason: "TYPE_NOT_PUBLISHED_OR_RECOGNIZED",
-      });
-    },
-  );
-
-  it.each(["Resolución", "Contrato de préstamo", "Convenio internacional", "Nombramiento"])(
-    "limits RULE_NOT_APPLICABLE to a recognized non-bill type: %s",
-    (type) => {
-      expect(initiativeProceduralFacts({ type }).expiration).toEqual({
-        state: "RULE_NOT_APPLICABLE",
-        basis: "DERIVED",
-        reason: "TYPE_NOT_COVERED_BY_TWO_LEGISLATURE_RULE",
-      });
-    },
-  );
-
-  it("fails closed for an extraordinary or contradictory start", () => {
+  it("fails closed when filing evidence is missing or contradictory", () => {
     expect(
       initiativeProceduralFacts({
         type: "Proyecto de Ley",
         status: "En comisión",
-        initiated: "SI",
-        legislature: "2026-PLO",
         sourceChamber: "DIPUTADOS",
-        originChamber: "DIPUTADOS",
       }).expiration,
-    ).toMatchObject({ state: "REVIEW_REQUIRED", reason: "COUNT_START_NOT_PUBLISHED" });
+    ).toMatchObject({
+      state: "REVIEW_REQUIRED",
+      reason: "INVALID_OR_EXTRAORDINARY_LEGISLATURE",
+    });
 
     expect(
       initiativeProceduralFacts({
         type: "Proyecto de Ley",
         status: "En comisión",
-        initiated: "NO",
-        initiatedAt: "2026-03-01",
+        filedAt: "2026-09-01",
         legislature: "2026-PLO",
         sourceChamber: "DIPUTADOS",
         originChamber: "DIPUTADOS",
@@ -168,39 +145,29 @@ describe("initiativeProceduralFacts", () => {
       initiativeProceduralFacts({
         type: "Proyecto de Ley",
         status: "En comisión",
-        initiated: "SI",
-        initiatedAt: "2026-02-01",
+        filedAt: "2026-08-01",
         legislature: "2026-SLE",
         sourceChamber: "SENADO",
         originChamber: "SENADO",
       }).expiration,
     ).toMatchObject({ state: "REVIEW_REQUIRED", reason: "INVALID_OR_EXTRAORDINARY_LEGISLATURE" });
-
-    expect(
-      initiativeProceduralFacts({
-        type: "Proyecto de Ley",
-        status: "En comisión",
-        initiated: "SI",
-        initiatedAt: "2026-09-01",
-        legislature: "2026-PLO",
-        sourceChamber: "DIPUTADOS",
-        originChamber: "DIPUTADOS",
-      }).expiration,
-    ).toMatchObject({ state: "REVIEW_REQUIRED", reason: "CONFLICTING_START_EVIDENCE" });
   });
 
-  it("does not restart an unlinked bicameral record from the receiving chamber", () => {
+  it("does not restart the two-legislature window when the record changes chamber", () => {
     expect(
       initiativeProceduralFacts({
         type: "Proyecto de Ley",
         status: "En comisión",
-        initiated: "SI",
-        initiatedAt: "2026-03-01",
+        filedAt: "2026-03-01",
         legislature: "2026-PLO",
         sourceChamber: "DIPUTADOS",
         originChamber: "SENADO",
       }).expiration,
-    ).toMatchObject({ state: "REVIEW_REQUIRED", reason: "BICAMERAL_START_NOT_LINKED" });
+    ).toMatchObject({
+      state: "PROJECTED",
+      startLegislature: "2026-PLO",
+      endLegislature: "2026-SLO",
+    });
   });
 
   it("keeps terminal and in-transit positions out of a chamber", () => {

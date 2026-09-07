@@ -155,7 +155,7 @@ export default async function ConsultasPage({
           <div className="mt-8 grid gap-5 border-b pb-8 sm:grid-cols-2 xl:grid-cols-4">
             <Kpi
               value={openToday}
-              label={es ? "Vigentes hoy" : "Open today"}
+              label={es ? "Abiertas hoy" : "Open today"}
               accent="var(--verified)"
             />
             <Kpi
@@ -197,7 +197,7 @@ export default async function ConsultasPage({
           </div>
           <Notice className="mt-5 text-sm" tone="warning">
             {es
-              ? "Antes de preparar una respuesta, confirme los requisitos en el enlace oficial. Oculis clasifica “vigente hoy” únicamente cuando el plazo publicado incluye la fecha actual o la fuente declara expresamente que está abierta."
+              ? "Antes de preparar una respuesta, confirme los requisitos en el enlace oficial. Oculis clasifica “abierta hoy” únicamente cuando el plazo publicado incluye la fecha actual o la fuente declara expresamente que está abierta."
               : "Before preparing a response, confirm the requirements through the official link. Oculis classifies a consultation as “open today” only when the published window includes the current date or the source expressly states it is open."}
           </Notice>
         </>

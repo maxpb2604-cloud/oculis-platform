@@ -26,7 +26,7 @@ interface DonutDatum {
 
 const chartCopy = {
   es: {
-    initiativeTitle: "Condición oficial de las iniciativas",
+    initiativeTitle: "Vigencia legislativa",
     partyTitle: "Congresistas por partido",
     active: "Vigentes",
     other: "Otras registradas",
@@ -35,20 +35,20 @@ const chartCopy = {
     inconsistent: "Datos inconsistentes",
     initiativeCenter: (active: number, total: number) => `${active} de ${total}`,
     initiativeAria: (province: string, total: number, active: number, remaining: number) =>
-      `${province}: ${total} iniciativas registradas; ${active} con condición oficial VIGENTE y ${remaining} con otra condición o sin una condición publicada.`,
+      `${province}: ${total} iniciativas registradas; ${active} vigentes según la regla de dos legislaturas y ${remaining} no vigentes, concluidas o por confirmar.`,
     partyAria: (province: string, total: number, groups: string) =>
       `${province}: ${total} congresistas reportados por partido.${groups ? ` ${groups}.` : ""}`,
     inconsistentAria: (province: string, total: number, active: number) =>
       `${province}: la fuente registra ${total} iniciativas y ${active} vigentes. No se muestra una proporción porque el conteo de vigentes supera el total.`,
     qualification:
-      "«Otras registradas» no significa inactivas: puede incluir otra condición oficial o una condición no publicada.",
+      "«Otras registradas» incluye iniciativas no vigentes, concluidas o cuya legislatura de depósito está por confirmar.",
     partyQualification:
       "Los conteos usan el partido publicado por la fuente; los datos no informados aparecen por separado.",
     inconsistentQualification:
       "La proporción no se muestra porque el conteo de vigentes supera el total publicado.",
   },
   en: {
-    initiativeTitle: "Official initiative condition",
+    initiativeTitle: "Legislative validity",
     partyTitle: "Members of Congress by party",
     active: "Active",
     other: "Other recorded",
@@ -57,13 +57,13 @@ const chartCopy = {
     inconsistent: "Inconsistent data",
     initiativeCenter: (active: number, total: number) => `${active} of ${total}`,
     initiativeAria: (province: string, total: number, active: number, remaining: number) =>
-      `${province}: ${total} recorded initiatives; ${active} with official condition ACTIVE and ${remaining} with another condition or no published condition.`,
+      `${province}: ${total} recorded initiatives; ${active} active under the two-legislature rule and ${remaining} no longer active, concluded, or pending confirmation.`,
     partyAria: (province: string, total: number, groups: string) =>
       `${province}: ${total} reported members of Congress by party.${groups ? ` ${groups}.` : ""}`,
     inconsistentAria: (province: string, total: number, active: number) =>
       `${province}: the source records ${total} initiatives and ${active} active initiatives. No proportion is shown because the active count exceeds the total.`,
     qualification:
-      "“Other recorded” does not mean inactive: it may include another official condition or no published condition.",
+      "“Other recorded” includes initiatives that are no longer active, concluded, or whose filing legislature still needs confirmation.",
     partyQualification:
       "Counts use the party published by the source; unreported data appears separately.",
     inconsistentQualification:

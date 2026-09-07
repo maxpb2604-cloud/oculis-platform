@@ -137,7 +137,7 @@ const copy = {
     panelTitle: "Detalle de la provincia",
     initiativesHeading: "Últimas iniciativas depositadas",
     initiativeCount: "Iniciativas",
-    activeInitiativeCount: "Vigentes (condición oficial)",
+    activeInitiativeCount: "Vigentes (dos legislaturas)",
     congressCount: "Congresistas",
     senateCount: "Senadores",
     deputyCount: "Diputados",
@@ -159,7 +159,7 @@ const copy = {
     openProfile: (name: string) => `Abrir perfil de ${name}`,
     unknownCode: "Código no informado",
     methodology:
-      "Las iniciativas se atribuyen a la provincia publicada para su proponente principal; esto no describe el alcance territorial del proyecto de ley. La lista muestra como máximo las cinco más recientes cuyo Estado oficial es DEPOSITADO. El conteo de «vigentes» incluye únicamente iniciativas cuya fuente publica literalmente Condición oficial = VIGENTE; no se infiere a partir del estado, la actividad ni la ausencia de datos. Los cargos de representación nacional no se asignan a ninguna provincia.",
+      "Las iniciativas se atribuyen a la provincia publicada para su proponente principal; esto no describe el alcance territorial del proyecto de ley. La lista muestra como máximo las cinco más recientes cuyo estado oficial es DEPOSITADO. El conteo de «vigentes» aplica la regla de dos legislaturas desde el depósito; una reintroducción se cuenta por su nuevo expediente y no reactiva el anterior. Los cargos de representación nacional no se asignan a ninguna provincia.",
   },
   en: {
     eyebrow: "Territorial overview",
@@ -183,7 +183,7 @@ const copy = {
     panelTitle: "Province details",
     initiativesHeading: "Latest filed initiatives",
     initiativeCount: "Initiatives",
-    activeInitiativeCount: "Active initiatives (official condition)",
+    activeInitiativeCount: "Active initiatives (two legislatures)",
     congressCount: "Members of Congress",
     senateCount: "Senators",
     deputyCount: "Deputies",
@@ -204,7 +204,7 @@ const copy = {
     openProfile: (name: string) => `Open ${name}'s profile`,
     unknownCode: "Code not reported",
     methodology:
-      "Initiatives are attributed to the principal sponsor's published province; this does not describe the bill's territorial scope. The list shows at most the five most recent initiatives whose official status is Filed. The “active” count includes only initiatives whose official condition is Active; it is not inferred from status, activity, or missing data. National representation is not assigned to any province.",
+      "Initiatives are attributed to the principal sponsor's published province; this does not describe the bill's territorial scope. The list shows at most the five most recent initiatives whose official status is Filed. The “active” count applies the two-legislature rule from filing; a reintroduction is counted through its new record and does not reactivate the former one. National representation is not assigned to any province.",
   },
 } as const;
 

@@ -1,3 +1,11 @@
+import {
+  ordinaryLegislatureCode,
+  ordinaryLegislatureForDate,
+  parseOrdinaryLegislature,
+  secondLegislatureClosingDate,
+  validISODate,
+} from "@oculis/core";
+
 /**
  * Presentation-only resolution of procedural location and constitutional expiry.
  *
@@ -21,6 +29,8 @@ export interface InitiativeProceduralEvent {
 export interface InitiativeProceduralFactsInput {
   type?: string | null;
   status?: string | null;
+  condition?: string | null;
+  filedAt?: string | null;
   expiresAt?: string | null;
   initiated?: string | null;
   initiatedAt?: string | null;
@@ -88,7 +98,7 @@ export type ResolvedInitiativeExpiration =
       endLegislature: string;
       startEvidenceDate: string | null;
       legalBasis: readonly ["CRD-89", "CRD-100", "CRD-104"];
-      methodVersion: "oculis-constitutional-expiry-v1";
+      methodVersion: "oculis-constitutional-expiry-v2";
     }
   | {
       state: "COUNT_NOT_STARTED";
@@ -152,73 +162,7 @@ function chamberForSource(source: string): ProceduralChamber | null {
   return null;
 }
 
-function isoDate(value: string | null | undefined): string | null {
-  const match = value?.match(/^(\d{4})-(\d{2})-(\d{2})(?:$|T|\s)/);
-  if (!match) return null;
-  const year = Number(match[1]);
-  const month = Number(match[2]);
-  const day = Number(match[3]);
-  const date = new Date(Date.UTC(year, month - 1, day));
-  return date.getUTCFullYear() === year &&
-    date.getUTCMonth() === month - 1 &&
-    date.getUTCDate() === day
-    ? `${match[1]}-${match[2]}-${match[3]}`
-    : null;
-}
-
-function addUtcDays(year: number, monthIndex: number, day: number, days: number): string {
-  const result = new Date(Date.UTC(year, monthIndex, day + days));
-  return result.toISOString().slice(0, 10);
-}
-
-type OrdinaryLegislature = { year: number; term: "PLO" | "SLO" };
-
-function parseOrdinaryLegislature(value: string | null | undefined): OrdinaryLegislature | null {
-  const match = normalized(value)
-    .toUpperCase()
-    .match(/^(\d{4})-(PLO|SLO)$/);
-  return match?.[1] && match[2]
-    ? { year: Number(match[1]), term: match[2] as "PLO" | "SLO" }
-    : null;
-}
-
-function legislatureForDate(value: string): OrdinaryLegislature | null {
-  const parsed = isoDate(value);
-  if (!parsed) return null;
-  const year = Number(parsed.slice(0, 4));
-  const date = parsed;
-  const ploStart = `${year}-02-27`;
-  const ploEnd = addUtcDays(year, 1, 27, 149);
-  if (date >= ploStart && date <= ploEnd) return { year, term: "PLO" };
-
-  const sloStart = `${year}-08-16`;
-  if (date >= sloStart) return { year, term: "SLO" };
-
-  const priorSloEnd = addUtcDays(year - 1, 7, 16, 149);
-  if (date <= priorSloEnd) return { year: year - 1, term: "SLO" };
-  return null;
-}
-
-function legislatureCode(value: OrdinaryLegislature): string {
-  return `${value.year}-${value.term}`;
-}
-
-function projectedExpiry(start: OrdinaryLegislature): {
-  date: string;
-  endLegislature: string;
-} {
-  if (start.term === "PLO") {
-    return {
-      date: addUtcDays(start.year, 7, 16, 149),
-      endLegislature: `${start.year}-SLO`,
-    };
-  }
-  const nextYear = start.year + 1;
-  return {
-    date: addUtcDays(nextYear, 1, 27, 149),
-    endLegislature: `${nextYear}-PLO`,
-  };
-}
+const isoDate = validISODate;
 
 function terminalStatus(value: string | null | undefined): boolean {
   const status = normalized(value);
@@ -231,32 +175,6 @@ function peremptedStatus(value: string | null | undefined): boolean {
 
 function dispatchedStatus(value: string | null | undefined): boolean {
   return /^despachad[oa](?:\b|$)/.test(normalized(value));
-}
-
-function normalizedType(value: string | null | undefined): string {
-  return normalized(value)
-    .normalize("NFD")
-    .replace(/\p{Diacritic}/gu, "");
-}
-
-function recognizedBillType(value: string | null | undefined): boolean {
-  const type = normalizedType(value);
-  return type === "proyecto de ley" || type.startsWith("proyecto de ley ");
-}
-
-function recognizedNonBillType(value: string | null | undefined): boolean {
-  const type = normalizedType(value);
-  return [
-    "resolucion",
-    "proyecto de resolucion",
-    "contrato",
-    "convenio",
-    "nombramiento",
-    "designacion",
-    "prestamo",
-    "acuerdo",
-    "tratado",
-  ].some((known) => type === known || type.startsWith(`${known} `));
 }
 
 function eventTimestamp(event: InitiativeProceduralEvent): string {
@@ -290,12 +208,17 @@ function resolveCurrentLocation(input: InitiativeProceduralFactsInput): Resolved
       reason: "SOURCE_PUBLISHED_CURRENT_BODY",
     };
   }
-  if (terminalStatus(input.status) || peremptedStatus(input.status)) {
+  if (
+    terminalStatus(input.status) ||
+    terminalStatus(input.condition) ||
+    peremptedStatus(input.status) ||
+    peremptedStatus(input.condition)
+  ) {
     return {
       state: "PROCEDURE_CONCLUDED",
       basis: "OFFICIAL",
       reason: "TERMINAL_STATUS",
-      status: input.status?.trim() ?? "",
+      status: input.status?.trim() || input.condition?.trim() || "",
     };
   }
 
@@ -386,83 +309,29 @@ function resolveExpiration(input: InitiativeProceduralFactsInput): ResolvedIniti
       sourceEventId: peremptionEvent.sourceEventId ?? null,
     };
   }
-  if (peremptedStatus(input.status) || peremptionEvents.length > 0) {
+  if (
+    peremptedStatus(input.status) ||
+    peremptedStatus(input.condition) ||
+    peremptionEvents.length > 0
+  ) {
     return {
       state: "EXPIRED_DATE_UNPUBLISHED",
       basis: "OFFICIAL",
       reason: "SOURCE_REPORTS_PEREMPTION_WITHOUT_DATE",
-      status: input.status?.trim() || peremptionEvents[0]?.status || "",
+      status: input.status?.trim() || input.condition?.trim() || peremptionEvents[0]?.status || "",
     };
   }
-  if (terminalStatus(input.status)) {
+  if (terminalStatus(input.status) || terminalStatus(input.condition)) {
     return {
       state: "PROCEDURE_CONCLUDED",
       basis: "OFFICIAL",
       reason: "TERMINAL_STATUS",
-      status: input.status?.trim() ?? "",
-    };
-  }
-  if (!recognizedBillType(input.type) && recognizedNonBillType(input.type)) {
-    return {
-      state: "RULE_NOT_APPLICABLE",
-      basis: "DERIVED",
-      reason: "TYPE_NOT_COVERED_BY_TWO_LEGISLATURE_RULE",
-    };
-  }
-  if (!recognizedBillType(input.type)) {
-    return {
-      state: "REVIEW_REQUIRED",
-      basis: "DERIVED",
-      reason: "TYPE_NOT_PUBLISHED_OR_RECOGNIZED",
-    };
-  }
-
-  const initiated = normalized(input.initiated);
-  if (initiated === "no") {
-    if (input.initiatedAt) {
-      return {
-        state: "REVIEW_REQUIRED",
-        basis: "DERIVED",
-        reason: "CONFLICTING_START_EVIDENCE",
-      };
-    }
-    return {
-      state: "COUNT_NOT_STARTED",
-      basis: "OFFICIAL",
-      reason: "SOURCE_REPORTS_NOT_INITIATED",
-    };
-  }
-  // A yes/no flag proves only whether the count has started. It does not prove which
-  // ordinary legislature was the first countable one. The projection therefore
-  // requires the source-published start date; the generic `legislature` field alone
-  // must never become a hidden substitute for the consideration/admission event.
-  if (!input.initiatedAt) {
-    return {
-      state: "REVIEW_REQUIRED",
-      basis: "DERIVED",
-      reason: "COUNT_START_NOT_PUBLISHED",
-    };
-  }
-
-  const source = chamber(input.sourceChamber);
-  const origin = chamber(input.originChamber);
-  if (source && origin && source !== origin) {
-    return {
-      state: "REVIEW_REQUIRED",
-      basis: "DERIVED",
-      reason: "BICAMERAL_START_NOT_LINKED",
+      status: input.status?.trim() || input.condition?.trim() || "",
     };
   }
 
   const reportedLegislature = parseOrdinaryLegislature(input.legislature);
-  const dateLegislature = input.initiatedAt ? legislatureForDate(input.initiatedAt) : null;
-  if (input.initiatedAt && !dateLegislature) {
-    return {
-      state: "REVIEW_REQUIRED",
-      basis: "DERIVED",
-      reason: "INVALID_OR_EXTRAORDINARY_LEGISLATURE",
-    };
-  }
+  const dateLegislature = ordinaryLegislatureForDate(input.filedAt);
   if (!reportedLegislature && !dateLegislature) {
     return {
       state: "REVIEW_REQUIRED",
@@ -473,7 +342,7 @@ function resolveExpiration(input: InitiativeProceduralFactsInput): ResolvedIniti
   if (
     reportedLegislature &&
     dateLegislature &&
-    legislatureCode(reportedLegislature) !== legislatureCode(dateLegislature)
+    ordinaryLegislatureCode(reportedLegislature) !== ordinaryLegislatureCode(dateLegislature)
   ) {
     return {
       state: "REVIEW_REQUIRED",
@@ -490,17 +359,17 @@ function resolveExpiration(input: InitiativeProceduralFactsInput): ResolvedIniti
       reason: "LEGAL_EXCEPTION_REVIEW",
     };
   }
-  const projection = projectedExpiry(start);
+  const projection = secondLegislatureClosingDate(start);
   return {
     state: "PROJECTED",
     basis: "DERIVED",
     date: projection.date,
     reason: "TWO_ORDINARY_LEGISLATURES",
-    startLegislature: legislatureCode(start),
+    startLegislature: ordinaryLegislatureCode(start),
     endLegislature: projection.endLegislature,
-    startEvidenceDate: isoDate(input.initiatedAt),
+    startEvidenceDate: isoDate(input.filedAt),
     legalBasis: LEGAL_BASIS,
-    methodVersion: "oculis-constitutional-expiry-v1",
+    methodVersion: "oculis-constitutional-expiry-v2",
   };
 }
 

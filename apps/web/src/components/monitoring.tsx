@@ -463,7 +463,7 @@ function regulatoryStatePresentation(state: RegulationItem["activityState"], lan
   switch (state) {
     case "OPEN":
       return {
-        label: es ? "Vigente hoy" : "Open today",
+        label: es ? "Abierta hoy" : "Open today",
         background: "color-mix(in srgb, var(--verified) 15%, transparent)",
         color: "var(--verified)",
       };
@@ -506,6 +506,21 @@ function regulationSourceLabel(source: string, lang: Lang): string {
   );
 }
 
+export function regulatoryOfficialStatusLabel(status: string, lang: Lang): string {
+  const normalized = status
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .trim()
+    .toLowerCase();
+  if (["vigente", "activo", "activa"].includes(normalized)) {
+    return lang === "es" ? "Abierta" : "Open";
+  }
+  if (["no vigente", "vencido", "vencida"].includes(normalized)) {
+    return lang === "es" ? "Cerrada" : "Closed";
+  }
+  return status;
+}
+
 export function RegulationRow({ item, lang = "es" }: { item: RegulationItem; lang?: Lang }) {
   const sourceUrl = safeHttpUrl(item.url);
   const missing = lang === "es" ? "No informado" : "Not reported";
@@ -545,7 +560,8 @@ export function RegulationRow({ item, lang = "es" }: { item: RegulationItem; lan
         >
           {item.status && (
             <span>
-              {lang === "es" ? "Etapa/estado oficial" : "Official stage/status"}: {item.status}
+              {lang === "es" ? "Etapa/estado oficial" : "Official stage/status"}:{" "}
+              {regulatoryOfficialStatusLabel(item.status, lang)}
             </span>
           )}
           <span>{regulationSourceLabel(item.source, lang)}</span>

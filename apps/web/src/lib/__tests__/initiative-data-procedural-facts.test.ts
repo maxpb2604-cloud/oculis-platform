@@ -99,9 +99,11 @@ describe("initiative detail procedural facts adapter", () => {
         evidenceSource: "sil-diputados",
       },
       expiration: {
-        state: "COUNT_NOT_STARTED",
-        basis: "OFFICIAL",
-        reason: "SOURCE_REPORTS_NOT_INITIATED",
+        state: "PROJECTED",
+        basis: "DERIVED",
+        reason: "TWO_ORDINARY_LEGISLATURES",
+        date: "2027-07-26",
+        startLegislature: "2026-SLO",
       },
     });
     expect(initiative?.events[0]).toMatchObject({
@@ -190,9 +192,11 @@ describe("initiative detail procedural facts adapter", () => {
           chamber: "SENADO",
         },
         expiration: {
-          state: "COUNT_NOT_STARTED",
-          basis: "OFFICIAL",
-          reason: "SOURCE_REPORTS_NOT_INITIATED",
+          state: "PROJECTED",
+          basis: "DERIVED",
+          reason: "TWO_ORDINARY_LEGISLATURES",
+          date: "2027-07-26",
+          startLegislature: "2026-SLO",
         },
       },
     });

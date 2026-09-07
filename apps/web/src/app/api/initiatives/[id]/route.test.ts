@@ -50,6 +50,14 @@ describe("initiative detail API title provenance", () => {
       title: "Crea el centro nacional de capacitación para motoristas.",
       currentChamber: null,
       expiresAt: null,
+      legislativeValidity: {
+        state: "VIGENTE",
+        basis: "CALCULATED",
+        reason: "TWO_ORDINARY_LEGISLATURES",
+        expiresAt: "2027-07-26",
+        startLegislature: "2026-SLO",
+        endLegislature: "2027-PLO",
+      },
       proceduralFacts: {
         currentLocation: {
           state: "CHAMBER",
@@ -78,6 +86,10 @@ describe("initiative detail API title provenance", () => {
     expect(response.status).toBe(200);
     expect(payload.currentChamber).toBeNull();
     expect(payload.expiresAt).toBeNull();
+    expect(payload.legislativeValidity).toMatchObject({
+      state: "VIGENTE",
+      reason: "TWO_ORDINARY_LEGISLATURES",
+    });
     expect(payload.proceduralFacts).toMatchObject({
       currentLocation: {
         state: "CHAMBER",

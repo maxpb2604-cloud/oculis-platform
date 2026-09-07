@@ -206,7 +206,7 @@ describe("upsertInitiative", () => {
 });
 
 describe("HOME province initiative sample", () => {
-  it("counts active initiatives only from the literal normalized source condition", async () => {
+  it("counts vigente initiatives from the two-legislature filing window", async () => {
     const province = "Provincia conteo vigente";
     await upsertInitiative(
       h.db,
@@ -214,6 +214,8 @@ describe("HOME province initiative sample", () => {
         sourceId: "province-count-active-spaces",
         province,
         condition: "  vigente  ",
+        filedAt: "2026-03-01",
+        legislature: "2026-PLO",
       }),
     );
     await upsertInitiative(
@@ -222,6 +224,8 @@ describe("HOME province initiative sample", () => {
         sourceId: "province-count-active-casing",
         province,
         condition: "ViGeNtE",
+        filedAt: "2026-08-20",
+        legislature: "2026-SLO",
       }),
     );
     await upsertInitiative(
@@ -230,6 +234,8 @@ describe("HOME province initiative sample", () => {
         sourceId: "province-count-not-active",
         province,
         condition: "NO VIGENTE",
+        filedAt: "2026-08-20",
+        legislature: "2026-SLO",
       }),
     );
     await upsertInitiative(
@@ -239,6 +245,8 @@ describe("HOME province initiative sample", () => {
         province,
         condition: "ARCHIVADA",
         status: "VIGENTE",
+        filedAt: "2025-01-01",
+        legislature: "2024-SLO",
       }),
     );
     await upsertInitiative(
@@ -247,10 +255,11 @@ describe("HOME province initiative sample", () => {
         sourceId: "province-count-null-province",
         province: null,
         condition: "VIGENTE",
+        filedAt: "2026-08-20",
       }),
     );
 
-    const rows = await countInitiativesByProvinceWithActive(h.db);
+    const rows = await countInitiativesByProvinceWithActive(h.db, "2026-09-07");
     expect(rows.find((row) => row.province === province)).toEqual({
       province,
       total: 4,
@@ -3337,8 +3346,8 @@ describe("canonical legislator profile identity", () => {
       basis: "official-proponent-id",
       coverage: "partial",
       deposited: 2,
-      active: 1,
-      otherConditionOrUnpublished: 1,
+      active: 2,
+      otherConditionOrUnpublished: 0,
     });
     expect(await getLegislatorInitiativeStats(h.db, Number.MAX_SAFE_INTEGER)).toEqual({
       availability: "unavailable",
@@ -3382,7 +3391,7 @@ describe("normalized initiative proponents", () => {
     const profile = (await listLegislators(h.db)).find(
       (row) => row.source === rosterSource && row.sourceId === "relation-role-person",
     )!;
-    const filedAt = "2099-01-15";
+    const filedAt = "2099-01-10";
     const principal = await upsertInitiative(
       h.db,
       fixture({
@@ -3508,8 +3517,8 @@ describe("normalized initiative proponents", () => {
       basis: "official-proponent-id",
       coverage: "partial",
       deposited: page.total,
-      active: 1,
-      otherConditionOrUnpublished: 2,
+      active: 2,
+      otherConditionOrUnpublished: 1,
     });
 
     const publicRows = await listInitiativeProponents(h.db, coproponent.id);
@@ -3579,7 +3588,7 @@ describe("normalized initiative proponents", () => {
     const profiles = await listLegislators(h.db);
     const deputy = profiles.find((row) => row.source === dipRosterSource)!;
     const senator = profiles.find((row) => row.source === senRosterSource)!;
-    const filedAt = "2099-02-10";
+    const filedAt = "2099-03-10";
     const dipInitiative = await upsertInitiative(
       h.db,
       fixture({

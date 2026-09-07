@@ -35,6 +35,7 @@ import { initiativeTitlePresentation } from "@/lib/initiative-title";
 import {
   currentLocationPresentation,
   expirationPresentation,
+  legislativeValidityPresentation,
   type ProceduralFactPresentation,
 } from "@/lib/initiative-procedural-presentation";
 import { initiativeChamberLabel, officialStatusLabel } from "@/lib/legislative-labels";
@@ -125,6 +126,7 @@ export default async function Page({ params, searchParams }: InitiativeRouteProp
     lang,
   );
   const expiration = expirationPresentation(initiative.proceduralFacts.expiration, lang);
+  const legislativeValidity = legislativeValidityPresentation(initiative.legislativeValidity, lang);
   const officialDescription = initiative.purpose?.trim() || initiative.title.trim() || missing;
   const showPurpose =
     Boolean(initiative.purpose?.trim()) && initiative.purpose?.trim() !== initiative.title.trim();
@@ -364,6 +366,12 @@ export default async function Page({ params, searchParams }: InitiativeRouteProp
               />
               <ProceduralHeroFact
                 icon={<HourglassHigh aria-hidden size={19} />}
+                label={es ? "Vigencia legislativa" : "Legislative validity"}
+                presentation={legislativeValidity}
+                descriptionId="initiative-legislative-validity"
+              />
+              <ProceduralHeroFact
+                icon={<HourglassHigh aria-hidden size={19} />}
                 label={es ? "Vencimiento normativo" : "Normative expiry"}
                 presentation={expiration}
                 descriptionId="initiative-expiration-evidence"
@@ -416,8 +424,8 @@ export default async function Page({ params, searchParams }: InitiativeRouteProp
                   </h3>
                   <p className="mt-1.5" style={{ color: "var(--text-muted)" }}>
                     {es
-                      ? "Para un proyecto de ley, el depósito no inicia el plazo. La toma en consideración inicia el cómputo de dos legislaturas ordinarias; las extraordinarias no cuentan. Si falta esa evidencia, Oculis no fabrica una fecha."
-                      : "For a bill, filing does not start the period. Consideration starts the two-ordinary-legislature count; extraordinary legislatures do not count. If that evidence is missing, Oculis does not manufacture a date."}
+                      ? "Oculis cuenta la legislatura del depósito como la primera y la legislatura ordinaria siguiente como la segunda. Al cerrar la segunda, el expediente pendiente queda no vigente. Una reintroducción se evalúa como un expediente nuevo y no revive el anterior."
+                      : "Oculis counts the filing legislature as the first and the next ordinary legislature as the second. When the second closes, a pending record is no longer active. A reintroduction is evaluated as a new record and does not revive the former one."}
                   </p>
                   <p className="mt-2 flex flex-wrap gap-x-3 gap-y-1 font-semibold">
                     <a

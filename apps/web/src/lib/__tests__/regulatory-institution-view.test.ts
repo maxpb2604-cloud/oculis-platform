@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { regulatoryOfficialStatusLabel } from "@/components/monitoring";
 
 const pageSource = readFileSync(
   fileURLToPath(new URL("../../app/regulatorio/page.tsx", import.meta.url)),
@@ -38,5 +39,12 @@ describe("regulatory institution view", () => {
   it("keeps the chronological recent-publication feed", () => {
     expect(pageSource).toContain("Últimas iniciativas regulatorias depositadas");
     expect(pageSource).toContain("items={recent as RegulationItem[]}");
+  });
+
+  it("never presents the legislative term vigente as a regulatory status", () => {
+    expect(pageSource.toLocaleLowerCase("es")).not.toContain("vigent");
+    expect(regulatoryOfficialStatusLabel("VIGENTE", "es")).toBe("Abierta");
+    expect(regulatoryOfficialStatusLabel("NO VIGENTE", "es")).toBe("Cerrada");
+    expect(regulatoryOfficialStatusLabel("VIGENTE", "en")).toBe("Open");
   });
 });

@@ -247,12 +247,12 @@ export default async function RegulatorioPage({
               </div>
               <h2 className="section-title mt-2 max-w-[30ch]">
                 {es
-                  ? "Qué está vigente hoy y qué institución lo está tramitando"
+                  ? "Qué consultas están abiertas hoy y qué institución las tramita"
                   : "Follow regulatory activity institution by institution"}
               </h2>
               <p className="page-subtitle mt-3">
                 {es
-                  ? "Una iniciativa solo figura como vigente cuando una fuente oficial publica un estado abierto o un plazo que incluye el día de hoy. Las propuestas en agenda o borrador se muestran aparte."
+                  ? "Una consulta solo figura como abierta cuando una fuente oficial publica ese estado o un plazo que incluye el día de hoy. Las propuestas en agenda o borrador se muestran aparte."
                   : "Select an institution to review its initiatives, then browse the latest publications from every monitored source below."}
               </p>
             </div>
@@ -265,7 +265,7 @@ export default async function RegulatorioPage({
           <div className="mt-8 grid gap-5 border-b pb-8 sm:grid-cols-2 xl:grid-cols-4">
             <Kpi
               value={kpis.openToday}
-              label={es ? "Consultas vigentes hoy" : "Consultations open today"}
+              label={es ? "Consultas abiertas hoy" : "Consultations open today"}
               accent="var(--verified)"
             />
             <Kpi
@@ -286,7 +286,7 @@ export default async function RegulatorioPage({
           </div>
 
           <SectionHeading
-            title={es ? "Vigentes hoy por institución" : "Open today by institution"}
+            title={es ? "Abiertas hoy por institución" : "Open today by institution"}
             description={
               es
                 ? "Conteo sustentado por el plazo o estado publicado en la fuente oficial."
@@ -303,7 +303,7 @@ export default async function RegulatorioPage({
                 >
                   <div>
                     <div className="eyebrow text-[var(--verified)]">
-                      {es ? "Vigentes hoy" : "Open today"}
+                      {es ? "Abiertas hoy" : "Open today"}
                     </div>
                     <div className="mt-2 text-lg font-semibold">{item.key}</div>
                     <p className="mt-1 text-xs text-[var(--text-muted)]">
@@ -319,7 +319,7 @@ export default async function RegulatorioPage({
           ) : (
             <Notice tone="warning">
               {es
-                ? `No hay una consulta cuya vigencia hoy esté demostrada por fecha o estado. ${kpis.unknown} expediente(s) siguen sin datos suficientes para clasificarlos.`
+                ? `No hay una consulta abierta hoy demostrada por fecha o estado. ${kpis.unknown} expediente(s) siguen sin datos suficientes para clasificarlos.`
                 : `No consultation is proven open today by date or status. ${kpis.unknown} record(s) still lack enough data to classify them.`}
             </Notice>
           )}
@@ -403,7 +403,7 @@ export default async function RegulatorioPage({
 
           <Notice className="mt-6 text-sm">
             {es
-              ? "“Vigente hoy” significa que el día actual cae dentro del plazo oficial publicado o que la fuente declara expresamente que la consulta está abierta. “En proceso” identifica etapas como agenda, borrador o iniciativa; no implica que el período para comentar esté abierto."
+              ? "“Abierta hoy” significa que el día actual cae dentro del plazo oficial publicado o que la fuente declara expresamente que la consulta está abierta. “En proceso” identifica etapas como agenda, borrador o iniciativa; no implica que el período para comentar esté abierto."
               : "“Open today” means today falls within the official published window or the source expressly states the consultation is open. “In process” identifies stages such as agenda, draft, or initiative; it does not mean the comment period is open."}
           </Notice>
         </>
@@ -485,7 +485,7 @@ function InstitutionCard({
               <dd className="tnum mt-1 text-2xl font-semibold">{item.count.toLocaleString()}</dd>
             </div>
             <div className="pl-4">
-              <dt className="eyebrow">{es ? "Vigentes hoy" : "Open today"}</dt>
+              <dt className="eyebrow">{es ? "Abiertas hoy" : "Open today"}</dt>
               <dd className="tnum mt-1 text-2xl font-semibold text-[var(--verified)]">
                 {item.activeCount.toLocaleString()}
               </dd>

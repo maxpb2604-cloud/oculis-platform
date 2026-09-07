@@ -1,4 +1,5 @@
 import { formatISODate } from "@/lib/format";
+import type { LegislativeValidity } from "@oculis/core";
 import type { Lang } from "@/lib/i18n";
 import { initiativeChamberLabel, officialStatusLabel } from "@/lib/legislative-labels";
 import type {
@@ -12,6 +13,79 @@ export interface ProceduralFactPresentation {
   detail: string;
   dateTime: string | null;
   tone: "official" | "observed" | "derived" | "pending";
+}
+
+export function legislativeValidityPresentation(
+  fact: LegislativeValidity,
+  lang: Lang,
+): ProceduralFactPresentation {
+  const es = lang === "es";
+  if (fact.state === "VIGENTE") {
+    return {
+      value: es ? "Vigente" : "Active",
+      basis:
+        fact.basis === "OFFICIAL"
+          ? es
+            ? "Dato publicado"
+            : "Source-published"
+          : es
+            ? "Cálculo de Oculis"
+            : "Oculis calculation",
+      detail: es
+        ? `El expediente está dentro de sus dos legislaturas${fact.endLegislature ? `; la segunda es ${fact.endLegislature}` : ""}.`
+        : `The record is within its two-legislature window${fact.endLegislature ? `; the second is ${fact.endLegislature}` : ""}.`,
+      dateTime: fact.expiresAt,
+      tone: fact.basis === "OFFICIAL" ? "official" : "derived",
+    };
+  }
+  if (fact.state === "NO_VIGENTE") {
+    return {
+      value: es ? "No vigente" : "Not active",
+      basis:
+        fact.basis === "OFFICIAL"
+          ? es
+            ? "Perención publicada"
+            : "Published peremption"
+          : es
+            ? "Regla de dos legislaturas"
+            : "Two-legislature rule",
+      detail:
+        fact.basis === "OFFICIAL"
+          ? es
+            ? "La fuente oficial registra la perención de este expediente."
+            : "The official source records this filing as perempted."
+          : es
+            ? `La segunda legislatura cerró${fact.expiresAt ? ` el ${shortDate(fact.expiresAt, lang)}` : ""}. Una reintroducción debe aparecer como un expediente nuevo.`
+            : `The second legislature closed${fact.expiresAt ? ` on ${shortDate(fact.expiresAt, lang)}` : ""}. A reintroduction must appear as a new record.`,
+      dateTime: fact.expiresAt,
+      tone: fact.basis === "OFFICIAL" ? "official" : "derived",
+    };
+  }
+  if (fact.state === "CONCLUIDA") {
+    return {
+      value: es ? "Trámite concluido" : "Proceeding concluded",
+      basis: es ? "Estado publicado" : "Published status",
+      detail: es
+        ? "La iniciativa ya concluyó su trámite; la clasificación vigente/no vigente no se aplica."
+        : "The initiative has completed its proceeding; active/not active classification does not apply.",
+      dateTime: null,
+      tone: "official",
+    };
+  }
+  return {
+    value: es ? "Vigencia por confirmar" : "Validity pending confirmation",
+    basis: es ? "Evidencia insuficiente" : "Insufficient evidence",
+    detail:
+      fact.reason === "CONFLICTING_FILING_EVIDENCE"
+        ? es
+          ? "La fecha y la legislatura del depósito no coinciden; Oculis no fuerza una clasificación."
+          : "The filing date and legislature conflict; Oculis does not force a classification."
+        : es
+          ? "Falta una fecha o legislatura de depósito verificable para aplicar la regla."
+          : "A verifiable filing date or legislature is missing, so the rule cannot be applied.",
+    dateTime: null,
+    tone: "pending",
+  };
 }
 
 function shortDate(iso: string, lang: Lang): string {
@@ -145,8 +219,8 @@ export function expirationPresentation(
       value: `${es ? "Al cierre del" : "At the close of"} ${shortDate(fact.date, lang)}`,
       basis: es ? "Cálculo de Oculis" : "Oculis calculation",
       detail: es
-        ? `Dos legislaturas ordinarias desde ${fact.startLegislature}; arts. 89, 100 y 104 de la Constitución. El depósito no inicia el cómputo.`
-        : `Two ordinary legislatures from ${fact.startLegislature}; Constitution arts. 89, 100, and 104. Filing does not start the count.`,
+        ? `Dos legislaturas ordinarias contando la legislatura del depósito (${fact.startLegislature}) como la primera; arts. 89, 100 y 104 de la Constitución.`
+        : `Two ordinary legislatures, counting the filing legislature (${fact.startLegislature}) as the first; Constitution arts. 89, 100, and 104.`,
       dateTime: fact.date,
       tone: "derived",
     };
@@ -156,8 +230,8 @@ export function expirationPresentation(
       value: es ? "Cómputo aún no iniciado" : "Legislature count not started",
       basis: es ? "Dato publicado" : "Source-published",
       detail: es
-        ? "La fuente publica «NO» en iniciado. El plazo comienza con la toma en consideración, no con el depósito."
-        : "The source reports that the count has not started. The period begins upon consideration, not filing.",
+        ? "Falta la legislatura del depósito necesaria para aplicar la regla de dos legislaturas."
+        : "The filing legislature needed to apply the two-legislature rule is missing.",
       dateTime: null,
       tone: "official",
     };

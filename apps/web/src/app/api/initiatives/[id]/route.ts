@@ -38,6 +38,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       currentChamber: ini.currentChamber,
       currentBody: ini.currentBody,
       condition: ini.condition,
+      legislativeValidity: ini.legislativeValidity,
       sourceId: ini.sourceId,
       subjectMatter: ini.subjectMatter,
       sponsor: ini.sponsor,

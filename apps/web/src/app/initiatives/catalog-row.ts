@@ -1,4 +1,5 @@
 import type { InitiativeListItem } from "@/lib/data";
+import type { LegislativeValidity } from "@oculis/core";
 import type { Lang } from "@/lib/i18n";
 import { officialDocumentLiveHref } from "@/lib/official-document-links";
 import { officialInitiativeHref } from "@/lib/initiative-links";
@@ -17,6 +18,7 @@ export interface InitiativeCatalogRow {
   title: string;
   titleEn: string | null;
   status: string | null;
+  legislativeValidity: LegislativeValidity;
   sponsor: string | null;
   sponsorRole: string | null;
   sponsorProfileId: number | null;
@@ -65,6 +67,7 @@ export function toInitiativeCatalogRow(item: InitiativeListItem, lang: Lang): In
     title: item.title,
     titleEn: item.titleEn,
     status: item.status,
+    legislativeValidity: item.legislativeValidity,
     sponsor: item.sponsor,
     sponsorRole: item.sponsorRole,
     sponsorProfileId: item.sponsorProfileId,

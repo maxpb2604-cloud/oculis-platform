@@ -62,7 +62,7 @@ function validISODate(value: string | null | undefined): value is string {
 }
 
 /**
- * A consultation is "vigente hoy" only with direct evidence: an explicit open
+ * A consultation is "open today" only with direct evidence: an explicit open
  * status or a source-published date window containing the requested day.
  */
 export function classifyRegulatoryActivity(

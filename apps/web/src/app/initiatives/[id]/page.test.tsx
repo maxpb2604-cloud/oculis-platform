@@ -33,6 +33,14 @@ function initiative(titleEn: string | null) {
     purpose: officialTitle,
     type: null,
     status: "Depositado",
+    legislativeValidity: {
+      state: "VIGENTE",
+      basis: "CALCULATED",
+      reason: "TWO_ORDINARY_LEGISLATURES",
+      expiresAt: "2027-07-26",
+      startLegislature: "2026-SLO",
+      endLegislature: "2027-PLO",
+    },
     chamber: "DIPUTADOS",
     sourceChamber: "DIPUTADOS",
     originChamber: null,
@@ -49,9 +57,15 @@ function initiative(titleEn: string | null) {
         evidenceSource: null,
       },
       expiration: {
-        state: "RULE_NOT_APPLICABLE",
+        state: "PROJECTED",
         basis: "DERIVED",
-        reason: "TYPE_NOT_COVERED_BY_TWO_LEGISLATURE_RULE",
+        date: "2027-07-26",
+        reason: "TWO_ORDINARY_LEGISLATURES",
+        startLegislature: "2026-SLO",
+        endLegislature: "2027-PLO",
+        startEvidenceDate: "2026-08-28",
+        legalBasis: ["CRD-89", "CRD-100", "CRD-104"],
+        methodVersion: "oculis-constitutional-expiry-v2",
       },
     },
     condition: null,
@@ -174,7 +188,7 @@ describe("localized initiative detail title", () => {
     expect(html).not.toContain("PDF verificado");
   });
 
-  it("always shows the observed chamber and the source-published count state", async () => {
+  it("shows the observed chamber and counts validity from the filing legislature", async () => {
     getInitiative.mockResolvedValue({
       ...initiative(translatedTitle),
       type: "Proyecto de Ley",
@@ -191,9 +205,15 @@ describe("localized initiative detail title", () => {
           evidenceSource: "sil-diputados",
         },
         expiration: {
-          state: "COUNT_NOT_STARTED",
-          basis: "OFFICIAL",
-          reason: "SOURCE_REPORTS_NOT_INITIATED",
+          state: "PROJECTED",
+          basis: "DERIVED",
+          date: "2027-07-26",
+          reason: "TWO_ORDINARY_LEGISLATURES",
+          startLegislature: "2026-SLO",
+          endLegislature: "2027-PLO",
+          startEvidenceDate: "2026-08-28",
+          legalBasis: ["CRD-89", "CRD-100", "CRD-104"],
+          methodVersion: "oculis-constitutional-expiry-v2",
         },
       },
     });
@@ -205,8 +225,9 @@ describe("localized initiative detail title", () => {
     expect(html).toContain("Última cámara oficial observada");
     expect(html).toContain("Movimiento oficial · Depositado · 31 ago de 2026");
     expect(html).toContain("Vencimiento normativo");
-    expect(html).toContain("Cómputo aún no iniciado");
-    expect(html).toContain("El plazo comienza con la toma en consideración, no con el depósito.");
+    expect(html).toContain("Al cierre del 26 jul de 2027");
+    expect(html).toContain("Vigencia legislativa");
+    expect(html).toContain("legislatura del depósito como la primera");
     expect(html.match(/Cámara actual/g)).toHaveLength(2);
   });
 
@@ -236,7 +257,7 @@ describe("localized initiative detail title", () => {
           endLegislature: "2028-PLO",
           startEvidenceDate: "2027-09-01",
           legalBasis: ["CRD-89", "CRD-100", "CRD-104"],
-          methodVersion: "oculis-constitutional-expiry-v1",
+          methodVersion: "oculis-constitutional-expiry-v2",
         },
       },
     });
