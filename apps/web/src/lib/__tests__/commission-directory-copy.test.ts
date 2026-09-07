@@ -29,6 +29,11 @@ describe("commission directory details", () => {
     expect(congressPageSource.toLowerCase()).not.toContain("agenda");
   });
 
+  it("keeps the roster search example clear of its search icon", () => {
+    expect(congressRosterSource).toContain('className="ui-input min-w-0 !pl-11"');
+    expect(congressRosterSource).not.toContain('className="ui-input min-w-0 pl-10"');
+  });
+
   it("uses the requested directory name in the sidebar", () => {
     expect(sidebarSource).toContain('"Directorio de Congresistas"');
     expect(sidebarSource).toContain('"Congressional Directory"');

@@ -314,7 +314,7 @@ export function CongressRoster({
                         ? "Ej.: Comisión de justicia"
                         : "E.g. Justice committee"
                   }
-                  className="ui-input min-w-0 pl-10"
+                  className="ui-input min-w-0 !pl-11"
                 />
               </span>
             </label>
