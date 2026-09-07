@@ -14,14 +14,14 @@ const baseItem: RegulationItem = {
   publishedAt: "2026-09-01",
   deadline: "2026-09-30",
   url: "https://msp.gob.do/consulta",
-  activityState: "OPEN",
+  consultationState: "OPEN",
+  regulatoryProcessState: null,
 };
 
 describe("RegulationRow public-consultation terminology", () => {
   it("presents the complete category and current state together", () => {
     const html = renderToStaticMarkup(<RegulationRow item={baseItem} lang="es" />);
     expect(html).toContain("INICIATIVA EN CONSULTA PÚBLICA · Abierta hoy");
-    expect(html).toContain("Iniciativa en Consulta Pública");
   });
 
   it("does not label an ordinary regulatory record as a public consultation", () => {
@@ -32,7 +32,8 @@ describe("RegulationRow public-consultation terminology", () => {
           source: "reg-mispas",
           status: "VIGENTE",
           isConsulta: false,
-          activityState: "UNKNOWN",
+          consultationState: null,
+          regulatoryProcessState: "UNKNOWN",
         }}
         lang="es"
       />,
@@ -40,5 +41,14 @@ describe("RegulationRow public-consultation terminology", () => {
     expect(html).toContain("Estado regulatorio por confirmar");
     expect(html).toContain("En aplicación");
     expect(html).not.toContain("INICIATIVA EN CONSULTA PÚBLICA");
+  });
+
+  it("never renders legislative validity inside an Initiative in Public Consultation", () => {
+    const html = renderToStaticMarkup(
+      <RegulationRow item={{ ...baseItem, status: "VIGENTE" }} lang="es" />,
+    );
+    expect(html).toContain("INICIATIVA EN CONSULTA PÚBLICA · Abierta hoy");
+    expect(html).not.toContain("VIGENTE");
+    expect(html).not.toContain("En aplicación");
   });
 });

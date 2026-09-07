@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  classifyRegulatoryActivity,
+  classifyPublicConsultation,
+  classifyRegulatoryProcess,
   isExplicitlyOpenConsultationStatus,
   isOpenPublicConsultation,
   normalizeRegulatoryStatus,
@@ -26,17 +27,17 @@ describe("regulatory status classification", () => {
   );
 
   it("never converts an active regulatory instrument into an open public consultation", () => {
-    expect(classifyRegulatoryActivity({ status: "VIGENTE", isConsulta: false }, "2026-09-07")).toBe(
-      "UNKNOWN",
-    );
-    expect(classifyRegulatoryActivity({ status: "Abierta", isConsulta: false }, "2026-09-07")).toBe(
-      "UNKNOWN",
-    );
-    expect(classifyRegulatoryActivity({ status: "Abierta", isConsulta: true }, "2026-09-07")).toBe(
+    expect(
+      classifyPublicConsultation({ status: "VIGENTE", isConsulta: false }, "2026-09-07"),
+    ).toBeNull();
+    expect(
+      classifyPublicConsultation({ status: "Abierta", isConsulta: false }, "2026-09-07"),
+    ).toBeNull();
+    expect(classifyPublicConsultation({ status: "Abierta", isConsulta: true }, "2026-09-07")).toBe(
       "OPEN",
     );
-    expect(isOpenPublicConsultation({ isConsulta: false, activityState: "OPEN" })).toBe(false);
-    expect(isOpenPublicConsultation({ isConsulta: true, activityState: "OPEN" })).toBe(true);
+    expect(isOpenPublicConsultation({ isConsulta: false, consultationState: null })).toBe(false);
+    expect(isOpenPublicConsultation({ isConsulta: true, consultationState: "OPEN" })).toBe(true);
   });
 
   it("counts a dated consultation as open only inside its official window", () => {
@@ -46,15 +47,21 @@ describe("regulatory status classification", () => {
       publishedAt: "2026-08-24",
       deadline: "2026-10-26",
     };
-    expect(classifyRegulatoryActivity(consultation, "2026-09-07")).toBe("OPEN");
-    expect(classifyRegulatoryActivity(consultation, "2026-08-20")).toBe("UPCOMING");
-    expect(classifyRegulatoryActivity(consultation, "2026-10-27")).toBe("CLOSED");
+    expect(classifyPublicConsultation(consultation, "2026-09-07")).toBe("OPEN");
+    expect(classifyPublicConsultation(consultation, "2026-08-20")).toBe("UPCOMING");
+    expect(classifyPublicConsultation(consultation, "2026-10-27")).toBe("CLOSED");
   });
 
-  it("separates regulatory pipeline stages from open consultation windows", () => {
-    expect(classifyRegulatoryActivity({ status: "Agenda" }, "2026-09-07")).toBe("IN_PROCESS");
-    expect(classifyRegulatoryActivity({ status: "Borrador" }, "2026-09-07")).toBe("IN_PROCESS");
-    expect(classifyRegulatoryActivity({ status: "Finalizada" }, "2026-09-07")).toBe("CLOSED");
-    expect(classifyRegulatoryActivity({ status: null }, "2026-09-07")).toBe("UNKNOWN");
+  it("uses mutually exclusive classifiers for regulatory process and public participation", () => {
+    expect(classifyRegulatoryProcess({ status: "Agenda", isConsulta: false })).toBe("IN_PROCESS");
+    expect(classifyRegulatoryProcess({ status: "Borrador", isConsulta: null })).toBe("IN_PROCESS");
+    expect(classifyRegulatoryProcess({ status: "Finalizada", isConsulta: false })).toBe(
+      "CONCLUDED",
+    );
+    expect(classifyRegulatoryProcess({ status: null, isConsulta: false })).toBe("UNKNOWN");
+    expect(classifyRegulatoryProcess({ status: "VIGENTE", isConsulta: true })).toBeNull();
+    expect(
+      classifyPublicConsultation({ status: "Agenda", isConsulta: false }, "2026-09-07"),
+    ).toBeNull();
   });
 });

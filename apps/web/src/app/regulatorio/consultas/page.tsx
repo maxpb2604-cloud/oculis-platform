@@ -46,10 +46,8 @@ export default async function ConsultasPage({
   const consultas = (await getConsultas()) as RegulationItem[];
   const byInstitution = new Set(consultas.map((consulta) => consulta.institution)).size;
   const withDeadline = consultas.filter((consulta) => consulta.deadline).length;
-  const openToday = consultas.filter((consulta) => consulta.activityState === "OPEN").length;
-  const inProcess = consultas.filter(
-    (consulta) => consulta.activityState === "IN_PROCESS" || consulta.activityState === "UPCOMING",
-  ).length;
+  const openToday = consultas.filter((consulta) => consulta.consultationState === "OPEN").length;
+  const upcoming = consultas.filter((consulta) => consulta.consultationState === "UPCOMING").length;
   const langSuffix = lang === "en" ? "?lang=en" : "";
 
   return (
@@ -167,8 +165,12 @@ export default async function ConsultasPage({
               accent="var(--verified)"
             />
             <Kpi
-              value={inProcess}
-              label={es ? "Próximas o en proceso" : "Upcoming or in process"}
+              value={upcoming}
+              label={
+                es
+                  ? "Iniciativas en Consulta Pública próximas"
+                  : "Upcoming Initiatives in Public Consultation"
+              }
               accent="var(--warn)"
             />
             <Kpi

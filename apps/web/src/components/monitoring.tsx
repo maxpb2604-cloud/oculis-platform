@@ -455,71 +455,76 @@ export interface RegulationItem {
   publishedAt: string | null;
   deadline: string | null;
   url: string | null;
-  activityState: "OPEN" | "UPCOMING" | "IN_PROCESS" | "CLOSED" | "UNKNOWN";
+  /** Participation-window state; null unless this is an Initiative in Public Consultation. */
+  consultationState: "OPEN" | "UPCOMING" | "CLOSED" | "UNKNOWN" | null;
+  /** General regulatory-process state; null for Initiatives in Public Consultation. */
+  regulatoryProcessState: "IN_PROCESS" | "CONCLUDED" | "UNKNOWN" | null;
 }
 
-function regulatoryStatePresentation(
-  state: RegulationItem["activityState"],
+function publicConsultationStatePresentation(
+  state: NonNullable<RegulationItem["consultationState"]>,
   lang: Lang,
-  isPublicConsultation = false,
 ) {
   const es = lang === "es";
-  const consultationStateLabels = {
+  const labels = {
     OPEN: es ? "Abierta hoy" : "Open today",
     UPCOMING: es ? "Próxima" : "Upcoming",
-    IN_PROCESS: es ? "En proceso" : "In process",
     CLOSED: es ? "Cerrada / histórica" : "Closed / historical",
     UNKNOWN: es ? "Estado por confirmar" : "Status to confirm",
-  } as const;
-  const generalStateLabels = {
-    OPEN: es ? "Actividad confirmada" : "Confirmed activity",
-    UPCOMING: es ? "Publicación próxima" : "Upcoming publication",
-    IN_PROCESS: es ? "En proceso regulatorio" : "In regulatory process",
-    CLOSED: es ? "Proceso concluido / histórico" : "Concluded / historical process",
-    UNKNOWN: es ? "Estado regulatorio por confirmar" : "Regulatory status to confirm",
   } as const;
   let presentation: { label: string; background: string; color: string };
   switch (state) {
     case "OPEN":
       presentation = {
-        label: consultationStateLabels.OPEN,
+        label: labels.OPEN,
         background: "color-mix(in srgb, var(--verified) 15%, transparent)",
         color: "var(--verified)",
       };
       break;
     case "UPCOMING":
       presentation = {
-        label: consultationStateLabels.UPCOMING,
+        label: labels.UPCOMING,
         background: "var(--accent-soft)",
         color: "var(--accent)",
       };
       break;
-    case "IN_PROCESS":
-      presentation = {
-        label: consultationStateLabels.IN_PROCESS,
-        background: "color-mix(in srgb, var(--warn) 15%, transparent)",
-        color: "var(--warn)",
-      };
-      break;
     case "CLOSED":
       presentation = {
-        label: consultationStateLabels.CLOSED,
+        label: labels.CLOSED,
         background: "var(--surface-2)",
         color: "var(--text-muted)",
       };
       break;
     default:
       presentation = {
-        label: consultationStateLabels.UNKNOWN,
+        label: labels.UNKNOWN,
         background: "var(--surface-2)",
         color: "var(--text-muted)",
       };
   }
   return {
     ...presentation,
-    label: isPublicConsultation
-      ? `${t(lang, "publicConsultation")} · ${presentation.label}`
-      : generalStateLabels[state],
+    label: `${t(lang, "publicConsultation")} · ${presentation.label}`,
+  };
+}
+
+function regulatoryProcessStatePresentation(
+  state: NonNullable<RegulationItem["regulatoryProcessState"]>,
+  lang: Lang,
+) {
+  const es = lang === "es";
+  const labels = {
+    IN_PROCESS: es ? "En proceso regulatorio" : "In regulatory process",
+    CONCLUDED: es ? "Proceso regulatorio concluido / histórico" : "Concluded / historical process",
+    UNKNOWN: es ? "Estado regulatorio por confirmar" : "Regulatory status to confirm",
+  } as const;
+  return {
+    label: labels[state],
+    background:
+      state === "IN_PROCESS"
+        ? "color-mix(in srgb, var(--warn) 15%, transparent)"
+        : "var(--surface-2)",
+    color: state === "IN_PROCESS" ? "var(--warn)" : "var(--text-muted)",
   };
 }
 
@@ -556,13 +561,12 @@ export function regulatoryOfficialStatusLabel(status: string, lang: Lang): strin
   if (["vencido", "vencida"].includes(normalized)) {
     return lang === "es" ? "Plazo concluido" : "Deadline ended";
   }
-  if (["consulta publica", "en consulta publica"].includes(normalized)) {
-    return lang === "es" ? "Iniciativa en Consulta Pública" : "Initiative in Public Consultation";
-  }
-  if (["consulta publica abierta", "en consulta"].includes(normalized)) {
-    return lang === "es"
-      ? "Iniciativa en Consulta Pública · Abierta"
-      : "Initiative in Public Consultation · Open";
+  if (
+    ["consulta publica", "en consulta publica", "consulta publica abierta", "en consulta"].includes(
+      normalized,
+    )
+  ) {
+    return lang === "es" ? "Clasificación por revisar" : "Classification to review";
   }
   return status;
 }
@@ -570,7 +574,10 @@ export function regulatoryOfficialStatusLabel(status: string, lang: Lang): strin
 export function RegulationRow({ item, lang = "es" }: { item: RegulationItem; lang?: Lang }) {
   const sourceUrl = safeHttpUrl(item.url);
   const missing = lang === "es" ? "No informado" : "Not reported";
-  const state = regulatoryStatePresentation(item.activityState, lang, Boolean(item.isConsulta));
+  const isPublicConsultation = item.isConsulta === true;
+  const state = isPublicConsultation
+    ? publicConsultationStatePresentation(item.consultationState ?? "UNKNOWN", lang)
+    : regulatoryProcessStatePresentation(item.regulatoryProcessState ?? "UNKNOWN", lang);
   return (
     <div className="flex items-start gap-3 border-b px-5 py-3 last:border-0">
       <div className="min-w-0 flex-1">
@@ -596,7 +603,7 @@ export function RegulationRow({ item, lang = "es" }: { item: RegulationItem; lan
           className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] leading-5"
           style={{ color: "var(--text-muted)" }}
         >
-          {item.status && (
+          {!isPublicConsultation && item.status && (
             <span>
               {lang === "es" ? "Etapa/estado oficial" : "Official stage/status"}:{" "}
               {regulatoryOfficialStatusLabel(item.status, lang)}

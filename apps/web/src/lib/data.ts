@@ -80,9 +80,11 @@ import { selectHomeDirectoryPortraits } from "./home-directory-promo";
 import type { Lang } from "./i18n";
 import { resolvePartyPresentation } from "./party-presentation";
 import {
-  classifyRegulatoryActivity,
+  classifyPublicConsultation,
+  classifyRegulatoryProcess,
   isOpenPublicConsultation,
-  type RegulatoryActivityState,
+  type PublicConsultationState,
+  type RegulatoryProcessState,
 } from "./regulatory-status";
 
 export type FeedFilters = Omit<DbFeedFilters, "category">;
@@ -1209,18 +1211,30 @@ function deduplicateRegulationFacts(items: RegulationFact[]): RegulationFact[] {
   );
 }
 
-const REGULATORY_STATE_RANK: Record<RegulatoryActivityState, number> = {
+const CONSULTATION_STATE_RANK: Record<PublicConsultationState, number> = {
   OPEN: 0,
   UPCOMING: 1,
-  IN_PROCESS: 2,
-  UNKNOWN: 3,
-  CLOSED: 4,
+  UNKNOWN: 2,
+  CLOSED: 3,
 };
+
+const REGULATORY_PROCESS_STATE_RANK: Record<RegulatoryProcessState, number> = {
+  IN_PROCESS: 0,
+  UNKNOWN: 1,
+  CONCLUDED: 2,
+};
+
+function regulationRelevanceRank(item: RegulationFact): number {
+  if (item.consultationState) return CONSULTATION_STATE_RANK[item.consultationState];
+  if (item.regulatoryProcessState)
+    return 10 + REGULATORY_PROCESS_STATE_RANK[item.regulatoryProcessState];
+  return 20;
+}
 
 function sortRegulationsByRelevance(items: RegulationFact[]): RegulationFact[] {
   return [...items].sort(
     (a, b) =>
-      REGULATORY_STATE_RANK[a.activityState] - REGULATORY_STATE_RANK[b.activityState] ||
+      regulationRelevanceRank(a) - regulationRelevanceRank(b) ||
       (b.publishedAt ?? "").localeCompare(a.publishedAt ?? ""),
   );
 }
@@ -1251,9 +1265,10 @@ export async function getRegulatoryOverview(opts: { institution?: string } = {})
     if (isOpenPublicConsultation(item)) {
       summary.openCount += 1;
     }
-    if (item.activityState === "UPCOMING") summary.upcomingCount += 1;
-    if (item.activityState === "IN_PROCESS") summary.inProcessCount += 1;
-    if (item.activityState === "UNKNOWN") summary.unknownCount += 1;
+    if (item.consultationState === "UPCOMING") summary.upcomingCount += 1;
+    if (item.regulatoryProcessState === "IN_PROCESS") summary.inProcessCount += 1;
+    if (item.consultationState === "UNKNOWN" || item.regulatoryProcessState === "UNKNOWN")
+      summary.unknownCount += 1;
     if (!summary.latestPublishedAt && item.publishedAt)
       summary.latestPublishedAt = item.publishedAt;
     groups.set(item.institution, summary);
@@ -1273,9 +1288,11 @@ export async function getRegulatoryOverview(opts: { institution?: string } = {})
       consultas: facts.filter((item) => item.isConsulta).length,
       institutions: byInstitution.length,
       openToday: facts.filter(isOpenPublicConsultation).length,
-      upcoming: facts.filter((item) => item.activityState === "UPCOMING").length,
-      inProcess: facts.filter((item) => item.activityState === "IN_PROCESS").length,
-      unknown: facts.filter((item) => item.activityState === "UNKNOWN").length,
+      upcoming: facts.filter((item) => item.consultationState === "UPCOMING").length,
+      inProcess: facts.filter((item) => item.regulatoryProcessState === "IN_PROCESS").length,
+      unknown: facts.filter(
+        (item) => item.consultationState === "UNKNOWN" || item.regulatoryProcessState === "UNKNOWN",
+      ).length,
       withDeadline: facts.filter((item) => item.deadline).length,
     },
     byInstitution,
@@ -1311,7 +1328,10 @@ export interface RegulationFact {
   publishedAt: string | null;
   deadline: string | null;
   url: string | null;
-  activityState: RegulatoryActivityState;
+  /** Public-participation window only; always null for ordinary regulatory records. */
+  consultationState: PublicConsultationState | null;
+  /** General regulatory-process state only; always null for public-consultation records. */
+  regulatoryProcessState: RegulatoryProcessState | null;
 }
 
 function toRegulationFact(
@@ -1329,7 +1349,8 @@ function toRegulationFact(
     publishedAt: row.publishedAt,
     deadline: row.deadline,
     url: safeHttpUrl(row.url),
-    activityState: classifyRegulatoryActivity(row, today),
+    consultationState: classifyPublicConsultation(row, today),
+    regulatoryProcessState: classifyRegulatoryProcess(row),
   };
 }
 
