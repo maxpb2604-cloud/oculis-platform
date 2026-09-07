@@ -8,3 +8,8 @@ Retrieved on 2026-09-04 from each institution's official website and used only t
 - `indocal.png` — https://indocal.gob.do/wp-content/uploads/2017/03/logo.png
 - `micm.svg` — https://micm.gob.do/transparencia/images/headers/logo/Logo-MICM-Attribute-01.svg
 - `intrant.png` — https://intrant.gob.do/wp-content/uploads/2024/05/intrant-log2.png
+- `mimarena.svg` — https://ambiente.gob.do/app/uploads/2023/06/page-logo-3-1.svg
+- `superseguros.png` — https://sis.gob.do/wp-content/uploads/2025/05/LogoSIS_horizontal-scaled.png
+- `simv.png` — https://proinversionista.gob.do/wp-content/uploads/2025/09/LogoSIMV.png
+- `sisalril.svg` — https://www.sisalril.gob.do/app/uploads/2025/02/Logo-sisalril-act.svg
+- `sb.svg` — https://sb.gob.do/media/b25hddi1/logo-superintendencia-de-bancos.svg

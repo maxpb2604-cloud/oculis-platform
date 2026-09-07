@@ -15,6 +15,11 @@ describe("regulatory institution view", () => {
     "indocal.png",
     "micm.svg",
     "intrant.png",
+    "mimarena.svg",
+    "superseguros.png",
+    "simv.png",
+    "sisalril.svg",
+    "sb.svg",
   ])("uses the official %s logo asset", (asset) => {
     expect(pageSource).toContain(`/assets/oculis/institutions/${asset}`);
   });

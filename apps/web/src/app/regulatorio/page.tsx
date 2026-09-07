@@ -74,22 +74,37 @@ const INSTITUTION_PRESENTATION: Record<
   MIMARENA: {
     name: "Ministerio de Medio Ambiente y Recursos Naturales",
     nameEn: "Ministry of Environment and Natural Resources",
+    logo: "/assets/oculis/institutions/mimarena.svg",
+    width: 450,
+    height: 60,
   },
   SUPERSEGURO: {
     name: "Superintendencia de Seguros",
     nameEn: "Superintendency of Insurance",
+    logo: "/assets/oculis/institutions/superseguros.png",
+    width: 2560,
+    height: 578,
   },
   SIMV: {
     name: "Superintendencia del Mercado de Valores",
     nameEn: "Securities Market Superintendency",
+    logo: "/assets/oculis/institutions/simv.png",
+    width: 507,
+    height: 87,
   },
   SISALRIL: {
     name: "Superintendencia de Salud y Riesgos Laborales",
     nameEn: "Superintendency of Health and Labor Risks",
+    logo: "/assets/oculis/institutions/sisalril.svg",
+    width: 982,
+    height: 332,
   },
   SB: {
     name: "Superintendencia de Bancos",
     nameEn: "Superintendency of Banks",
+    logo: "/assets/oculis/institutions/sb.svg",
+    width: 366,
+    height: 44,
   },
 };
 
