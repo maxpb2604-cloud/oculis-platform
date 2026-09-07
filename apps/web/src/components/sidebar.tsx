@@ -7,13 +7,11 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   Broadcast,
-  Buildings,
   CalendarDots,
   Database,
   Gavel,
   House,
   List,
-  Shield,
   SidebarSimple,
   UserList,
   X,
@@ -216,12 +214,6 @@ function Navigation({ lang, onNavigate }: { lang: Lang; onNavigate?: () => void 
       label: es ? "Directorio de Congresistas" : "Congressional Directory",
       icon: UserList,
     },
-    {
-      href: "/diputados",
-      label: es ? "Cámara de Diputados" : "Chamber of Deputies",
-      icon: Buildings,
-    },
-    { href: "/senado", label: es ? "Senado" : "Senate", icon: Shield },
     {
       href: "/estado-fuentes",
       label: es ? "Fuentes y cobertura" : "Sources and coverage",
