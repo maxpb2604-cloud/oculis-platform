@@ -302,3 +302,29 @@ final result: passed
 - [x] Verify production console health and CI.
 
 final result: passed
+
+## Iteration — Orden del menú regulatorio e iniciativas
+
+- Source visual truth: `/var/folders/pq/5j_515ns70x73jzfhtjw3dsr0000gn/T/TemporaryItems/NSIRD_screencaptureui_LwR8rl/Screenshot 2026-09-07 at 3.11.45 PM.png` (454 × 666 source pixels, 1× density).
+- Implementation target: `https://oculis-auribus.onrender.com/regulatorio`, Spanish light-theme state with `Movimientos regulatorios` selected.
+- Implementation screenshot evidence: the deployed page was captured inline in the Codex in-app Browser at a 1265 × 712 CSS viewport and 1× density; the runtime does not expose a persistent local screenshot path.
+- Normalization: the comparison uses the left navigation region only, excluding the wider application canvas absent from the supplied crop.
+- Full-view comparison: the application shell, selected state, sidebar width, and surrounding content retain their existing geometry; no layout shift was introduced.
+- Focused-region comparison: `Movimientos regulatorios` now appears directly after `Comisiones & Agendas`, followed immediately by `Librería de Iniciativas`; all remaining entries keep their prior order.
+- Required fidelity surfaces: fonts and weights are unchanged; spacing and row rhythm are unchanged; colors and selection tokens are unchanged; icons are the same Phosphor assets; copy and routes are unchanged.
+- Interaction verification: the rendered DOM keeps `/regulatorio` attached to `Movimientos regulatorios` and `/initiatives` attached to `Librería de Iniciativas`.
+- Console verification: zero browser warnings and zero browser errors after the production reload.
+- Automated verification: the focused navigation suite passes (6 tests), including the new explicit ordering assertion; TypeScript, targeted ESLint, `git diff --check`, and GitHub CI pass.
+
+**Findings**
+
+- No remaining P0, P1, or P2 difference exists for the requested menu-order change.
+
+**Implementation Checklist**
+
+- [x] Move `Movimientos regulatorios` above `Librería de Iniciativas`.
+- [x] Preserve both labels, icons, routes, and selected states.
+- [x] Add a regression assertion for the requested order.
+- [x] Verify the deployed desktop sidebar and browser console.
+
+final result: passed
