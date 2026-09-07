@@ -185,6 +185,51 @@ describe("senado-sil: parseExpedientesList", () => {
     }
   });
 
+  it("uses the second official pager when the first pager repeats the current grid", async () => {
+    const originalFetch = globalThis.fetch;
+    const firstPage = senateListPageFixture({
+      firstId: 5_000,
+      rows: 50,
+      linkTotal: 75,
+      displayedTotal: 75,
+    });
+    const secondPage = senateListPageFixture({
+      firstId: 4_950,
+      rows: 25,
+      linkTotal: 75,
+      displayedTotal: 75,
+    });
+    const pagerBodies: string[] = [];
+    let listRequests = 0;
+    globalThis.fetch = async (url, init) => {
+      const target = String(url);
+      if (target.endsWith("/login.aspx") && (init?.method ?? "GET") === "GET") {
+        return new Response(
+          '<input id="__VIEWSTATE" value="login" /><input id="__VIEWSTATEGENERATOR" value="generator" /><input id="__EVENTVALIDATION" value="validation" />',
+        );
+      }
+      if (target.endsWith("/login.aspx")) return new Response("Colecciones");
+      if (target.includes("lista_expedientes.aspx")) {
+        listRequests++;
+        const body = typeof init?.body === "string" ? init.body : "";
+        if (body.includes("btSumaPaginacion")) pagerBodies.push(body);
+        if (body.includes("btSumaPaginacion1.x")) return new Response(secondPage);
+        return new Response(firstPage);
+      }
+      throw new Error(`Unexpected Senado SIL fixture request: ${target}`);
+    };
+    try {
+      const rows = await new SenadoSilAdapter().listDeposits();
+      expect(rows).toHaveLength(75);
+      expect(new Set(rows.map((row) => row.idExpediente)).size).toBe(75);
+      expect(listRequests).toBe(4);
+      expect(pagerBodies[0]).toContain("btSumaPaginacion.x=10");
+      expect(pagerBodies[1]).toContain("btSumaPaginacion1.x=10");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   it("submits only postback state and the full-corpus checkbox when requesting the next page", () => {
     const body = buildSenadoNextPageBody(
       `<form>

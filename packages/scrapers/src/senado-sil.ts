@@ -1333,9 +1333,15 @@ export class SenadoSilAdapter {
       let postbackHtml = res.text;
       let next: Awaited<ReturnType<typeof req>> | null = null;
       for (let postbackAttempt = 1; postbackAttempt <= 8; postbackAttempt++) {
+        // Both official pager controls submit the same logical action from opposite
+        // ends of the grid. The legacy server can stop honoring one control while
+        // continuing to emit fresh VIEWSTATE. Alternate them on retries so a stuck
+        // top pager does not turn a complete, readable catalogue into a failed run.
+        const pagerButton =
+          postbackAttempt % 2 === 1 ? "btSumaPaginacion" : "btSumaPaginacion1";
         const candidate = await req(listUrl, jar, {
           method: "POST",
-          body: buildSenadoNextPageBody(postbackHtml, "btSumaPaginacion"),
+          body: buildSenadoNextPageBody(postbackHtml, pagerButton),
           timeoutMs,
         });
         const candidateInfo = parseSenadoListPageInfo(candidate.text);
