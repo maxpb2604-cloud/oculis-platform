@@ -652,4 +652,37 @@ describe("incremental congressional movements", () => {
       await handle.close();
     }
   });
+
+  it("verifies a Senate history when only the official PLO/SLO token differs", async () => {
+    const handle = createDb();
+    const calls: string[] = [];
+    try {
+      await handle.ensureSchema();
+      const prior = senateRow("Depositada");
+      const initiativeId = await seedSenado(handle.db, prior);
+      const fresh = senateRow("Enviada a Comisión");
+      const facts = senateFacts("Enviada a Comisión");
+      facts.initiativeCode = "01886-2026-PLO-SE";
+
+      const summary = await ingestIncrementalSenadoMovements(handle.db, {
+        adapter: senateAdapter(
+          [fresh],
+          new Map([[fresh.idExpediente!, facts]]),
+          calls,
+        ),
+        fichaDelayMs: 0,
+      });
+
+      assert.equal(summary.outcome, "COMPLETE");
+      assert.equal(summary.verified, 1);
+      assert.equal(summary.unverifiedHistories, 0);
+      assert.deepEqual(calls, [fresh.idExpediente]);
+      assert.deepEqual(
+        (await getInitiativeById(handle.db, initiativeId))?.events.map((event) => event.status),
+        ["Depositada", "Enviada a Comisión"],
+      );
+    } finally {
+      await handle.close();
+    }
+  });
 });

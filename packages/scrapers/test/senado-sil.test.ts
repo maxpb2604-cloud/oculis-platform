@@ -11,6 +11,7 @@ import {
   parseSenadoSilProponentCatalog,
   resolveSenadoSilFichaProponents,
   REVIEWED_SENADO_SIL_PERSON_BRIDGE,
+  sameSenadoExpedienteCode,
   SenadoSilAdapter,
   SENADO_SIL_PERSON_NAMESPACE,
   SENADO_PORTAL_INICIATIVAS,
@@ -23,6 +24,16 @@ const FICHA_39793 = readFileSync(
   fileURLToPath(new URL("./fixtures/senado-ficha-39793.html", import.meta.url)),
   "utf8",
 );
+
+describe("senado-sil: expediente code identity", () => {
+  it("accepts only the official PLO/SLO token drift for the same Senate serial and year", () => {
+    expect(sameSenadoExpedienteCode("01554-2026-PLO-SE", "01554-2026-SLO-SE")).toBe(true);
+    expect(sameSenadoExpedienteCode("01554-2026-SLO-SE", "01554-2026-PLO-SE")).toBe(true);
+    expect(sameSenadoExpedienteCode("01554-2026-PLO-SE", "01555-2026-SLO-SE")).toBe(false);
+    expect(sameSenadoExpedienteCode("01554-2026-PLO-SE", "01554-2025-SLO-SE")).toBe(false);
+    expect(sameSenadoExpedienteCode("01554-2026-PLO-SE", "01554-2026-SLO-CD")).toBe(false);
+  });
+});
 
 // Real row shapes from lista_expedientes.aspx?coleccion=53 (trimmed).
 const SAMPLE_HTML = `

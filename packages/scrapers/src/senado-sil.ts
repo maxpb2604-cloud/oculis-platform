@@ -268,6 +268,29 @@ export interface SenadoFichaBatchResult {
   failures: SenadoFichaBatchFailure[];
 }
 
+/**
+ * The legacy Senate SIL occasionally publishes the same immutable IdExpediente with
+ * PLO in lista_expedientes and SLO in its Ficha (or vice versa). Accept only that
+ * narrowly bounded legislature-token drift: the serial, year and Senate suffix must
+ * still match exactly, while the response URL and form action are independently
+ * validated against the requested IdExpediente before this comparison is reached.
+ */
+export function sameSenadoExpedienteCode(expected: string, observed: string): boolean {
+  const normalize = (value: string) => value.trim().toUpperCase();
+  const expectedCode = normalize(expected);
+  const observedCode = normalize(observed);
+  if (expectedCode === observedCode) return true;
+  const pattern = /^(\d{5}-\d{4})-([PS]LO)-(SE)$/;
+  const expectedParts = expectedCode.match(pattern);
+  const observedParts = observedCode.match(pattern);
+  return Boolean(
+    expectedParts &&
+      observedParts &&
+      expectedParts[1] === observedParts[1] &&
+      expectedParts[3] === observedParts[3],
+  );
+}
+
 /** Source namespace for the numeric person ids published by the Senate's MasterLex SIL. */
 export const SENADO_SIL_PERSON_NAMESPACE = "senado-sil-person" as const;
 export const SENADO_SIL_PROPONENT_CATALOG_VERSION = "2026-08-31" as const;
@@ -1545,7 +1568,10 @@ export class SenadoSilAdapter {
             if (validation.initiativeCode !== facts.initiativeCode) {
               throw new Error("Senado SIL ficha validation/parser code mismatch");
             }
-            if (input.expectedCode && facts.initiativeCode !== input.expectedCode) {
+            if (
+              input.expectedCode &&
+              !sameSenadoExpedienteCode(input.expectedCode, facts.initiativeCode)
+            ) {
               identityMismatch = {
                 expectedCode: input.expectedCode,
                 observedCode: facts.initiativeCode,

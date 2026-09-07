@@ -19,6 +19,7 @@ import {
   extractLeadingISODate,
   silCatalogSerialOmissions,
   SilDiputadosAdapter,
+  sameSenadoExpedienteCode,
   SenadoSilAdapter,
   type RawInitiative,
   type SilDiputadosCatalogDiagnostics,
@@ -826,7 +827,7 @@ export async function ingestIncrementalSenadoMovements(
           (event) => statusKey(event.status) === statusKey(facts.currentStatus),
         );
         if (
-          facts.initiativeCode.trim() !== row.code.trim() ||
+          !sameSenadoExpedienteCode(row.code, facts.initiativeCode) ||
           !facts.historyParseComplete ||
           !currentStatusMatches ||
           !historyHasCurrentStatus
