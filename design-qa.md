@@ -213,6 +213,31 @@ final result: blocked
 
 final result: passed
 
+## Iteration — Espaciado del buscador del directorio
+
+- Source visual truth: `/var/folders/pq/5j_515ns70x73jzfhtjw3dsr0000gn/T/TemporaryItems/NSIRD_screencaptureui_Fnd2uH/Screenshot 2026-09-07 at 3.14.00 PM.png` (1074 × 784 source pixels). The supplied state showed the magnifying-glass icon overlapping the `Ej.: María Pérez` example inside the legislator search field.
+- Implementation target: `https://oculis-auribus.onrender.com/congreso`, Spanish light-theme state, Senado and Legisladores selected.
+- Implementation screenshot evidence: the deployed field was captured inline in the Codex in-app Browser at the default desktop viewport and at a temporary 390 × 844 responsive viewport; the runtime does not expose those captures as persistent local paths.
+- Full-view comparison: the surrounding directory layout, filter card, labels, icon, typography, borders, and field height remain unchanged.
+- Focused-region comparison: the search input now reserves 44 px on the left, leaving a clear visual gap between the icon and `Ej.: María Pérez` on desktop and narrow screens.
+- Interaction verification: entering `Aracelis` reduces the directory from 32 legislators to the single matching record and clearing the text restores all 32 records.
+- Console verification: zero browser warnings and zero browser errors after loading, focusing, filtering, and clearing the published field.
+- Automated verification: the focused directory-copy suite passes (7 tests); TypeScript, targeted ESLint, `git diff --check`, and GitHub CI all pass.
+
+**Findings**
+
+- No remaining P0, P1, or P2 visual defect was found in the corrected search field.
+
+**Implementation Checklist**
+
+- [x] Separate the search icon from the example text.
+- [x] Preserve the existing field size, colors, typography, and filtering behavior.
+- [x] Add regression coverage for the required padding override.
+- [x] Verify the published field at desktop and narrow responsive widths.
+- [x] Verify the production console and full CI pipeline.
+
+final result: passed
+
 ## Iteration — Movimientos regulatorios en la navegación
 
 - Source visual truth: `/var/folders/pq/5j_515ns70x73jzfhtjw3dsr0000gn/T/TemporaryItems/NSIRD_screencaptureui_DmnSyy/Screenshot 2026-09-04 at 3.36.06 PM.png`.
