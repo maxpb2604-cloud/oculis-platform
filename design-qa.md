@@ -213,6 +213,43 @@ final result: blocked
 
 final result: passed
 
+## Iteration — Contraste del logo de la Superintendencia de Bancos
+
+- Source visual truth: `/var/folders/pq/5j_515ns70x73jzfhtjw3dsr0000gn/T/TemporaryItems/NSIRD_screencaptureui_ukJQih/Screenshot 2026-09-07 at 4.26.13 PM.png` (818 × 302 source pixels). The supplied defect state showed the white official SB wordmark on a white card header, leaving only the light-blue accent and “REPÚBLICA DOMINICANA” visible.
+- Rendered implementation: `https://oculis-auribus.onrender.com/regulatorio?top=logo-check-8988f5f`, captured inline in the Codex in-app Browser at a 1264 × 712 CSS viewport and 1× density; the browser runtime does not expose a persistent local screenshot path.
+- State: Spanish institution directory, production data, light theme for the primary comparison and dark theme for the secondary compatibility pass.
+- Normalization: both artifacts were compared as focused SB-card-header regions. Browser chrome and the surrounding grid were excluded from fidelity judgments because the supplied source is a focused defect crop rather than a full-page design target.
+- Full-view comparison evidence: the published three-column directory keeps its original grid, card height, borders, typography, counts, spacing, and neighboring INTRANT/SIMV alignment. No layout shift was introduced.
+- Focused-region comparison evidence: the official 366 × 44 SVG is now fully legible against its official `rgb(13, 48, 72)` background. The production DOM reports `complete=true`, natural size 366 × 44, a 252 × 60 rendered image box with `object-fit: contain`, and a 297 × 105 logo panel. The mark is neither clipped nor stretched.
+- Required fidelity surfaces: typography and copy are unchanged; spacing and card rhythm are unchanged; the only color change is the SB-specific brand background; the original official vector asset remains sharp and unmodified; the accessible alt text remains `Logo de Superintendencia de Bancos`.
+- Dark-theme evidence: the same card row was captured after switching themes; the wordmark remains fully visible and the card content retains its existing contrast.
+- Console verification: zero browser errors on the final published page.
+- Automated verification: 408 web tests across 60 files passed locally; the focused regression suite passed 14 tests; TypeScript and targeted ESLint passed; GitHub CI completed successfully, including the full repository test and production build.
+
+**Comparison history**
+
+- Initial finding [P1]: the main SB wordmark paths use white fills because the official asset is designed for a dark institutional header; the generic white logo panel made most of the mark invisible.
+- Fix: add an institution-specific logo background while preserving the original official SVG, its aspect ratio, the shared card component, and every other institution's white panel.
+- Post-fix evidence: the production capture visibly shows the complete `SB · Superintendencia de Bancos · República Dominicana` mark in both light and dark themes. No P0, P1, or P2 issue remains.
+
+**Findings**
+
+- No remaining actionable P0, P1, or P2 visual defect was found in the corrected SB card.
+
+**Implementation Checklist**
+
+- [x] Preserve the official SVG without recoloring or redrawing it.
+- [x] Apply the official dark-blue background only to the SB logo panel.
+- [x] Preserve the shared responsive card dimensions and image containment.
+- [x] Verify light and dark themes in production.
+- [x] Verify the production DOM, console, focused regression, full web suite, and CI build.
+
+**Follow-up Polish**
+
+- None required for this focused defect.
+
+final result: passed
+
 ## Iteration — Espaciado del buscador del directorio
 
 - Source visual truth: `/var/folders/pq/5j_515ns70x73jzfhtjw3dsr0000gn/T/TemporaryItems/NSIRD_screencaptureui_Fnd2uH/Screenshot 2026-09-07 at 3.14.00 PM.png` (1074 × 784 source pixels). The supplied state showed the magnifying-glass icon overlapping the `Ej.: María Pérez` example inside the legislator search field.
