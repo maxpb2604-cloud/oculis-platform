@@ -488,6 +488,42 @@ describe("incremental congressional movements", () => {
     }
   });
 
+  it("verifies a newly discovered Senate initiative instead of leaving a list-only baseline", async () => {
+    const handle = createDb();
+    const calls: string[] = [];
+    try {
+      await handle.ensureSchema();
+      const fresh = senateRow("Enviada a Comisión");
+      const summary = await ingestIncrementalSenadoMovements(handle.db, {
+        adapter: senateAdapter(
+          [fresh],
+          new Map([[fresh.idExpediente!, senateFacts("Enviada a Comisión")]]),
+          calls,
+        ),
+        fichaDelayMs: 0,
+      });
+
+      assert.equal(summary.outcome, "COMPLETE");
+      assert.equal(summary.baselined, 0);
+      assert.equal(summary.changed, 1);
+      assert.equal(summary.checked, 1);
+      assert.equal(summary.verified, 1);
+      assert.deepEqual(calls, [fresh.idExpediente]);
+
+      assert.equal(await countInitiatives(handle.db), 1);
+      const second = await ingestIncrementalSenadoMovements(handle.db, {
+        adapter: senateAdapter([fresh], new Map(), calls),
+        fichaDelayMs: 0,
+      });
+      assert.equal(second.outcome, "COMPLETE");
+      assert.equal(second.unchanged, 1);
+      assert.equal(second.checked, 0);
+      assert.deepEqual(calls, [fresh.idExpediente]);
+    } finally {
+      await handle.close();
+    }
+  });
+
   it("continues the Senate source when the Cámara index fails", async () => {
     const handle = createDb();
     const senCalls: string[] = [];

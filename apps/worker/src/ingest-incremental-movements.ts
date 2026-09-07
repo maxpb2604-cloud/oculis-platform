@@ -219,7 +219,10 @@ function storedSenadoSignal(raw: unknown, expectedSourceId: string): SenadoIndex
   // A list refresh can advance `payload.list.status` even when the authenticated
   // Ficha request failed. Keep comparing against the last verified Ficha status so
   // the next incremental cycle retries instead of accepting an unverified baseline.
-  const status = normalizedLiteral(ficha?.currentStatus) ?? normalizedLiteral(row.status);
+  // A list-only baseline is not verified history. Returning null makes the next
+  // incremental pass fetch its Ficha instead of silently accepting the list status
+  // as if the historical record had already been reconciled.
+  const status = normalizedLiteral(ficha?.currentStatus);
   return status ? { status } : null;
 }
 
@@ -726,14 +729,14 @@ export async function ingestIncrementalSenadoMovements(
 
     let validSignals = 0;
     let unchanged = 0;
-    let baselined = 0;
+    const baselined = 0;
     let invalidSignals = dedupedIndex.conflictingIds.size;
     let baselineFailures = 0;
     const failureExamples: string[] = [];
     const changedRows: Array<{
       row: SenadoExpediente;
       signal: SenadoIndexSignal;
-      prior: StoredIndexSnapshot;
+      initiativeId: number;
     }> = [];
     for (const row of indexRows) {
       const signal = senadoSignal(row);
@@ -747,11 +750,11 @@ export async function ingestIncrementalSenadoMovements(
       const previousSignal = prior ? storedSenadoSignal(prior.raw, sourceId) : null;
       if (!prior || !previousSignal) {
         try {
-          await upsertInitiative(db, senateInitiativeRecord(row), {
+          const checkpoint = await upsertInitiative(db, senateInitiativeRecord(row), {
             preserveVerifiedSenateFicha: true,
             recordObservedStatusChange: false,
           });
-          baselined++;
+          changedRows.push({ row, signal, initiativeId: checkpoint.id });
         } catch (error) {
           baselineFailures++;
           if (failureExamples.length < 12) {
@@ -761,7 +764,7 @@ export async function ingestIncrementalSenadoMovements(
       } else if (sameSenadoSignal(signal, previousSignal)) {
         unchanged++;
       } else {
-        changedRows.push({ row, signal, prior });
+        changedRows.push({ row, signal, initiativeId: prior.id });
       }
     }
 
@@ -811,7 +814,7 @@ export async function ingestIncrementalSenadoMovements(
           }
         }
       }
-      for (const { row, signal, prior } of batch) {
+      for (const { row, signal, initiativeId } of batch) {
         const sourceId = row.idExpediente!;
         const facts = factsById.get(sourceId);
         if (!facts) {
@@ -851,7 +854,7 @@ export async function ingestIncrementalSenadoMovements(
           statusEventsSeen += events.length;
           const reconciled = await reconcileStatusHistorySnapshot(
             db,
-            prior.id,
+            initiativeId,
             SENADO_INITIATIVE_SOURCE,
             events,
             { complete: true },
