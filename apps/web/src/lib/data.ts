@@ -53,7 +53,6 @@ import {
   listSourceDocuments,
   type DepositItem,
   regulatoryKpis,
-  regulationsByInstitution,
   listFeedItems,
   listFeedForInitiative,
   initiativeByCode,
@@ -79,6 +78,7 @@ import { initiativeProceduralFacts } from "./initiative-procedural-facts";
 import { selectHomeDirectoryPortraits } from "./home-directory-promo";
 import type { Lang } from "./i18n";
 import { resolvePartyPresentation } from "./party-presentation";
+import { isExplicitlyActiveRegulation } from "./regulatory-status";
 
 export type FeedFilters = Omit<DbFeedFilters, "category">;
 export type FeedCursor = DbFeedCursor;
@@ -149,7 +149,7 @@ export function adaptCongressMovementDay(row: DbCongressMovementDay): CongressMo
 }
 
 /**
- * Narrow data adapter for “Movimientos del Congreso”. When no date is requested, the
+ * Narrow data adapter for “Movimientos legislativos”. When no date is requested, the
  * page always opens on today's Dominican-Republic calendar date. A historical date is
  * selected only when the user requests it explicitly.
  */
@@ -1158,23 +1158,58 @@ export const getCommissionsWithMembers = unstable_cache(
 
 // --- Regulatory monitoring ---
 
-export async function getRegulatoryOverview() {
+export interface RegulatoryInstitutionSummary {
+  key: string;
+  count: number;
+  activeCount: number;
+  statusReportedCount: number;
+  latestPublishedAt: string | null;
+}
+
+export async function getRegulatoryOverview(opts: { institution?: string } = {}) {
   const d = await db();
-  const [rawKpis, byInstitution, recent, consultas] = await Promise.all([
-    regulatoryKpis(d),
-    regulationsByInstitution(d),
-    listRegulations(d, { limit: 60 }),
-    listRegulations(d, { consultaOnly: true, limit: 40 }),
-  ]);
+  const rawKpis = await regulatoryKpis(d);
+  const rows = rawKpis.total > 0 ? await listRegulations(d, { limit: rawKpis.total }) : [];
+  const facts = rows.map(toRegulationFact);
+  const groups = new Map<string, RegulatoryInstitutionSummary>();
+
+  for (const item of facts) {
+    const summary = groups.get(item.institution) ?? {
+      key: item.institution,
+      count: 0,
+      activeCount: 0,
+      statusReportedCount: 0,
+      latestPublishedAt: null,
+    };
+    summary.count += 1;
+    if (item.status?.trim()) summary.statusReportedCount += 1;
+    if (isExplicitlyActiveRegulation(item.status)) summary.activeCount += 1;
+    if (!summary.latestPublishedAt && item.publishedAt)
+      summary.latestPublishedAt = item.publishedAt;
+    groups.set(item.institution, summary);
+  }
+
+  const byInstitution = [...groups.values()].sort(
+    (a, b) => b.count - a.count || a.key.localeCompare(b.key),
+  );
+  const requestedInstitution = opts.institution?.trim();
+  const selectedInstitution = requestedInstitution
+    ? (byInstitution.find((item) => item.key === requestedInstitution)?.key ?? null)
+    : null;
+
   return {
     kpis: {
       total: rawKpis.total,
       consultas: rawKpis.consultas,
       institutions: rawKpis.institutions,
+      active: byInstitution.reduce((total, item) => total + item.activeCount, 0),
     },
     byInstitution,
-    recent: recent.map(toRegulationFact),
-    consultas: consultas.map(toRegulationFact),
+    recent: facts.slice(0, 40),
+    selectedInstitution,
+    selectedRegulations: selectedInstitution
+      ? facts.filter((item) => item.institution === selectedInstitution)
+      : [],
   };
 }
 

@@ -496,22 +496,18 @@ export class SilActividadAdapter {
   }
 
   /**
-   * Collect Diputados COMMITTEE activity. Diputados PLENARY órdenes del día are deliberately
-   * NOT emitted here — `dip-oficial` is the canonical, richer source for them (reading
-   * statuses, initiative codes, full history). Emitting them from both feeds double-counts
-   * the same session on "Hoy". We still PARSE the SIL plenary feed as a health canary: if it
-   * goes silent while committees are active, that's surfaced as a gap (it does not affect
-   * what's shown, since the pleno is sourced from dip-oficial).
+   * Collect Diputados COMMITTEE activity only. Diputados PLENARY órdenes del día are
+   * deliberately monitored and ingested by `dip-oficial`, the canonical, richer source for
+   * them (reading statuses, initiative codes, and full history). Treating the unused SIL
+   * plenary endpoint as a required health signal produced a false outage whenever that
+   * duplicate feed was empty, even while the canonical source remained healthy.
    */
   async collect(): Promise<ActivityCollectResult> {
-    const [com, ple] = await Promise.all([this.committeeOrders(), this.plenaryOrders()]);
-    const gaps = [com.gap].filter(Boolean) as string[];
-    if (ple.events.length === 0 && com.events.length > 0) {
-      gaps.push(
-        "sil-actividad: el feed SIL de órdenes de pleno está vacío mientras hay actividad de comisión — verificar la fuente (el pleno se publica vía dip-oficial).",
-      );
-    }
-    return { events: com.events, gaps };
+    const committee = await this.committeeOrders();
+    return {
+      events: committee.events,
+      gaps: [committee.gap].filter(Boolean) as string[],
+    };
   }
 
   /** Generator interface (kept for callers that stream). */

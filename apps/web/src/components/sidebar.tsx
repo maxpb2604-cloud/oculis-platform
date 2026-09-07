@@ -193,7 +193,7 @@ function Navigation({ lang, onNavigate }: { lang: Lang; onNavigate?: () => void 
     },
     {
       href: "/feed",
-      label: es ? "Movimientos del Congreso" : "Congressional movements",
+      label: es ? "Movimientos legislativos" : "Legislative movements",
       icon: Broadcast,
     },
     {
@@ -208,7 +208,7 @@ function Navigation({ lang, onNavigate }: { lang: Lang; onNavigate?: () => void 
     },
     {
       href: "/regulatorio",
-      label: es ? "Instrumentos regulatorios" : "Regulatory instruments",
+      label: es ? "Movimientos regulatorios" : "Regulatory movements",
       icon: Gavel,
     },
     {

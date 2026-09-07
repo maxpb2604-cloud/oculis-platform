@@ -130,8 +130,8 @@ export default async function AgendaDetailPage({
         : "Back to home"
       : sp.returnTo === "actualidad"
         ? es
-          ? "Volver a Movimientos del Congreso"
-          : "Back to Congressional movements"
+          ? "Volver a Movimientos legislativos"
+          : "Back to Legislative movements"
         : es
           ? "Volver a Comisiones & Agendas"
           : "Back to Committees & Agendas";

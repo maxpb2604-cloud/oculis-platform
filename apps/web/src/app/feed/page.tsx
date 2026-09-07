@@ -17,12 +17,12 @@ export async function generateMetadata({
   const lang = parseLang((await searchParams).lang);
   return lang === "es"
     ? {
-        title: "Movimientos del Congreso",
+        title: "Movimientos legislativos",
         description:
           "Archivo diario de depósitos y movimientos oficiales de iniciativas en la Cámara de Diputados y el Senado de la República.",
       }
     : {
-        title: "Congressional movements",
+        title: "Legislative movements",
         description:
           "A daily archive of source-dated initiative filings and official movements in the Chamber of Deputies and Senate of the Republic.",
       };
@@ -43,7 +43,7 @@ export default async function FeedPage({ searchParams }: { searchParams: Promise
   return (
     <AppShell
       lang={lang}
-      title={lang === "es" ? "Movimientos del Congreso" : "Congressional movements"}
+      title={lang === "es" ? "Movimientos legislativos" : "Legislative movements"}
       subtitle={
         lang === "es"
           ? "Qué ocurrió con cada iniciativa, día por día, según las fechas y documentos publicados por las fuentes oficiales."

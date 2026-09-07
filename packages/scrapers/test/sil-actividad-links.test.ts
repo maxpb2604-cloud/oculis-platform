@@ -40,6 +40,22 @@ afterEach(() => {
 });
 
 describe("sil-actividad: exact committee destinations", () => {
+  it("collects only the canonical committee lane and leaves plenary health to dip-oficial", async () => {
+    const adapter = new SilActividadAdapter(API_ROOT);
+    const committeeOrders = vi.spyOn(adapter, "committeeOrders").mockResolvedValue({
+      events: [],
+      gap: "committee evidence is still reported",
+    });
+    const plenaryOrders = vi.spyOn(adapter, "plenaryOrders");
+
+    await expect(adapter.collect()).resolves.toEqual({
+      events: [],
+      gaps: ["committee evidence is still reported"],
+    });
+    expect(committeeOrders).toHaveBeenCalledOnce();
+    expect(plenaryOrders).not.toHaveBeenCalled();
+  });
+
   it("maps commission 5243 to exact activity 161253, including its reported time and detail", async () => {
     const fetchMock = vi.fn(async (input: string | URL | Request) => {
       const url = new URL(String(input));

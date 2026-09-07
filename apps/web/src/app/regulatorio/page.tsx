@@ -1,5 +1,13 @@
 import type { Metadata } from "next";
-import { getRegulatoryOverview, SOURCE_REGISTRY, type SourceRegistryEntry } from "@/lib/data";
+import Image from "next/image";
+import Link from "next/link";
+import {
+  getRegulatoryOverview,
+  SOURCE_REGISTRY,
+  type RegulatoryInstitutionSummary,
+  type SourceRegistryEntry,
+} from "@/lib/data";
+import { formatISODate } from "@/lib/format";
 import { parseLang, type Lang } from "@/lib/i18n";
 import { AppShell } from "@/components/app-shell";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -15,7 +23,55 @@ import {
 } from "@/components/ui/icons";
 
 export const dynamic = "force-dynamic";
-type RegulatorioSearchParams = { lang?: string };
+type RegulatorioSearchParams = { lang?: string; institution?: string };
+
+const INSTITUTION_PRESENTATION: Record<
+  string,
+  { name: string; nameEn: string; logo: string; width: number; height: number }
+> = {
+  MISPAS: {
+    name: "Ministerio de Salud Pública",
+    nameEn: "Ministry of Public Health",
+    logo: "/assets/oculis/institutions/mispas.png",
+    width: 1951,
+    height: 941,
+  },
+  PROCONSUMIDOR: {
+    name: "Pro Consumidor",
+    nameEn: "Pro Consumidor",
+    logo: "/assets/oculis/institutions/proconsumidor.png",
+    width: 300,
+    height: 85,
+  },
+  INDOTEL: {
+    name: "Instituto Dominicano de las Telecomunicaciones",
+    nameEn: "Dominican Telecommunications Institute",
+    logo: "/assets/oculis/institutions/indotel.png",
+    width: 355,
+    height: 104,
+  },
+  INDOCAL: {
+    name: "Instituto Dominicano para la Calidad",
+    nameEn: "Dominican Institute for Quality",
+    logo: "/assets/oculis/institutions/indocal.png",
+    width: 350,
+    height: 86,
+  },
+  MICM: {
+    name: "Ministerio de Industria, Comercio y Mipymes",
+    nameEn: "Ministry of Industry, Commerce and MSMEs",
+    logo: "/assets/oculis/institutions/micm.svg",
+    width: 235,
+    height: 40,
+  },
+  INTRANT: {
+    name: "Instituto Nacional de Tránsito y Transporte Terrestre",
+    nameEn: "National Institute of Transit and Land Transportation",
+    logo: "/assets/oculis/institutions/intrant.png",
+    width: 419,
+    height: 170,
+  },
+};
 
 export async function generateMetadata({
   searchParams,
@@ -41,12 +97,21 @@ export default async function RegulatorioPage({
 }: {
   searchParams: Promise<RegulatorioSearchParams>;
 }) {
-  const lang: Lang = parseLang((await searchParams).lang);
+  const params = await searchParams;
+  const lang: Lang = parseLang(params.lang);
   const es = lang === "es";
-  const { kpis, byInstitution, recent, consultas } = await getRegulatoryOverview();
+  const { kpis, byInstitution, recent, selectedInstitution, selectedRegulations } =
+    await getRegulatoryOverview({ institution: params.institution });
   const sources = SOURCE_REGISTRY.filter((source) => source.id.startsWith("reg-"));
   const langSuffix = lang === "en" ? "?lang=en" : "";
   const hasData = kpis.total > 0;
+  const regulatoryHref = (institution?: string) => {
+    const query = new URLSearchParams();
+    if (lang === "en") query.set("lang", "en");
+    if (institution) query.set("institution", institution);
+    const suffix = query.size ? `?${query.toString()}` : "";
+    return `/regulatorio${suffix}${institution ? "#institution-regulations" : ""}`;
+  };
 
   return (
     <AppShell
@@ -129,17 +194,17 @@ export default async function RegulatorioPage({
           <section className="grid gap-6 border-b pb-8 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
             <div>
               <div className="eyebrow text-[var(--accent)]">
-                {es ? "Espacio de investigación" : "Research workspace"}
+                {es ? "Vista institucional" : "Institutional view"}
               </div>
               <h2 className="section-title mt-2 max-w-[30ch]">
                 {es
-                  ? "Revise primero el documento y después su plazo"
-                  : "Review the document first, then its deadline"}
+                  ? "Siga la actividad regulatoria institución por institución"
+                  : "Follow regulatory activity institution by institution"}
               </h2>
               <p className="page-subtitle mt-3">
                 {es
-                  ? "Oculis conserva el título, el tipo, las fechas y el estado publicados. No completa campos ausentes ni deduce consecuencias regulatorias."
-                  : "Oculis preserves the published title, type, dates, and status. It does not fill missing fields or infer regulatory consequences."}
+                  ? "Seleccione una institución para consultar sus iniciativas y revise debajo las publicaciones más recientes de todas las fuentes monitoreadas."
+                  : "Select an institution to review its initiatives, then browse the latest publications from every monitored source below."}
               </p>
             </div>
             <ButtonLink href={`/regulatorio/consultas${langSuffix}`} variant="primary">
@@ -151,12 +216,12 @@ export default async function RegulatorioPage({
           <div className="mt-8 grid gap-5 border-b pb-8 sm:grid-cols-3">
             <Kpi
               value={kpis.total}
-              label={es ? "Instrumentos registrados" : "Recorded instruments"}
+              label={es ? "Iniciativas depositadas" : "Filed initiatives"}
               accent="var(--accent)"
             />
             <Kpi
-              value={kpis.consultas}
-              label={es ? "Consultas públicas" : "Public consultations"}
+              value={kpis.active}
+              label={es ? "Activas reportadas" : "Reported active"}
               accent="var(--verified)"
             />
             <Kpi
@@ -166,66 +231,87 @@ export default async function RegulatorioPage({
             />
           </div>
 
-          <div className="mt-8 grid grid-cols-1 gap-5 lg:grid-cols-3">
-            <div className="lg:col-span-2">
-              <Panel
-                title={es ? "Actividad regulatoria reciente" : "Recent regulatory activity"}
-                flush
-              >
-                <RegulationList
-                  items={recent as RegulationItem[]}
-                  lang={lang}
-                  empty={
-                    es
-                      ? "No hay instrumentos recientes verificados en esta base."
-                      : "There are no recently verified instruments in this database."
-                  }
-                />
-              </Panel>
-            </div>
-            <div className="space-y-5">
-              <Panel
-                title={`${es ? "Consultas públicas" : "Public consultations"} · ${consultas.length}`}
-                flush
-              >
-                <RegulationList
-                  items={consultas as RegulationItem[]}
-                  lang={lang}
-                  empty={
-                    es
-                      ? "No hay consultas públicas verificadas en esta base."
-                      : "There are no verified public consultations in this database."
-                  }
-                />
-              </Panel>
-              <Panel title={es ? "Registros por institución" : "Records by institution"}>
-                {byInstitution.length === 0 ? (
-                  <p className="text-sm text-[var(--text-muted)]">
-                    {es
-                      ? "No hay instituciones con registros cargados."
-                      : "No institutions have loaded records."}
-                  </p>
-                ) : (
-                  <dl className="divide-y">
-                    {byInstitution.map((item) => (
-                      <div
-                        key={item.key}
-                        className="flex items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0"
-                      >
-                        <dt className="text-sm">{item.key}</dt>
-                        <dd className="tnum font-semibold">{item.count}</dd>
-                      </div>
-                    ))}
-                  </dl>
-                )}
-              </Panel>
-            </div>
+          <SectionHeading
+            title={es ? "Instituciones monitoreadas" : "Monitored institutions"}
+            description={
+              es
+                ? "Cada tarjeta abre las iniciativas regulatorias depositadas por esa institución."
+                : "Each card opens the regulatory initiatives filed by that institution."
+            }
+          />
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {byInstitution.map((item) => (
+              <InstitutionCard
+                key={item.key}
+                item={item}
+                lang={lang}
+                href={regulatoryHref(item.key)}
+                selected={selectedInstitution === item.key}
+              />
+            ))}
           </div>
+
+          {selectedInstitution && (
+            <div id="institution-regulations" className="scroll-mt-24 pt-10">
+              <Panel
+                title={`${
+                  es ? "Iniciativas regulatorias de" : "Regulatory initiatives from"
+                } ${selectedInstitution} · ${selectedRegulations.length}`}
+                action={
+                  <ButtonLink href={regulatoryHref()} variant="quiet">
+                    {es ? "Ver todas las instituciones" : "View all institutions"}
+                  </ButtonLink>
+                }
+                flush
+              >
+                <RegulationList
+                  items={selectedRegulations as RegulationItem[]}
+                  lang={lang}
+                  empty={
+                    es
+                      ? "Esta institución no tiene iniciativas verificadas en la base."
+                      : "This institution has no verified initiatives in the database."
+                  }
+                />
+              </Panel>
+            </div>
+          )}
+
+          <SectionHeading
+            title={
+              es
+                ? "Últimas iniciativas regulatorias depositadas"
+                : "Latest filed regulatory initiatives"
+            }
+            description={
+              es
+                ? "Feed cronológico según la fecha de publicación informada por cada fuente oficial."
+                : "A chronological feed based on the publication date reported by each official source."
+            }
+          />
+          <Panel
+            title={
+              es
+                ? `Publicaciones recientes · ${recent.length}`
+                : `Recent publications · ${recent.length}`
+            }
+            flush
+          >
+            <RegulationList
+              items={recent as RegulationItem[]}
+              lang={lang}
+              empty={
+                es
+                  ? "No hay iniciativas regulatorias recientes verificadas en esta base."
+                  : "There are no recently verified regulatory initiatives in this database."
+              }
+            />
+          </Panel>
 
           <Notice className="mt-6 text-sm">
             {es
-              ? "Los estados y plazos se muestran literalmente desde la fuente. Oculis no estima impacto, cumplimiento ni probabilidad de aprobación."
-              : "Statuses and deadlines are shown literally from the source. Oculis does not estimate impact, compliance, or approval likelihood."}
+              ? "“Activas reportadas” solo cuenta iniciativas cuya fuente declara expresamente un estado activo, vigente o abierto. Un estado ausente no se presume activo ni inactivo."
+              : "“Reported active” counts only initiatives whose source explicitly reports an active, in-force, or open status. A missing status is not assumed active or inactive."}
           </Notice>
         </>
       )}
@@ -240,6 +326,89 @@ export default async function RegulatorioPage({
       />
       <RegulatorySourceList sources={sources} lang={lang} />
     </AppShell>
+  );
+}
+
+function InstitutionCard({
+  item,
+  lang,
+  href,
+  selected,
+}: {
+  item: RegulatoryInstitutionSummary;
+  lang: Lang;
+  href: string;
+  selected: boolean;
+}) {
+  const es = lang === "es";
+  const presentation = INSTITUTION_PRESENTATION[item.key];
+  const reportedLabel = es ? "Estado oficial informado" : "Official status reported";
+
+  return (
+    <Link
+      href={href}
+      aria-current={selected ? "true" : undefined}
+      className={`group card elev overflow-hidden transition duration-200 hover:-translate-y-0.5 hover:border-[var(--accent)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)] ${
+        selected ? "border-[var(--accent)] ring-2 ring-[var(--accent-soft)]" : ""
+      }`}
+    >
+      <article className="flex h-full flex-col">
+        <div className="flex min-h-28 items-center justify-center border-b bg-white px-6 py-5">
+          {presentation ? (
+            <Image
+              src={presentation.logo}
+              alt={`${es ? "Logo de" : "Logo of"} ${presentation.name}`}
+              width={presentation.width}
+              height={presentation.height}
+              className="h-16 w-full object-contain"
+            />
+          ) : (
+            <div className="flex h-16 items-center justify-center gap-3 text-slate-700">
+              <FileMagnifyingGlass size={30} aria-hidden="true" />
+              <span className="text-lg font-bold">{item.key}</span>
+            </div>
+          )}
+        </div>
+        <div className="flex flex-1 flex-col p-5">
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <h3 className="text-base font-semibold">{item.key}</h3>
+              <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-[var(--text-muted)]">
+                {presentation ? (es ? presentation.name : presentation.nameEn) : item.key}
+              </p>
+            </div>
+            <ArrowRight
+              size={20}
+              aria-hidden="true"
+              className="mt-0.5 shrink-0 text-[var(--accent)] transition-transform group-hover:translate-x-1"
+            />
+          </div>
+          <dl className="mt-5 grid grid-cols-2 divide-x border-y py-3">
+            <div className="pr-4">
+              <dt className="eyebrow">{es ? "Depositadas" : "Filed"}</dt>
+              <dd className="tnum mt-1 text-2xl font-semibold">{item.count.toLocaleString()}</dd>
+            </div>
+            <div className="pl-4">
+              <dt className="eyebrow">{es ? "Activas" : "Active"}</dt>
+              <dd className="tnum mt-1 text-2xl font-semibold text-[var(--verified)]">
+                {item.activeCount.toLocaleString()}
+              </dd>
+            </div>
+          </dl>
+          <p className="mt-3 text-[11px] leading-relaxed text-[var(--text-muted)]">
+            {reportedLabel}: {item.statusReportedCount}/{item.count}
+          </p>
+          <p className="mt-1 text-[11px] leading-relaxed text-[var(--text-muted)]">
+            {es ? "Última publicación" : "Latest publication"}:{" "}
+            {item.latestPublishedAt
+              ? formatISODate(item.latestPublishedAt, lang)
+              : es
+                ? "No informada"
+                : "Not reported"}
+          </p>
+        </div>
+      </article>
+    </Link>
   );
 }
 

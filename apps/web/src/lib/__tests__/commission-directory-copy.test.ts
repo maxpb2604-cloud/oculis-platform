@@ -48,4 +48,11 @@ describe("commission directory details", () => {
     expect(sidebarSource).toContain('"Initiative Library"');
     expect(sidebarSource).not.toContain('label: es ? "Iniciativas" : "Initiatives"');
   });
+
+  it("uses the requested regulatory movements name in the sidebar", () => {
+    expect(sidebarSource).toContain('"Movimientos regulatorios"');
+    expect(sidebarSource).toContain('"Regulatory movements"');
+    expect(sidebarSource).not.toContain('"Instrumentos regulatorios"');
+    expect(sidebarSource).not.toContain('"Regulatory instruments"');
+  });
 });
