@@ -55,4 +55,10 @@ describe("commission directory details", () => {
     expect(sidebarSource).not.toContain('"Instrumentos regulatorios"');
     expect(sidebarSource).not.toContain('"Regulatory instruments"');
   });
+
+  it("places regulatory movements before the initiative library", () => {
+    expect(sidebarSource.indexOf('href: "/regulatorio"')).toBeLessThan(
+      sidebarSource.indexOf('href: "/initiatives"'),
+    );
+  });
 });

@@ -200,14 +200,14 @@ function Navigation({ lang, onNavigate }: { lang: Lang; onNavigate?: () => void 
       icon: CalendarDots,
     },
     {
-      href: "/initiatives",
-      label: es ? "Librería de Iniciativas" : "Initiative Library",
-      icon: List,
-    },
-    {
       href: "/regulatorio",
       label: es ? "Movimientos regulatorios" : "Regulatory movements",
       icon: Gavel,
+    },
+    {
+      href: "/initiatives",
+      label: es ? "Librería de Iniciativas" : "Initiative Library",
+      icon: List,
     },
     {
       href: "/congreso",
