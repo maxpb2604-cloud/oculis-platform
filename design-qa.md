@@ -275,3 +275,30 @@ final result: blocked
 The earlier blocked entries record intermediate attempts made while the Mac was locked. The completed browser sign-off above supersedes those temporary blockers after desktop, mobile, interaction, and console verification.
 
 final result: passed
+
+## Iteration — Logotipos institucionales faltantes
+
+- Source visual truth: `/var/folders/pq/5j_515ns70x73jzfhtjw3dsr0000gn/T/TemporaryItems/NSIRD_screencaptureui_xcx0se/Screenshot 2026-09-07 at 3.08.25 PM.png` (1454 × 1266 source pixels). The supplied state showed generic document placeholders for SIMV, SB, and SISALRIL; the same fallback also applied to SUPERSEGURO and MIMARENA.
+- Implementation target: `https://oculis-auribus.onrender.com/regulatorio` in the institution directory.
+- Implementation screenshot evidence: production was inspected in the Codex in-app Browser at 1265 × 712. The browser runtime emitted the full directory and focused card-region captures inline; it does not expose those captures as persistent local paths.
+- Full-view comparison: the existing Oculis card grid, spacing, typography, counts, and interaction affordances are unchanged. Five generic placeholders were replaced with proportional official marks.
+- Focused-region comparison: the published directory visibly renders the official logos for Superintendencia de Seguros, Medio Ambiente, SIMV, Superintendencia de Bancos, and SISALRIL. No image is stretched or cropped.
+- Asset verification: every one of the 11 institution images reports `complete=true` and a positive natural width and height in the production DOM. The five new public asset URLs return HTTP 200.
+- Interaction verification: selecting the SIMV card updates the URL to `?institution=SIMV#institution-regulations` and opens `Iniciativas regulatorias de SIMV · 8`.
+- Console verification: zero browser warnings and zero browser errors after loading and exercising the production directory.
+- Automated verification: the focused institution-logo test passes (13 tests); the full web suite passes (405 tests across 60 files); TypeScript, ESLint, `git diff --check`, the production build, and the GitHub CI workflow all pass.
+- Provenance: every new asset is recorded in `apps/web/public/assets/oculis/institutions/README.md` with its official institutional URL.
+
+**Findings**
+
+- No remaining missing-logo placeholder or broken institutional image was found in the production directory.
+
+**Implementation Checklist**
+
+- [x] Add official logos for SUPERSEGURO, MIMARENA, SIMV, SB, and SISALRIL.
+- [x] Preserve the existing responsive card layout and accessible image labels.
+- [x] Verify all 11 institutional images in the production DOM.
+- [x] Verify a newly updated institution card opens its filtered initiative list.
+- [x] Verify production console health and CI.
+
+final result: passed
