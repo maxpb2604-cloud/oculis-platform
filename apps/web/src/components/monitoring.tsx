@@ -4,7 +4,7 @@
  */
 import Link from "next/link";
 import { ArrowRight, ArrowSquareOut } from "@phosphor-icons/react/dist/ssr";
-import type { CSSProperties } from "react";
+import React, { type CSSProperties } from "react";
 import { t, type Lang } from "@/lib/i18n";
 import { formatISODate, formatISODayMonth, formatOfficialTime } from "@/lib/format";
 import { safeHttpUrl } from "@/lib/input";
@@ -458,47 +458,82 @@ export interface RegulationItem {
   activityState: "OPEN" | "UPCOMING" | "IN_PROCESS" | "CLOSED" | "UNKNOWN";
 }
 
-function regulatoryStatePresentation(state: RegulationItem["activityState"], lang: Lang) {
+function regulatoryStatePresentation(
+  state: RegulationItem["activityState"],
+  lang: Lang,
+  isPublicConsultation = false,
+) {
   const es = lang === "es";
+  const consultationStateLabels = {
+    OPEN: es ? "Abierta hoy" : "Open today",
+    UPCOMING: es ? "Próxima" : "Upcoming",
+    IN_PROCESS: es ? "En proceso" : "In process",
+    CLOSED: es ? "Cerrada / histórica" : "Closed / historical",
+    UNKNOWN: es ? "Estado por confirmar" : "Status to confirm",
+  } as const;
+  const generalStateLabels = {
+    OPEN: es ? "Actividad confirmada" : "Confirmed activity",
+    UPCOMING: es ? "Publicación próxima" : "Upcoming publication",
+    IN_PROCESS: es ? "En proceso regulatorio" : "In regulatory process",
+    CLOSED: es ? "Proceso concluido / histórico" : "Concluded / historical process",
+    UNKNOWN: es ? "Estado regulatorio por confirmar" : "Regulatory status to confirm",
+  } as const;
+  let presentation: { label: string; background: string; color: string };
   switch (state) {
     case "OPEN":
-      return {
-        label: es ? "Abierta hoy" : "Open today",
+      presentation = {
+        label: consultationStateLabels.OPEN,
         background: "color-mix(in srgb, var(--verified) 15%, transparent)",
         color: "var(--verified)",
       };
+      break;
     case "UPCOMING":
-      return {
-        label: es ? "Próxima" : "Upcoming",
+      presentation = {
+        label: consultationStateLabels.UPCOMING,
         background: "var(--accent-soft)",
         color: "var(--accent)",
       };
+      break;
     case "IN_PROCESS":
-      return {
-        label: es ? "En proceso" : "In process",
+      presentation = {
+        label: consultationStateLabels.IN_PROCESS,
         background: "color-mix(in srgb, var(--warn) 15%, transparent)",
         color: "var(--warn)",
       };
+      break;
     case "CLOSED":
-      return {
-        label: es ? "Cerrada / histórica" : "Closed / historical",
+      presentation = {
+        label: consultationStateLabels.CLOSED,
         background: "var(--surface-2)",
         color: "var(--text-muted)",
       };
+      break;
     default:
-      return {
-        label: es ? "Estado por confirmar" : "Status to confirm",
+      presentation = {
+        label: consultationStateLabels.UNKNOWN,
         background: "var(--surface-2)",
         color: "var(--text-muted)",
       };
   }
+  return {
+    ...presentation,
+    label: isPublicConsultation
+      ? `${t(lang, "publicConsultation")} · ${presentation.label}`
+      : generalStateLabels[state],
+  };
 }
 
 function regulationSourceLabel(source: string, lang: Lang): string {
   const labels: Record<string, [string, string]> = {
     "reg-rumr": ["Registro nacional RUMR", "National RUMR registry"],
-    "reg-mispas-consultas": ["Consulta oficial MISPAS", "Official MISPAS consultation"],
-    "reg-sb-consultas": ["Consulta oficial SB", "Official SB consultation"],
+    "reg-mispas-consultas": [
+      "Fuente de Iniciativas en Consulta Pública · MISPAS",
+      "MISPAS Initiatives in Public Consultation source",
+    ],
+    "reg-sb-consultas": [
+      "Fuente de Iniciativas en Consulta Pública · SB",
+      "SB Initiatives in Public Consultation source",
+    ],
   };
   return (
     labels[source]?.[lang === "es" ? 0 : 1] ??
@@ -512,11 +547,22 @@ export function regulatoryOfficialStatusLabel(status: string, lang: Lang): strin
     .replace(/\p{Diacritic}/gu, "")
     .trim()
     .toLowerCase();
-  if (["vigente", "activo", "activa"].includes(normalized)) {
-    return lang === "es" ? "Abierta" : "Open";
+  if (["vigente", "activo", "activa", "in force"].includes(normalized)) {
+    return lang === "es" ? "En aplicación" : "In effect";
   }
-  if (["no vigente", "vencido", "vencida"].includes(normalized)) {
-    return lang === "es" ? "Cerrada" : "Closed";
+  if (["no vigente"].includes(normalized)) {
+    return lang === "es" ? "Fuera de aplicación" : "Not in effect";
+  }
+  if (["vencido", "vencida"].includes(normalized)) {
+    return lang === "es" ? "Plazo concluido" : "Deadline ended";
+  }
+  if (["consulta publica", "en consulta publica"].includes(normalized)) {
+    return lang === "es" ? "Iniciativa en Consulta Pública" : "Initiative in Public Consultation";
+  }
+  if (["consulta publica abierta", "en consulta"].includes(normalized)) {
+    return lang === "es"
+      ? "Iniciativa en Consulta Pública · Abierta"
+      : "Initiative in Public Consultation · Open";
   }
   return status;
 }
@@ -524,7 +570,7 @@ export function regulatoryOfficialStatusLabel(status: string, lang: Lang): strin
 export function RegulationRow({ item, lang = "es" }: { item: RegulationItem; lang?: Lang }) {
   const sourceUrl = safeHttpUrl(item.url);
   const missing = lang === "es" ? "No informado" : "Not reported";
-  const state = regulatoryStatePresentation(item.activityState, lang);
+  const state = regulatoryStatePresentation(item.activityState, lang, Boolean(item.isConsulta));
   return (
     <div className="flex items-start gap-3 border-b px-5 py-3 last:border-0">
       <div className="min-w-0 flex-1">
@@ -538,14 +584,6 @@ export function RegulationRow({ item, lang = "es" }: { item: RegulationItem; lan
           <span className="text-[11px]" style={{ color: "var(--text-muted)" }}>
             {lang === "es" ? "Tipo" : "Type"}: {item.regType ?? missing}
           </span>
-          {item.isConsulta && (
-            <span
-              className="rounded px-1.5 py-0.5 text-xs font-bold"
-              style={{ background: "var(--accent)", color: "#fff" }}
-            >
-              {t(lang, "publicConsultation")}
-            </span>
-          )}
           <span
             className="rounded-full px-2 py-0.5 text-[11px] font-semibold"
             style={{ background: state.background, color: state.color }}

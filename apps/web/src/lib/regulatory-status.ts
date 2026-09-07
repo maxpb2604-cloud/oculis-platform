@@ -8,14 +8,14 @@ export interface RegulatoryActivityInput {
   deadline?: string | null;
 }
 
-const EXPLICIT_ACTIVE_STATUSES = new Set([
-  "active",
-  "activo",
-  "activa",
+export interface PublicConsultationActivity {
+  isConsulta?: boolean | null;
+  activityState: RegulatoryActivityState;
+}
+
+const EXPLICIT_OPEN_CONSULTATION_STATUSES = new Set([
   "abierto",
   "abierta",
-  "in force",
-  "vigente",
   "consulta abierta",
   "consulta publica abierta",
   "en consulta",
@@ -62,8 +62,12 @@ function validISODate(value: string | null | undefined): value is string {
 }
 
 /**
- * A consultation is "open today" only with direct evidence: an explicit open
- * status or a source-published date window containing the requested day.
+ * An Initiative in Public Consultation is "open today" only with both kinds of
+ * context required for that claim: the record is identified as a public
+ * consultation and direct evidence shows an explicit open status or a
+ * source-published date window containing the requested day. A regulatory
+ * instrument described as active/in force is never converted into an open
+ * consultation.
  */
 export function classifyRegulatoryActivity(
   item: RegulatoryActivityInput,
@@ -78,12 +82,19 @@ export function classifyRegulatoryActivity(
     return item.deadline >= today ? "OPEN" : "CLOSED";
   }
 
-  if (EXPLICIT_ACTIVE_STATUSES.has(normalized)) return "OPEN";
+  if (item.isConsulta && EXPLICIT_OPEN_CONSULTATION_STATUSES.has(normalized)) return "OPEN";
   if (IN_PROCESS_STATUSES.has(normalized)) return "IN_PROCESS";
   return "UNKNOWN";
 }
 
-/** Backwards-compatible explicit-status predicate; dates are intentionally ignored. */
-export function isExplicitlyActiveRegulation(status: string | null): boolean {
-  return status ? EXPLICIT_ACTIVE_STATUSES.has(normalizeRegulatoryStatus(status)) : false;
+/** Explicit public-participation status predicate; dates are intentionally ignored. */
+export function isExplicitlyOpenConsultationStatus(status: string | null): boolean {
+  return status
+    ? EXPLICIT_OPEN_CONSULTATION_STATUSES.has(normalizeRegulatoryStatus(status))
+    : false;
+}
+
+/** True only for a formally identified public consultation whose participation window is open. */
+export function isOpenPublicConsultation(item: PublicConsultationActivity): boolean {
+  return item.isConsulta === true && item.activityState === "OPEN";
 }

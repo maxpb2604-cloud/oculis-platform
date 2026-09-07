@@ -271,10 +271,11 @@ export const SOURCE_REGISTRY: readonly SourceRegistryEntry[] = [
   },
   {
     id: "reg-mispas-consultas",
-    label: "Consultas regulatorias · MISPAS",
+    label: "Iniciativas en Consulta Pública · MISPAS",
     owner: "MISPAS",
     chamber: null,
-    coverage: "Llamados oficiales a consulta pública, fecha de publicación y vencimiento",
+    coverage:
+      "Iniciativas sometidas oficialmente a Consulta Pública, con fecha de publicación y vencimiento",
     officialUrl: "https://www.msp.gob.do/web/Transparencia/",
     cadence: "DAILY",
     required: true,
@@ -282,10 +283,10 @@ export const SOURCE_REGISTRY: readonly SourceRegistryEntry[] = [
   },
   {
     id: "reg-sb-consultas",
-    label: "Consultas regulatorias · Superintendencia de Bancos",
+    label: "Iniciativas en Consulta Pública · Superintendencia de Bancos",
     owner: "Superintendencia de Bancos",
     chamber: null,
-    coverage: "Catálogo oficial de consultas públicas con publicación y vencimiento",
+    coverage: "Catálogo oficial de Iniciativas en Consulta Pública con publicación y vencimiento",
     officialUrl: "https://sb.gob.do/regulacion/consultas-publicas/",
     cadence: "DAILY",
     required: true,

@@ -7,6 +7,10 @@ const pageSource = readFileSync(
   fileURLToPath(new URL("../../app/regulatorio/page.tsx", import.meta.url)),
   "utf8",
 );
+const consultationPageSource = readFileSync(
+  fileURLToPath(new URL("../../app/regulatorio/consultas/page.tsx", import.meta.url)),
+  "utf8",
+);
 
 describe("regulatory institution view", () => {
   it.each([
@@ -43,8 +47,18 @@ describe("regulatory institution view", () => {
 
   it("never presents the legislative term vigente as a regulatory status", () => {
     expect(pageSource.toLocaleLowerCase("es")).not.toContain("vigent");
-    expect(regulatoryOfficialStatusLabel("VIGENTE", "es")).toBe("Abierta");
-    expect(regulatoryOfficialStatusLabel("NO VIGENTE", "es")).toBe("Cerrada");
-    expect(regulatoryOfficialStatusLabel("VIGENTE", "en")).toBe("Open");
+    expect(consultationPageSource.toLocaleLowerCase("es")).not.toContain("vigent");
+    expect(regulatoryOfficialStatusLabel("VIGENTE", "es")).toBe("En aplicación");
+    expect(regulatoryOfficialStatusLabel("NO VIGENTE", "es")).toBe("Fuera de aplicación");
+    expect(regulatoryOfficialStatusLabel("VIGENTE", "en")).toBe("In effect");
+  });
+
+  it("uses and defines the complete Iniciativas en Consulta Pública term", () => {
+    expect(pageSource).toContain("Iniciativas en Consulta Pública abiertas hoy");
+    expect(pageSource).toContain("Una Iniciativa en Consulta Pública es una propuesta regulatoria");
+    expect(consultationPageSource).toContain('title={es ? "Iniciativas en Consulta Pública"');
+    expect(consultationPageSource).toContain(
+      "Una Iniciativa en Consulta Pública es una propuesta regulatoria",
+    );
   });
 });

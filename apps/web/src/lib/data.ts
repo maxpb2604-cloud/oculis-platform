@@ -79,7 +79,11 @@ import { initiativeProceduralFacts } from "./initiative-procedural-facts";
 import { selectHomeDirectoryPortraits } from "./home-directory-promo";
 import type { Lang } from "./i18n";
 import { resolvePartyPresentation } from "./party-presentation";
-import { classifyRegulatoryActivity, type RegulatoryActivityState } from "./regulatory-status";
+import {
+  classifyRegulatoryActivity,
+  isOpenPublicConsultation,
+  type RegulatoryActivityState,
+} from "./regulatory-status";
 
 export type FeedFilters = Omit<DbFeedFilters, "category">;
 export type FeedCursor = DbFeedCursor;
@@ -1171,8 +1175,8 @@ export const getCommissionsWithMembers = unstable_cache(
 export interface RegulatoryInstitutionSummary {
   key: string;
   count: number;
+  /** Formally identified public consultations whose participation window is open today. */
   openCount: number;
-  activeCount: number;
   upcomingCount: number;
   inProcessCount: number;
   unknownCount: number;
@@ -1234,7 +1238,6 @@ export async function getRegulatoryOverview(opts: { institution?: string } = {})
       key: item.institution,
       count: 0,
       openCount: 0,
-      activeCount: 0,
       upcomingCount: 0,
       inProcessCount: 0,
       unknownCount: 0,
@@ -1245,9 +1248,8 @@ export async function getRegulatoryOverview(opts: { institution?: string } = {})
     summary.count += 1;
     if (item.status?.trim()) summary.statusReportedCount += 1;
     if (item.deadline) summary.deadlineReportedCount += 1;
-    if (item.activityState === "OPEN") {
+    if (isOpenPublicConsultation(item)) {
       summary.openCount += 1;
-      summary.activeCount += 1;
     }
     if (item.activityState === "UPCOMING") summary.upcomingCount += 1;
     if (item.activityState === "IN_PROCESS") summary.inProcessCount += 1;
@@ -1270,8 +1272,7 @@ export async function getRegulatoryOverview(opts: { institution?: string } = {})
       total: facts.length,
       consultas: facts.filter((item) => item.isConsulta).length,
       institutions: byInstitution.length,
-      active: facts.filter((item) => item.activityState === "OPEN").length,
-      openToday: facts.filter((item) => item.activityState === "OPEN").length,
+      openToday: facts.filter(isOpenPublicConsultation).length,
       upcoming: facts.filter((item) => item.activityState === "UPCOMING").length,
       inProcess: facts.filter((item) => item.activityState === "IN_PROCESS").length,
       unknown: facts.filter((item) => item.activityState === "UNKNOWN").length,

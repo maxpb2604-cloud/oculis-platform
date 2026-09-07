@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   classifyRegulatoryActivity,
-  isExplicitlyActiveRegulation,
+  isExplicitlyOpenConsultationStatus,
+  isOpenPublicConsultation,
   normalizeRegulatoryStatus,
 } from "../regulatory-status";
 
@@ -10,19 +11,33 @@ describe("regulatory status classification", () => {
     expect(normalizeRegulatoryStatus("  EN   CONSULTA PÚBLICA ")).toBe("en consulta publica");
   });
 
-  it.each(["Activa", "VIGENTE", "Consulta pública abierta", "En consulta"])(
-    "counts the explicit active status %s",
+  it.each(["Abierta", "Consulta pública abierta", "En consulta"])(
+    "recognizes the explicit public-consultation status %s",
     (status) => {
-      expect(isExplicitlyActiveRegulation(status)).toBe(true);
+      expect(isExplicitlyOpenConsultationStatus(status)).toBe(true);
     },
   );
 
-  it.each([null, "", "No informado", "Publicada", "Cerrada", "Vencida"])(
-    "does not infer that %s is active",
+  it.each([null, "", "No informado", "Publicada", "VIGENTE", "Activa", "Cerrada", "Vencida"])(
+    "does not infer that %s opens a public consultation",
     (status) => {
-      expect(isExplicitlyActiveRegulation(status)).toBe(false);
+      expect(isExplicitlyOpenConsultationStatus(status)).toBe(false);
     },
   );
+
+  it("never converts an active regulatory instrument into an open public consultation", () => {
+    expect(classifyRegulatoryActivity({ status: "VIGENTE", isConsulta: false }, "2026-09-07")).toBe(
+      "UNKNOWN",
+    );
+    expect(classifyRegulatoryActivity({ status: "Abierta", isConsulta: false }, "2026-09-07")).toBe(
+      "UNKNOWN",
+    );
+    expect(classifyRegulatoryActivity({ status: "Abierta", isConsulta: true }, "2026-09-07")).toBe(
+      "OPEN",
+    );
+    expect(isOpenPublicConsultation({ isConsulta: false, activityState: "OPEN" })).toBe(false);
+    expect(isOpenPublicConsultation({ isConsulta: true, activityState: "OPEN" })).toBe(true);
+  });
 
   it("counts a dated consultation as open only inside its official window", () => {
     const consultation = {

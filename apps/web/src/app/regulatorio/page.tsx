@@ -126,12 +126,12 @@ export async function generateMetadata({
     ? {
         title: "Monitoreo regulatorio",
         description:
-          "Instrumentos, consultas públicas, fechas y enlaces de fuentes regulatorias oficiales.",
+          "Instrumentos e Iniciativas en Consulta Pública con fechas y enlaces de fuentes regulatorias oficiales.",
       }
     : {
         title: "Regulatory monitoring",
         description:
-          "Regulatory instruments, public consultations, dates, and links to official sources.",
+          "Regulatory instruments and Initiatives in Public Consultation with dates and links to official sources.",
       };
 }
 
@@ -168,8 +168,8 @@ export default async function RegulatorioPage({
       title={es ? "Monitoreo regulatorio" : "Regulatory monitoring"}
       subtitle={
         es
-          ? "Iniciativas administrativas, consultas públicas y plazos de instituciones reguladoras"
-          : "Instruments and public consultations organized from their official sources"
+          ? "Iniciativas regulatorias e Iniciativas en Consulta Pública organizadas desde sus fuentes oficiales"
+          : "Regulatory initiatives and Initiatives in Public Consultation organized from official sources"
       }
     >
       {!hasData ? (
@@ -193,7 +193,9 @@ export default async function RegulatorioPage({
                   {es ? "Ver cobertura de fuentes" : "View source coverage"}
                 </ButtonLink>
                 <ButtonLink href={`/regulatorio/consultas${langSuffix}`}>
-                  {es ? "Ir a consultas públicas" : "Open public consultations"}
+                  {es
+                    ? "Ver Iniciativas en Consulta Pública"
+                    : "View Initiatives in Public Consultation"}
                   <ArrowRight size={17} aria-hidden="true" />
                 </ButtonLink>
               </div>
@@ -247,25 +249,31 @@ export default async function RegulatorioPage({
               </div>
               <h2 className="section-title mt-2 max-w-[30ch]">
                 {es
-                  ? "Qué consultas están abiertas hoy y qué institución las tramita"
-                  : "Follow regulatory activity institution by institution"}
+                  ? "Qué Iniciativas en Consulta Pública están abiertas hoy"
+                  : "Which Initiatives in Public Consultation are open today"}
               </h2>
               <p className="page-subtitle mt-3">
                 {es
-                  ? "Una consulta solo figura como abierta cuando una fuente oficial publica ese estado o un plazo que incluye el día de hoy. Las propuestas en agenda o borrador se muestran aparte."
-                  : "Select an institution to review its initiatives, then browse the latest publications from every monitored source below."}
+                  ? "Una Iniciativa en Consulta Pública es una propuesta regulatoria sometida formalmente a participación ciudadana para recibir observaciones dentro de un plazo oficial. Solo figura como abierta hoy cuando la fuente publica ese estado o un plazo que incluye la fecha actual."
+                  : "An Initiative in Public Consultation is a regulatory proposal formally submitted for public participation so comments can be received during an official window. It appears as open today only when the source publishes that status or a window that includes today."}
               </p>
             </div>
             <ButtonLink href={`/regulatorio/consultas${langSuffix}`} variant="primary">
               <CalendarDots size={18} aria-hidden="true" />
-              {es ? "Ver consultas públicas" : "View public consultations"}
+              {es
+                ? "Ver Iniciativas en Consulta Pública"
+                : "View Initiatives in Public Consultation"}
             </ButtonLink>
           </section>
 
           <div className="mt-8 grid gap-5 border-b pb-8 sm:grid-cols-2 xl:grid-cols-4">
             <Kpi
               value={kpis.openToday}
-              label={es ? "Consultas abiertas hoy" : "Consultations open today"}
+              label={
+                es
+                  ? "Iniciativas en Consulta Pública abiertas hoy"
+                  : "Initiatives in Public Consultation open today"
+              }
               accent="var(--verified)"
             />
             <Kpi
@@ -286,7 +294,11 @@ export default async function RegulatorioPage({
           </div>
 
           <SectionHeading
-            title={es ? "Abiertas hoy por institución" : "Open today by institution"}
+            title={
+              es
+                ? "Iniciativas en Consulta Pública abiertas hoy por institución"
+                : "Initiatives in Public Consultation open today by institution"
+            }
             description={
               es
                 ? "Conteo sustentado por el plazo o estado publicado en la fuente oficial."
@@ -303,7 +315,9 @@ export default async function RegulatorioPage({
                 >
                   <div>
                     <div className="eyebrow text-[var(--verified)]">
-                      {es ? "Abiertas hoy" : "Open today"}
+                      {es
+                        ? "Iniciativas en Consulta Pública abiertas hoy"
+                        : "Initiatives in Public Consultation open today"}
                     </div>
                     <div className="mt-2 text-lg font-semibold">{item.key}</div>
                     <p className="mt-1 text-xs text-[var(--text-muted)]">
@@ -319,8 +333,8 @@ export default async function RegulatorioPage({
           ) : (
             <Notice tone="warning">
               {es
-                ? `No hay una consulta abierta hoy demostrada por fecha o estado. ${kpis.unknown} expediente(s) siguen sin datos suficientes para clasificarlos.`
-                : `No consultation is proven open today by date or status. ${kpis.unknown} record(s) still lack enough data to classify them.`}
+                ? `No hay Iniciativas en Consulta Pública abiertas hoy demostradas por fecha o estado. ${kpis.unknown} expediente(s) siguen sin datos suficientes para clasificarlos.`
+                : `No Initiatives in Public Consultation are proven open today by date or status. ${kpis.unknown} record(s) still lack enough data to classify them.`}
             </Notice>
           )}
 
@@ -403,8 +417,8 @@ export default async function RegulatorioPage({
 
           <Notice className="mt-6 text-sm">
             {es
-              ? "“Abierta hoy” significa que el día actual cae dentro del plazo oficial publicado o que la fuente declara expresamente que la consulta está abierta. “En proceso” identifica etapas como agenda, borrador o iniciativa; no implica que el período para comentar esté abierto."
-              : "“Open today” means today falls within the official published window or the source expressly states the consultation is open. “In process” identifies stages such as agenda, draft, or initiative; it does not mean the comment period is open."}
+              ? "“Iniciativa en Consulta Pública” identifica una propuesta regulatoria sometida formalmente a participación ciudadana. “Abierta hoy” significa que la fecha actual cae dentro del plazo oficial publicado o que la fuente declara expresamente abierto el período para recibir observaciones. Estar en agenda, borrador o proceso regulatorio no convierte por sí solo un expediente en una Iniciativa en Consulta Pública abierta."
+              : "“Initiative in Public Consultation” identifies a regulatory proposal formally submitted for public participation. “Open today” means today falls within the official published window or the source expressly states that the comment period is open. Being on an agenda, in draft, or in a regulatory process does not by itself make a record an open Initiative in Public Consultation."}
           </Notice>
         </>
       )}
@@ -485,9 +499,13 @@ function InstitutionCard({
               <dd className="tnum mt-1 text-2xl font-semibold">{item.count.toLocaleString()}</dd>
             </div>
             <div className="pl-4">
-              <dt className="eyebrow">{es ? "Abiertas hoy" : "Open today"}</dt>
+              <dt className="eyebrow">
+                {es
+                  ? "Iniciativas en Consulta Pública abiertas hoy"
+                  : "Initiatives in Public Consultation open today"}
+              </dt>
               <dd className="tnum mt-1 text-2xl font-semibold text-[var(--verified)]">
-                {item.activeCount.toLocaleString()}
+                {item.openCount.toLocaleString()}
               </dd>
             </div>
           </dl>

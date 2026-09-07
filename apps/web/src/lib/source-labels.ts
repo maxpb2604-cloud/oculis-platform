@@ -153,14 +153,16 @@ const ENGLISH_SOURCE_PRESENTATIONS: Record<string, EnglishSourcePresentation> = 
       "National inventory of initiatives, responsible institution, stage, and published consultation windows",
   },
   "reg-mispas-consultas": {
-    label: "Regulatory consultations · MISPAS",
+    label: "Initiatives in Public Consultation · MISPAS",
     owner: "MISPAS",
-    coverage: "Official public-consultation notices, publication dates, and deadlines",
+    coverage:
+      "Initiatives formally submitted for Public Consultation, with publication dates and deadlines",
   },
   "reg-sb-consultas": {
-    label: "Regulatory consultations · Superintendency of Banks",
+    label: "Initiatives in Public Consultation · Superintendency of Banks",
     owner: "Superintendency of Banks",
-    coverage: "Official public-consultation catalog with publication dates and deadlines",
+    coverage:
+      "Official catalog of Initiatives in Public Consultation with publication dates and deadlines",
   },
   "reg-proconsumidor": regulatoryPresentation("PROCONSUMIDOR"),
   "reg-indotel": regulatoryPresentation("INDOTEL"),

@@ -25,14 +25,14 @@ export async function generateMetadata({
   const lang = parseLang((await searchParams).lang);
   return lang === "es"
     ? {
-        title: "Consultas públicas",
+        title: "Iniciativas en Consulta Pública",
         description:
-          "Consultas públicas regulatorias con institución, documento, plazo y enlace oficial disponible.",
+          "Iniciativas regulatorias sometidas formalmente a Consulta Pública, con institución, documento, plazo y enlace oficial disponible.",
       }
     : {
-        title: "Public consultations",
+        title: "Initiatives in Public Consultation",
         description:
-          "Regulatory public consultations with the institution, document, deadline, and available official link.",
+          "Regulatory Initiatives in Public Consultation with the institution, document, deadline, and available official link.",
       };
 }
 
@@ -55,11 +55,11 @@ export default async function ConsultasPage({
   return (
     <AppShell
       lang={lang}
-      title={es ? "Consultas públicas" : "Public consultations"}
+      title={es ? "Iniciativas en Consulta Pública" : "Initiatives in Public Consultation"}
       subtitle={
         es
-          ? "Borradores, documentos y plazos publicados por las instituciones monitoreadas"
-          : "Drafts, documents, and deadlines published by monitored institutions"
+          ? "Propuestas regulatorias sometidas formalmente a participación ciudadana"
+          : "Regulatory proposals formally submitted for public participation"
       }
     >
       {consultas.length === 0 ? (
@@ -68,13 +68,13 @@ export default async function ConsultasPage({
             lang={lang}
             title={
               es
-                ? "Oculis todavía no tiene consultas públicas verificadas en esta base"
-                : "Oculis does not yet have verified public consultations in this database"
+                ? "Oculis todavía no tiene Iniciativas en Consulta Pública verificadas en esta base"
+                : "Oculis does not yet have verified Initiatives in Public Consultation in this database"
             }
             description={
               es
-                ? "Este estado no confirma que no existan consultas abiertas. Solo indica que no hay registros cargados con título, institución y enlace oficial suficientes para mostrarlos responsablemente."
-                : "This state does not confirm that no consultations are open. It only means there are no loaded records with enough title, institution, and official-link evidence to display responsibly."
+                ? "Este estado no confirma que no existan Iniciativas en Consulta Pública abiertas. Solo indica que no hay registros cargados con título, institución y enlace oficial suficientes para mostrarlos responsablemente."
+                : "This state does not confirm that no Initiatives in Public Consultation are open. It only means there are no loaded records with enough title, institution, and official-link evidence to display responsibly."
             }
             action={
               <div className="flex flex-wrap justify-center gap-2">
@@ -91,7 +91,11 @@ export default async function ConsultasPage({
           />
 
           <SectionHeading
-            title={es ? "Cómo se mostrará una consulta" : "How a consultation will be shown"}
+            title={
+              es
+                ? "Cómo se mostrará una Iniciativa en Consulta Pública"
+                : "How an Initiative in Public Consultation will be shown"
+            }
             description={
               es
                 ? "La información aparecerá solo cuando pueda atribuirse a una publicación oficial concreta."
@@ -142,8 +146,8 @@ export default async function ConsultasPage({
               </h2>
               <p className="page-subtitle mt-3">
                 {es
-                  ? "Oculis organiza las consultas registradas, pero la publicación oficial sigue siendo la evidencia principal para documentos, requisitos y plazos."
-                  : "Oculis organizes recorded consultations, but the official publication remains the primary evidence for documents, requirements, and deadlines."}
+                  ? "Una Iniciativa en Consulta Pública es una propuesta regulatoria que una institución somete formalmente a participación ciudadana para recibir comentarios, observaciones o propuestas dentro de un plazo anunciado. Oculis organiza esos registros, pero la publicación oficial sigue siendo la evidencia principal para documentos, requisitos y fechas."
+                  : "An Initiative in Public Consultation is a regulatory proposal that an institution formally submits for public participation to receive comments, observations, or proposals during an announced window. Oculis organizes those records, but the official publication remains the primary evidence for documents, requirements, and dates."}
               </p>
             </div>
             <ButtonLink href={`/regulatorio${langSuffix}`}>
@@ -155,7 +159,11 @@ export default async function ConsultasPage({
           <div className="mt-8 grid gap-5 border-b pb-8 sm:grid-cols-2 xl:grid-cols-4">
             <Kpi
               value={openToday}
-              label={es ? "Abiertas hoy" : "Open today"}
+              label={
+                es
+                  ? "Iniciativas en Consulta Pública abiertas hoy"
+                  : "Initiatives in Public Consultation open today"
+              }
               accent="var(--verified)"
             />
             <Kpi
@@ -179,8 +187,8 @@ export default async function ConsultasPage({
             <Panel
               title={
                 es
-                  ? `Consultas públicas · ${consultas.length}`
-                  : `Public consultations · ${consultas.length}`
+                  ? `Iniciativas en Consulta Pública · ${consultas.length}`
+                  : `Initiatives in Public Consultation · ${consultas.length}`
               }
               flush
             >
@@ -189,16 +197,16 @@ export default async function ConsultasPage({
                 lang={lang}
                 empty={
                   es
-                    ? "No hay consultas públicas verificadas en esta base."
-                    : "There are no verified public consultations in this database."
+                    ? "No hay Iniciativas en Consulta Pública verificadas en esta base."
+                    : "There are no verified Initiatives in Public Consultation in this database."
                 }
               />
             </Panel>
           </div>
           <Notice className="mt-5 text-sm" tone="warning">
             {es
-              ? "Antes de preparar una respuesta, confirme los requisitos en el enlace oficial. Oculis clasifica “abierta hoy” únicamente cuando el plazo publicado incluye la fecha actual o la fuente declara expresamente que está abierta."
-              : "Before preparing a response, confirm the requirements through the official link. Oculis classifies a consultation as “open today” only when the published window includes the current date or the source expressly states it is open."}
+              ? "Antes de preparar una respuesta a una Iniciativa en Consulta Pública, confirme los requisitos en el enlace oficial. Oculis la clasifica como “abierta hoy” únicamente cuando el plazo publicado incluye la fecha actual o la fuente declara expresamente abierto el período para recibir observaciones."
+              : "Before responding to an Initiative in Public Consultation, confirm the requirements through the official link. Oculis classifies it as “open today” only when the published window includes the current date or the source expressly states that the comment period is open."}
           </Notice>
         </>
       )}

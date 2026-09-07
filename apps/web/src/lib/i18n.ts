@@ -49,7 +49,7 @@ export const dict: Record<Lang, Record<string, string>> = {
     docSenate: "Documento oficial: consultar fuente",
     openSenateRecord: "Abrir ficha del Senado",
     viewSilRecord: "Ver ficha en SIL",
-    publicConsultation: "CONSULTA PÚBLICA",
+    publicConsultation: "INICIATIVA EN CONSULTA PÚBLICA",
     deadline: "Plazo",
 
     // Map (province bubble map)
@@ -104,7 +104,7 @@ export const dict: Record<Lang, Record<string, string>> = {
     docSenate: "Official document: consult source",
     openSenateRecord: "Open Senate record",
     viewSilRecord: "View SIL record",
-    publicConsultation: "PUBLIC CONSULTATION",
+    publicConsultation: "INITIATIVE IN PUBLIC CONSULTATION",
     deadline: "Deadline",
 
     // Map (province bubble map)
