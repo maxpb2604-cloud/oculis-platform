@@ -1740,6 +1740,52 @@ export interface InitiativeListItem {
   preferredDocumentAvailable: boolean;
 }
 
+/**
+ * Party/province published directly on the initiative remain authoritative. Senate
+ * initiative records do not publish those two sponsor facts, so public initiative
+ * views may fall back to the exact normalized principal/first proponent profile.
+ * The relationship is persisted with provenance; names are never compared here.
+ */
+function linkedInitiativeSponsorPartySql() {
+  return sql<string | null>`(
+    select coalesce(nullif(trim(sponsor_profile.party_short), ''), nullif(trim(sponsor_profile.party), ''))
+      from initiative_proponents sponsor_relation
+      join legislators sponsor_profile on sponsor_profile.id = sponsor_relation.legislator_id
+     where sponsor_relation.initiative_id = ${initiatives.id}
+     order by case when sponsor_relation.principal is true then 0 else 1 end,
+              sponsor_relation.ordinal,
+              sponsor_relation.id
+     limit 1
+  )`;
+}
+
+function linkedInitiativeSponsorProvinceSql() {
+  return sql<string | null>`(
+    select nullif(trim(sponsor_profile.province), '')
+      from initiative_proponents sponsor_relation
+      join legislators sponsor_profile on sponsor_profile.id = sponsor_relation.legislator_id
+     where sponsor_relation.initiative_id = ${initiatives.id}
+     order by case when sponsor_relation.principal is true then 0 else 1 end,
+              sponsor_relation.ordinal,
+              sponsor_relation.id
+     limit 1
+  )`;
+}
+
+function effectiveInitiativeSponsorPartySql() {
+  return sql<string | null>`coalesce(
+    nullif(trim(${initiatives.party}), ''),
+    ${linkedInitiativeSponsorPartySql()}
+  )`;
+}
+
+function effectiveInitiativeSponsorProvinceSql() {
+  return sql<string | null>`coalesce(
+    nullif(trim(${initiatives.province}), ''),
+    ${linkedInitiativeSponsorProvinceSql()}
+  )`;
+}
+
 type InitiativeListBase = Omit<
   InitiativeListItem,
   "preferredDocumentId" | "preferredDocumentUrl" | "preferredDocumentAvailable"
@@ -1751,6 +1797,8 @@ async function attachInitiativeSponsorProfiles<
     raw: unknown;
     sponsor: string | null;
     sponsorRole: string | null;
+    party: string | null;
+    province: string | null;
   },
 >(
   db: Database,
@@ -1773,6 +1821,8 @@ async function attachInitiativeSponsorProfiles<
       ordinal: initiativeProponents.ordinal,
       legislatorId: initiativeProponents.legislatorId,
       profileRole: legislators.role,
+      profileParty: sql<string | null>`coalesce(${legislators.partyShort}, ${legislators.party})`,
+      profileProvince: legislators.province,
     })
     .from(initiativeProponents)
     .leftJoin(legislators, eq(legislators.id, initiativeProponents.legislatorId))
@@ -1805,6 +1855,8 @@ async function attachInitiativeSponsorProfiles<
       sponsorRole: sponsor?.profileRole ?? publicRow.sponsorRole,
       sponsorLegislatorSourceId: sponsor?.personSourceId ?? null,
       sponsorProfileId: sponsor?.legislatorId ?? null,
+      party: publicRow.party ?? sponsor?.profileParty ?? null,
+      province: publicRow.province ?? sponsor?.profileProvince ?? null,
     };
   });
 }
@@ -2009,7 +2061,7 @@ export interface InitiativePage {
 
 function filterConds(f: InitiativeFilters) {
   const conds = [];
-  if (f.party) conds.push(eq(initiatives.party, f.party));
+  if (f.party) conds.push(eq(effectiveInitiativeSponsorPartySql(), f.party));
   if (f.status?.trim()) {
     conds.push(sql`upper(trim(${initiatives.status})) = upper(trim(${f.status}))`);
   }
@@ -2061,7 +2113,10 @@ function filterConds(f: InitiativeFilters) {
   ];
   if (normalizedProvinceValues.length > 0) {
     conds.push(
-      inArray(sql<string>`upper(trim(${initiatives.province}))`, normalizedProvinceValues),
+      inArray(
+        sql<string>`upper(trim(${effectiveInitiativeSponsorProvinceSql()}))`,
+        normalizedProvinceValues,
+      ),
     );
   }
   if (f.search?.trim()) {
@@ -2105,8 +2160,8 @@ export async function listInitiatives(
       chamber: initiatives.chamber,
       sponsor: initiatives.sponsor,
       sponsorRole: initiatives.sponsorRole,
-      party: initiatives.party,
-      province: initiatives.province,
+      party: effectiveInitiativeSponsorPartySql().as("sponsor_party"),
+      province: effectiveInitiativeSponsorProvinceSql().as("sponsor_province"),
       filedAt: initiatives.filedAt,
       sourceUrl: initiatives.sourceUrl,
       raw: initiatives.raw,
@@ -2154,8 +2209,8 @@ export async function getInitiativeById(db: Database, id: number) {
       sponsor: initiatives.sponsor,
       sponsorRole: initiatives.sponsorRole,
       sponsorCount: initiatives.sponsorCount,
-      party: initiatives.party,
-      province: initiatives.province,
+      party: effectiveInitiativeSponsorPartySql().as("sponsor_party"),
+      province: effectiveInitiativeSponsorProvinceSql().as("sponsor_province"),
       committee: initiatives.committee,
       filedAt: initiatives.filedAt,
       expiresAt: initiatives.expiresAt,
@@ -2260,7 +2315,10 @@ export async function facets(db: Database) {
       .orderBy(sql`1`);
     return rows.map((r) => r.v).filter(Boolean);
   };
-  const [parties, statuses] = await Promise.all([distinct(sql`party`), distinct(sql`status`)]);
+  const [parties, statuses] = await Promise.all([
+    distinct(effectiveInitiativeSponsorPartySql()),
+    distinct(sql`status`),
+  ]);
   return { parties, statuses };
 }
 
@@ -4344,8 +4402,8 @@ export async function listDeposits(
       sponsor: initiatives.sponsor,
       sponsorRole: initiatives.sponsorRole,
       sponsorCount: initiatives.sponsorCount,
-      party: initiatives.party,
-      province: initiatives.province,
+      party: effectiveInitiativeSponsorPartySql().as("sponsor_party"),
+      province: effectiveInitiativeSponsorProvinceSql().as("sponsor_province"),
       filedAt: initiatives.filedAt,
       sourceUrl: initiatives.sourceUrl,
       raw: initiatives.raw,
@@ -4587,8 +4645,8 @@ export async function listRecentInitiatives(
       chamber: initiatives.chamber,
       sponsor: initiatives.sponsor,
       sponsorRole: initiatives.sponsorRole,
-      party: initiatives.party,
-      province: initiatives.province,
+      party: effectiveInitiativeSponsorPartySql().as("sponsor_party"),
+      province: effectiveInitiativeSponsorProvinceSql().as("sponsor_province"),
       filedAt: initiatives.filedAt,
       sourceUrl: initiatives.sourceUrl,
       filteredProponentRelationship: sql<null>`null`,

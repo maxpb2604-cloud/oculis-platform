@@ -3657,7 +3657,26 @@ describe("normalized initiative proponents", () => {
       sponsor: "Perfil Senado Namespace",
       sponsorLegislatorSourceId: "42",
       sponsorProfileId: senator.id,
+      party: "FP",
+      province: "Santo Domingo",
     });
+    expect(await getInitiativeById(h.db, senateInitiative.id)).toMatchObject({
+      party: "FP",
+      province: "Santo Domingo",
+    });
+    expect(
+      (await listInitiatives(h.db, { party: "FP", search: "RELATION-NAMESPACE-" })).rows.map(
+        (row) => row.code,
+      ),
+    ).toContain("RELATION-NAMESPACE-SEN");
+    expect(
+      (
+        await listInitiatives(h.db, {
+          provinceValues: ["SANTO DOMINGO"],
+          search: "RELATION-NAMESPACE-",
+        })
+      ).rows.map((row) => row.code),
+    ).toContain("RELATION-NAMESPACE-SEN");
     expect(await getLegislatorInitiativeStats(h.db, deputy)).toMatchObject({
       availability: "observed",
       deposited: 1,

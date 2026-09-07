@@ -28,8 +28,8 @@ function senateSnapshot({
       fullName: `Persona Senadora ${index + 1}`,
       province: `Provincia ${index + 1}`,
       circumscription: null,
-      party: null,
-      partyShort: null,
+      party: "Partido Revolucionario Moderno",
+      partyShort: "PRM",
       role: null,
       representationLevel: null,
       period: "2024-2028",
@@ -136,6 +136,13 @@ describe("Senate roster snapshot replacement gate", () => {
       sourceId: duplicatedSeat.legislators[0]!.sourceId,
     };
     assert.match(rosterSnapshotError("roster-senado", duplicatedSeat) ?? "", /claves únicas/);
+    const missingParty = senateSnapshot();
+    missingParty.legislators[6] = {
+      ...missingParty.legislators[6]!,
+      party: null,
+      partyShort: null,
+    };
+    assert.match(rosterSnapshotError("roster-senado", missingParty) ?? "", /partido completo/);
   });
 
   it("preserves the last valid roster and memberships after partial incoming snapshots", async () => {

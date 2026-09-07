@@ -94,7 +94,9 @@ export function rosterSnapshotError(source: string, result: RosterResult): strin
       (legislator) =>
         legislator.source === "roster-senado" &&
         legislator.chamber === "SENADO" &&
-        legislator.sourceId.trim().length > 0,
+        legislator.sourceId.trim().length > 0 &&
+        Boolean(legislator.party?.trim()) &&
+        Boolean(legislator.partyShort?.trim()),
     ) &&
     result.memberships.every(
       (membership) =>
@@ -117,7 +119,7 @@ export function rosterSnapshotError(source: string, result: RosterResult): strin
       `${result.memberships.length} membresías, ${unresolvedMemberships} sin coincidencia ` +
       `(${legislatorSourceIds.size}/${uniqueMemberships.size} claves únicas) y ` +
       `${result.gaps.length} notas; se requieren exactamente 32/251/0, claves únicas ` +
-      "y la nota auditada sobre vigencia"
+      "partido completo para los 32 perfiles y la nota auditada sobre vigencia"
     );
   }
   return null;

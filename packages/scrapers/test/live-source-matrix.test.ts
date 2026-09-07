@@ -403,9 +403,16 @@ describe.skipIf(!live)("read-only official source matrix", () => {
         REQUIRED_NONEMPTY,
         async () => {
           const result = await new DiputadosRosterAdapter().collect();
-          if (result.legislators.length < 150 || result.memberships.length === 0) {
+          const missingParty = result.legislators.filter(
+            (legislator) => !legislator.party?.trim() || !legislator.partyShort?.trim(),
+          );
+          if (
+            result.legislators.length < 150 ||
+            result.memberships.length === 0 ||
+            missingParty.length > 0
+          ) {
             throw new Error(
-              `cardinality: ${result.legislators.length} legislators, ${result.memberships.length} memberships`,
+              `roster integrity: ${result.legislators.length} legislators, ${result.memberships.length} memberships, ${missingParty.length} without complete party`,
             );
           }
           return {
@@ -422,9 +429,16 @@ describe.skipIf(!live)("read-only official source matrix", () => {
         SENATE_ROSTER_CONTRACT,
         async () => {
           const result = await new SenadoRosterAdapter().collect();
-          if (result.legislators.length !== 32 || result.memberships.length !== 251) {
+          const missingParty = result.legislators.filter(
+            (legislator) => !legislator.party?.trim() || !legislator.partyShort?.trim(),
+          );
+          if (
+            result.legislators.length !== 32 ||
+            result.memberships.length !== 251 ||
+            missingParty.length > 0
+          ) {
             throw new Error(
-              `cardinality: ${result.legislators.length} legislators, ${result.memberships.length} memberships; expected exactly 32 and 251 for the audited 2024-2028 snapshot`,
+              `roster integrity: ${result.legislators.length} legislators, ${result.memberships.length} memberships, ${missingParty.length} without complete party; expected exactly 32, 251 and 0`,
             );
           }
           return {
