@@ -204,15 +204,33 @@ const ENGLISH_SOURCE_PRESENTATIONS: Record<string, EnglishSourcePresentation> = 
     owner: "Oculis",
     coverage: "Internal links created only from exact official codes",
   },
-  "gap-dip-approved": gapPresentation(
-    "Initiatives approved by the Chamber",
-    CHAMBER_OWNER,
-    "The official page currently contains two old PDFs described as prioritized initiatives (2016 and 2017), not a validated record of approved initiatives. Oculis does not treat prioritization as approval.",
-  ),
-  "gap-dip-minutes": gapPresentation("Chamber sitting minutes", CHAMBER_OWNER),
-  "gap-dip-debates": gapPresentation("Chamber debates", CHAMBER_OWNER),
-  "gap-dip-attendance": gapPresentation("Chamber sitting attendance", CHAMBER_OWNER),
-  "gap-sen-minutes": gapPresentation("Senate sitting minutes", SENATE_OWNER),
+  "dip-approved": {
+    label: "Initiatives approved by the Chamber",
+    owner: CHAMBER_OWNER,
+    coverage:
+      "Complete inventory of the official section; titles remain literal and PDFs currently labelled as prioritized are not converted into approvals",
+  },
+  "dip-minutes": {
+    label: "Chamber sitting minutes",
+    owner: CHAMBER_OWNER,
+    coverage:
+      "Complete inventory of published minutes with legislature, title, dates, and official document",
+  },
+  "dip-debates": {
+    label: "Chamber debates",
+    owner: CHAMBER_OWNER,
+    coverage: "Complete inventory of debate transcripts published for each sitting",
+  },
+  "dip-attendance": {
+    label: "Chamber sitting attendance",
+    owner: CHAMBER_OWNER,
+    coverage: "Complete inventory of official plenary-attendance documents",
+  },
+  "sen-minutes": {
+    label: "Senate sitting minutes",
+    owner: SENATE_OWNER,
+    coverage: "Complete inventory of published minutes with title, dates, and official document",
+  },
 };
 
 function regulatoryPresentation(owner: string): EnglishSourcePresentation {
@@ -221,14 +239,6 @@ function regulatoryPresentation(owner: string): EnglishSourcePresentation {
     owner,
     coverage: "Published documents and official consultation sections; no derived status",
   };
-}
-
-function gapPresentation(
-  label: string,
-  owner: string,
-  gapReason = "An institutional portal is confirmed; the specific URL, parser, and scheduled run have not yet been validated.",
-): EnglishSourcePresentation {
-  return { label, owner, coverage: label, gapReason };
 }
 
 const FEED_SOURCE_LABELS: Record<string, { es: string; en: string }> = {

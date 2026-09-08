@@ -280,8 +280,21 @@ describe("source registry", () => {
     ]) {
       expect(SOURCE_REGISTRY.find((source) => source.id === id)?.status).toBe("ACTIVE");
     }
-    const diputadosApproved = SOURCE_REGISTRY.find((source) => source.id === "gap-dip-approved");
-    expect(diputadosApproved?.status).toBe("KNOWN_GAP");
-    expect(diputadosApproved?.gapReason).toContain("priorizadas");
+    for (const id of [
+      "dip-approved",
+      "dip-minutes",
+      "dip-debates",
+      "dip-attendance",
+      "sen-minutes",
+    ]) {
+      expect(SOURCE_REGISTRY.find((source) => source.id === id)).toMatchObject({
+        status: "ACTIVE",
+        required: true,
+        cadence: "DAILY",
+      });
+    }
+    expect(SOURCE_REGISTRY.find((source) => source.id === "dip-approved")?.coverage).toContain(
+      "no convierte",
+    );
   });
 });

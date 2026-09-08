@@ -162,12 +162,17 @@ describe("source requirements and account evidence", () => {
 
   it("requires every scheduled official publication source", () => {
     assert.deepEqual(REQUIRED_SOURCE_SETS.publications, [
+      "dip-approved",
+      "dip-minutes",
+      "dip-debates",
+      "dip-attendance",
       "dip-known-agenda",
       "sen-approved",
       "sen-expired",
       "sen-votes",
       "sen-attendance",
       "sen-reports",
+      "sen-minutes",
     ]);
   });
 

@@ -13,6 +13,8 @@ import {
   type Database,
 } from "@oculis/db";
 import {
+  DIP_PUBLICATION_SOURCES,
+  DipPublicationsAdapter,
   DipKnownAgendaAdapter,
   fetchPdfText,
   parseApprovedInitiativeMentions,
@@ -23,6 +25,7 @@ import {
   SenadoPublicationsAdapter,
   SENADO_PUBLICATION_SOURCES,
   type KnownAgendaDocument,
+  type DipPublicationKind,
   type SenadoPublicationKind,
   type SenadoPublishedDocument,
 } from "@oculis/scrapers";
@@ -35,6 +38,14 @@ const SENATE_SOURCE_IDS: Record<SenadoPublicationKind, string> = {
   ELECTRONIC_VOTES: "sen-votes",
   COMMITTEE_ATTENDANCE: "sen-attendance",
   REPORTS_FOR_READING: "sen-reports",
+  SESSION_MINUTES: "sen-minutes",
+};
+
+const DIP_PUBLICATION_SOURCE_IDS: Record<DipPublicationKind, string> = {
+  APPROVED_INITIATIVES_INDEX: "dip-approved",
+  SESSION_MINUTES: "dip-minutes",
+  SESSION_DEBATES: "dip-debates",
+  SESSION_ATTENDANCE: "dip-attendance",
 };
 
 export interface CongressPublicationSummary {
@@ -329,6 +340,130 @@ async function ingestKnownAgenda(
   }
 }
 
+async function ingestDipPublicationKind(
+  db: Database,
+  adapter: DipPublicationsAdapter,
+  kind: DipPublicationKind,
+  log: (message: string) => void,
+): Promise<CongressPublicationSummary> {
+  const source = DIP_PUBLICATION_SOURCE_IDS[kind];
+  const registry = DIP_PUBLICATION_SOURCES.find((candidate) => candidate.kind === kind)!;
+  const runId = await beginIngestionRun(db, source, {
+    publicationKind: kind,
+    mode: "COMPLETE_METADATA_INVENTORY",
+  });
+  const gaps: string[] = [];
+  const coverageNotes: string[] = [];
+  let seen = 0;
+  let inserted = 0;
+  try {
+    const collected = await adapter.collect([kind]);
+    const observation = collected.observations[0] ?? null;
+    gaps.push(...collected.gaps);
+    seen = collected.documents.length;
+
+    for (const document of collected.documents) {
+      if (
+        await persistDocument(db, {
+          source,
+          sourceDocId: document.sourceId,
+          title: document.title,
+          extension: document.extension,
+          url: document.downloadUrl,
+          uploadedAt: document.uploadedOn,
+          modifiedAt: document.modifiedOn,
+          sourceCategory: document.categoryTitle,
+          raw: {
+            payload: document.raw,
+            provenance: {
+              sectionUrl: document.pageUrl,
+              documentUrl: document.downloadUrl,
+            },
+          },
+        })
+      ) {
+        inserted++;
+      }
+    }
+
+    if (seen === 0) {
+      gaps.push(`Cámara · ${registry.label}: la colección oficial no publicó documentos.`);
+    }
+    if (kind === "APPROVED_INITIATIVES_INDEX") {
+      const prioritized = collected.documents.filter((document) =>
+        /priorizad[ao]s?/i.test(document.title),
+      ).length;
+      if (prioritized > 0) {
+        coverageNotes.push(
+          `Cámara · ${registry.label}: ${prioritized}/${seen} archivo(s) se titulan “Iniciativas Priorizadas”; Oculis los conserva como documentos y no registra una aprobación a partir de esa etiqueta.`,
+        );
+      }
+    }
+
+    const health = assessCongressPublicationHealth(0, gaps, coverageNotes);
+    await recordIngestionRun(db, {
+      runId,
+      source,
+      seen,
+      inserted,
+      statusChanges: 0,
+      ok: health.ok,
+      outcome: health.outcome,
+      details: {
+        publicationKind: kind,
+        pageUrl: registry.pageUrl,
+        rootCategoryId: registry.rootCategoryId,
+        categoryCount: observation?.categoryCount ?? 0,
+        reportedCount: observation?.reportedCount ?? null,
+        collectedCount: observation?.collectedCount ?? seen,
+        complete: observation?.complete ?? false,
+        mode: "COMPLETE_METADATA_INVENTORY",
+        gaps,
+        coverageNotes,
+      },
+    });
+    log(
+      `  ${health.outcome === "COMPLETE" ? "✔" : "⚠"} ${source}: ${seen} documento(s) oficiales reconciliados`,
+    );
+    gaps.forEach((gap) => log(`    ⚠ ${gap}`));
+    coverageNotes.forEach((note) => log(`    ℹ ${note}`));
+    return {
+      source,
+      ok: health.ok,
+      outcome: health.outcome,
+      seen,
+      inserted,
+      statusChanges: 0,
+      gaps,
+      coverageNotes,
+    };
+  } catch (error) {
+    const message = (error as Error).message;
+    await recordIngestionRun(db, {
+      runId,
+      source,
+      seen,
+      inserted,
+      statusChanges: 0,
+      ok: false,
+      error: message,
+      details: { publicationKind: kind, gaps, coverageNotes },
+    });
+    log(`  ✖ ${source}: ${message}`);
+    return {
+      source,
+      ok: false,
+      outcome: "FAILED",
+      seen,
+      inserted,
+      statusChanges: 0,
+      gaps,
+      coverageNotes,
+      error: message,
+    };
+  }
+}
+
 async function recordSenateStatus(
   db: Database,
   data: {
@@ -412,7 +547,7 @@ async function ingestSenateKind(
         kind === "EXPIRED_PROJECTS" ||
         kind === "COMMITTEE_ATTENDANCE");
     const targets = parseEntireCollection ? ordered : ordered.slice(0, options.pdfLimitPerSource);
-    if (kind !== "ELECTRONIC_VOTES") {
+    if (kind !== "ELECTRONIC_VOTES" && kind !== "SESSION_MINUTES") {
       for (const document of targets) {
         try {
           const { text } = await adapter.fetchDocumentText(document);
@@ -639,6 +774,10 @@ export async function ingestCongressPublications(
     log: opts.log ?? (() => {}),
   };
   const summaries: CongressPublicationSummary[] = [];
+  const diputados = new DipPublicationsAdapter();
+  for (const source of DIP_PUBLICATION_SOURCES) {
+    summaries.push(await ingestDipPublicationKind(db, diputados, source.kind, options.log));
+  }
   summaries.push(await ingestKnownAgenda(db, options));
   const senate = new SenadoPublicationsAdapter();
   for (const source of SENADO_PUBLICATION_SOURCES) {

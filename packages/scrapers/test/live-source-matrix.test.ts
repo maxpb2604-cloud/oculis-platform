@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   DipOficialAdapter,
+  DIP_PUBLICATION_SOURCES,
+  DipPublicationsAdapter,
   DiputadosRosterAdapter,
   officialFeedAdapters,
   regulatoryAdapters,
   SenadoAdapter,
+  SenadoPublicationsAdapter,
   SenadoRosterAdapter,
   SenadoSilAdapter,
   SilActividadAdapter,
@@ -370,6 +373,36 @@ describe.skipIf(!live)("read-only official source matrix", () => {
         async () => {
           const refs = await new DipOficialAdapter().listOrdenes();
           return { count: refs.length };
+        },
+      );
+
+      const dipPublications = new DipPublicationsAdapter().collect();
+      for (const source of DIP_PUBLICATION_SOURCES) {
+        await check(source.sourceId, source.pageUrl, REQUIRED_NONEMPTY, async () => {
+          const result = await dipPublications;
+          const observation = result.observations.find(
+            (candidate) => candidate.sourceId === source.sourceId,
+          );
+          if (!observation || !observation.complete) {
+            throw new Error(`${source.sourceId}: no se reconcilió el inventario oficial completo`);
+          }
+          return { count: observation.collectedCount };
+        });
+      }
+
+      await check(
+        "sen-minutes",
+        "https://www.senadord.gob.do/elaboracion-de-actas/actas-de-sesiones/",
+        REQUIRED_NONEMPTY,
+        async () => {
+          const result = await new SenadoPublicationsAdapter().collect({
+            kinds: ["SESSION_MINUTES"],
+          });
+          const observation = result.observations[0];
+          if (!observation?.complete) {
+            throw new Error("sen-minutes: no se reconcilió el inventario oficial completo");
+          }
+          return { count: observation.collectedCount };
         },
       );
 

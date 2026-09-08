@@ -24,7 +24,8 @@ export type SenadoPublicationKind =
   | "EXPIRED_PROJECTS"
   | "ELECTRONIC_VOTES"
   | "COMMITTEE_ATTENDANCE"
-  | "REPORTS_FOR_READING";
+  | "REPORTS_FOR_READING"
+  | "SESSION_MINUTES";
 
 export interface SenadoPublicationSource {
   kind: SenadoPublicationKind;
@@ -64,6 +65,12 @@ export const SENADO_PUBLICATION_SOURCES: readonly SenadoPublicationSource[] = [
     label: "Informes para Lectura",
     pageUrl: `${SENATE_HOST}/comisiones/informes-para-lectura/`,
     categoryId: 1384,
+  },
+  {
+    kind: "SESSION_MINUTES",
+    label: "Actas de Sesiones",
+    pageUrl: `${SENATE_HOST}/elaboracion-de-actas/actas-de-sesiones/`,
+    categoryId: 1387,
   },
 ] as const;
 
