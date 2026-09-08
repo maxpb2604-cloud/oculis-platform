@@ -1,11 +1,22 @@
 /** Canonical editorial-data primitives shared across server and client views. */
-export function Kpi({ label, value, accent }: { label: string; value: number; accent: string }) {
+export function Kpi({
+  label,
+  value,
+  accent,
+  children,
+}: {
+  label: string;
+  value: number;
+  accent: string;
+  children?: React.ReactNode;
+}) {
   return (
     <div className="min-w-0 border-l-2 py-1 pl-4" style={{ borderColor: accent }}>
       <div className="eyebrow">{label}</div>
       <div className="tnum mt-2 text-2xl font-semibold leading-none sm:text-[32px]">
         {value.toLocaleString()}
       </div>
+      {children}
     </div>
   );
 }

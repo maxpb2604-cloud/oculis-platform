@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   classifyPublicConsultation,
   classifyRegulatoryProcess,
+  classifyRegulatoryProcessStage,
   isExplicitlyOpenConsultationStatus,
   isOpenPublicConsultation,
   normalizeRegulatoryStatus,
@@ -63,5 +64,22 @@ describe("regulatory status classification", () => {
     expect(
       classifyPublicConsultation({ status: "Agenda", isConsulta: false }, "2026-09-07"),
     ).toBeNull();
+  });
+
+  it.each([
+    ["Borrador", "DRAFT"],
+    ["Draft", "DRAFT"],
+    ["Agenda", "AGENDA"],
+    ["En elaboración", "IN_DEVELOPMENT"],
+    ["Por iniciar", "TO_START"],
+    ["En proceso", "IN_PROCESS"],
+    ["Iniciativa", "INITIATIVE"],
+  ] as const)("breaks the source status %s into the %s process stage", (status, expected) => {
+    expect(classifyRegulatoryProcessStage({ status, isConsulta: false })).toBe(expected);
+  });
+
+  it("never places an Initiative in Public Consultation in a process-stage bucket", () => {
+    expect(classifyRegulatoryProcessStage({ status: "Agenda", isConsulta: true })).toBeNull();
+    expect(classifyRegulatoryProcessStage({ status: "En proceso", isConsulta: true })).toBeNull();
   });
 });

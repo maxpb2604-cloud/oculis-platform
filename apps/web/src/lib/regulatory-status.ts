@@ -4,6 +4,24 @@ export type PublicConsultationState = "OPEN" | "UPCOMING" | "CLOSED" | "UNKNOWN"
 /** General regulatory-process state. It never describes a public-consultation window. */
 export type RegulatoryProcessState = "IN_PROCESS" | "CONCLUDED" | "UNKNOWN";
 
+/** Source-reported stage for an ordinary regulatory initiative that is still in process. */
+export type RegulatoryProcessStage =
+  | "DRAFT"
+  | "AGENDA"
+  | "INITIATIVE"
+  | "TO_START"
+  | "IN_PROCESS"
+  | "IN_DEVELOPMENT";
+
+export const REGULATORY_PROCESS_STAGE_ORDER: readonly RegulatoryProcessStage[] = [
+  "DRAFT",
+  "AGENDA",
+  "IN_DEVELOPMENT",
+  "TO_START",
+  "IN_PROCESS",
+  "INITIATIVE",
+];
+
 export interface RegulatoryActivityInput {
   status: string | null;
   isConsulta?: boolean | null;
@@ -41,15 +59,15 @@ const EXPLICIT_CLOSED_STATUSES = new Set([
   "retirada",
 ]);
 
-const IN_PROCESS_STATUSES = new Set([
-  "agenda",
-  "borrador",
-  "draft",
-  "iniciativa",
-  "por iniciar",
-  "en proceso",
-  "en elaboracion",
-]);
+const REGULATORY_PROCESS_STAGE_BY_STATUS: Readonly<Record<string, RegulatoryProcessStage>> = {
+  agenda: "AGENDA",
+  borrador: "DRAFT",
+  draft: "DRAFT",
+  iniciativa: "INITIATIVE",
+  "por iniciar": "TO_START",
+  "en proceso": "IN_PROCESS",
+  "en elaboracion": "IN_DEVELOPMENT",
+};
 
 export function normalizeRegulatoryStatus(status: string): string {
   return status
@@ -104,8 +122,21 @@ export function classifyRegulatoryProcess(
   if (item.isConsulta === true) return null;
   const normalized = item.status ? normalizeRegulatoryStatus(item.status) : "";
   if (EXPLICIT_CLOSED_STATUSES.has(normalized)) return "CONCLUDED";
-  if (IN_PROCESS_STATUSES.has(normalized)) return "IN_PROCESS";
+  if (REGULATORY_PROCESS_STAGE_BY_STATUS[normalized]) return "IN_PROCESS";
   return "UNKNOWN";
+}
+
+/**
+ * Returns the exact process-stage bucket used in the regulatory KPI breakdown.
+ * Public consultations are excluded so their participation state can never be
+ * mixed with the ordinary regulatory-process stages shown here.
+ */
+export function classifyRegulatoryProcessStage(
+  item: Pick<RegulatoryActivityInput, "status" | "isConsulta">,
+): RegulatoryProcessStage | null {
+  if (item.isConsulta === true) return null;
+  const normalized = item.status ? normalizeRegulatoryStatus(item.status) : "";
+  return REGULATORY_PROCESS_STAGE_BY_STATUS[normalized] ?? null;
 }
 
 /** Explicit public-participation status predicate; dates are intentionally ignored. */

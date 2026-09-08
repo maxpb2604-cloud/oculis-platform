@@ -182,6 +182,34 @@
 
 final result: blocked
 
+## Iteration — Desglose de iniciativas en proceso regulatorio
+
+- Source visual truth: `/var/folders/pq/5j_515ns70x73jzfhtjw3dsr0000gn/T/TemporaryItems/NSIRD_screencaptureui_SAnPtn/Screenshot 2026-09-08 at 11.20.22 AM.png` (1662 × 258 source pixels). The supplied KPI strip showed `Propuestas en proceso`, `Instituciones observadas`, and `Expedientes únicos` with large tabular totals and narrow colored rules.
+- Rendered implementation: `http://localhost:3001/regulatorio`, inspected in the Codex in-app Browser in Spanish and light theme after a fresh production-mode build.
+- Full-view comparison: the KPI strip preserves the existing Oculis typography, tabular figures, color rules, spacing, and responsive grid. The new copy wraps inside its own column without colliding with adjacent indicators.
+- Focused-region comparison: `Propuestas en proceso` is now the more precise `Iniciativas en proceso regulatorio`; its total can expose a compact, wrapping list of the non-zero source-reported stages directly underneath. `Expedientes únicos` is now `Iniciativas regulatorias registradas en la base de datos`, which states exactly what the total represents.
+- Factual behavior: the stage list is derived from the same deduplicated records as the KPI total and includes only explicit statuses reported by the source: borrador, agenda, elaboración, por iniciar, en proceso, or estado `Iniciativa`. Zero-count categories are omitted.
+- Semantic separation: records identified as `Iniciativas en Consulta Pública` are explicitly excluded from the regulatory-process stage breakdown, preserving the platform rule that public-consultation status and regulatory-process status are different concepts.
+- Responsive evidence: the existing grid remains one column at the base breakpoint, two columns from `sm`, and four columns from `xl`; the breakdown itself uses `flex-wrap`, so long bilingual labels cannot force horizontal overflow.
+- Accessibility evidence: the breakdown is a semantic list with an `aria-label` that identifies the total being explained. The original KPI component remains backward-compatible for all other pages.
+- Console and route evidence: the local production route returned HTTP 200 and rendered both new labels in the accessibility tree. No new interactive control or asset was introduced.
+- Automated verification: 420 web tests across 61 files passed; TypeScript, Prettier, the factual-data policy, the production web build, and `git diff --check` passed.
+
+**Findings**
+
+- No P0, P1, or P2 visual, factual, responsive, or accessibility defect remains in this scoped KPI change.
+
+**Implementation Checklist**
+
+- [x] Rename the process KPI to describe regulatory initiatives.
+- [x] Break the total down by explicit source-reported process stage.
+- [x] Rename the unique-record total as initiatives registered in the database.
+- [x] Keep public-consultation classification out of the process-stage calculation.
+- [x] Preserve the existing responsive KPI presentation.
+- [x] Pass the complete web regression suite and production build.
+
+final result: passed
+
 ## Final browser sign-off — publicación de los cambios del viernes
 
 - Reference inputs: the supplied Friday screenshots for the regulatory page, the shared navigation, the calendar, the agenda detail, the congress directory, and the source-status entry.

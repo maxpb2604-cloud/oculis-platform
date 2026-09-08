@@ -82,8 +82,11 @@ import { resolvePartyPresentation } from "./party-presentation";
 import {
   classifyPublicConsultation,
   classifyRegulatoryProcess,
+  classifyRegulatoryProcessStage,
   isOpenPublicConsultation,
+  REGULATORY_PROCESS_STAGE_ORDER,
   type PublicConsultationState,
+  type RegulatoryProcessStage,
   type RegulatoryProcessState,
 } from "./regulatory-status";
 
@@ -1205,6 +1208,11 @@ export interface RegulatoryInstitutionSummary {
   latestPublishedAt: string | null;
 }
 
+export interface RegulatoryProcessStageSummary {
+  stage: RegulatoryProcessStage;
+  count: number;
+}
+
 function normalizedRegulationIdentity(item: RegulationFact): string {
   const title = item.title
     .normalize("NFD")
@@ -1264,6 +1272,7 @@ export async function getRegulatoryOverview(opts: { institution?: string } = {})
   const today = todayISO();
   const facts = deduplicateRegulationFacts(rows.map((row) => toRegulationFact(row, today)));
   const groups = new Map<string, RegulatoryInstitutionSummary>();
+  const processStageCounts = new Map<RegulatoryProcessStage, number>();
 
   for (const item of facts) {
     const summary = groups.get(item.institution) ?? {
@@ -1284,7 +1293,11 @@ export async function getRegulatoryOverview(opts: { institution?: string } = {})
       summary.openCount += 1;
     }
     if (item.consultationState === "UPCOMING") summary.upcomingCount += 1;
-    if (item.regulatoryProcessState === "IN_PROCESS") summary.inProcessCount += 1;
+    if (item.regulatoryProcessState === "IN_PROCESS") {
+      summary.inProcessCount += 1;
+      const stage = classifyRegulatoryProcessStage(item);
+      if (stage) processStageCounts.set(stage, (processStageCounts.get(stage) ?? 0) + 1);
+    }
     if (item.consultationState === "UNKNOWN" || item.regulatoryProcessState === "UNKNOWN")
       summary.unknownCount += 1;
     if (!summary.latestPublishedAt && item.publishedAt)
@@ -1308,6 +1321,10 @@ export async function getRegulatoryOverview(opts: { institution?: string } = {})
       openToday: facts.filter(isOpenPublicConsultation).length,
       upcoming: facts.filter((item) => item.consultationState === "UPCOMING").length,
       inProcess: facts.filter((item) => item.regulatoryProcessState === "IN_PROCESS").length,
+      inProcessByStage: REGULATORY_PROCESS_STAGE_ORDER.flatMap((stage) => {
+        const count = processStageCounts.get(stage) ?? 0;
+        return count > 0 ? [{ stage, count }] : [];
+      }) satisfies RegulatoryProcessStageSummary[],
       unknown: facts.filter(
         (item) => item.consultationState === "UNKNOWN" || item.regulatoryProcessState === "UNKNOWN",
       ).length,

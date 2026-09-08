@@ -9,6 +9,7 @@ import {
 } from "@/lib/data";
 import { formatISODate } from "@/lib/format";
 import { parseLang, type Lang } from "@/lib/i18n";
+import type { RegulatoryProcessStage } from "@/lib/regulatory-status";
 import { AppShell } from "@/components/app-shell";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Kpi, Panel, SectionHeading } from "@/components/report-ui";
@@ -115,6 +116,16 @@ const INSTITUTION_PRESENTATION: Record<
     logoBackground: "#0d3048",
   },
 };
+
+const REGULATORY_PROCESS_STAGE_LABELS: Record<RegulatoryProcessStage, { es: string; en: string }> =
+  {
+    DRAFT: { es: "en borrador", en: "in draft" },
+    AGENDA: { es: "en agenda", en: "on an agenda" },
+    IN_DEVELOPMENT: { es: "en elaboración", en: "in development" },
+    TO_START: { es: "por iniciar", en: "not started" },
+    IN_PROCESS: { es: "en proceso", en: "in process" },
+    INITIATIVE: { es: "con estado «Iniciativa»", en: "with ‘Initiative’ status" },
+  };
 
 export async function generateMetadata({
   searchParams,
@@ -278,9 +289,27 @@ export default async function RegulatorioPage({
             />
             <Kpi
               value={kpis.inProcess}
-              label={es ? "Propuestas en proceso" : "Proposals in process"}
+              label={
+                es ? "Iniciativas en proceso regulatorio" : "Initiatives in regulatory process"
+              }
               accent="var(--warn)"
-            />
+            >
+              <ul
+                className="mt-3 flex flex-wrap gap-x-3 gap-y-1.5 border-t pt-2 text-[11px] leading-snug text-[var(--text-muted)]"
+                aria-label={
+                  es
+                    ? `Desglose de ${kpis.inProcess} iniciativas por estado del proceso regulatorio`
+                    : `Breakdown of ${kpis.inProcess} initiatives by regulatory process stage`
+                }
+              >
+                {kpis.inProcessByStage.map((item) => (
+                  <li key={item.stage}>
+                    <span className="tnum font-semibold text-[var(--text)]">{item.count}</span>{" "}
+                    {REGULATORY_PROCESS_STAGE_LABELS[item.stage][lang]}
+                  </li>
+                ))}
+              </ul>
+            </Kpi>
             <Kpi
               value={kpis.institutions}
               label={es ? "Instituciones observadas" : "Observed institutions"}
@@ -288,7 +317,11 @@ export default async function RegulatorioPage({
             />
             <Kpi
               value={kpis.total}
-              label={es ? "Expedientes únicos" : "Unique records"}
+              label={
+                es
+                  ? "Iniciativas regulatorias registradas en la base de datos"
+                  : "Regulatory initiatives registered in the database"
+              }
               accent="var(--text-muted)"
             />
           </div>
@@ -495,7 +528,9 @@ function InstitutionCard({
           </div>
           <dl className="mt-5 grid grid-cols-2 divide-x border-y py-3">
             <div className="pr-4">
-              <dt className="eyebrow">{es ? "Expedientes" : "Records"}</dt>
+              <dt className="eyebrow">
+                {es ? "Iniciativas registradas" : "Registered initiatives"}
+              </dt>
               <dd className="tnum mt-1 text-2xl font-semibold">{item.count.toLocaleString()}</dd>
             </div>
             <div className="pl-4">

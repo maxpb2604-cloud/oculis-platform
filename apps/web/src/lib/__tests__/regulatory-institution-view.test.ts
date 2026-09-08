@@ -61,4 +61,15 @@ describe("regulatory institution view", () => {
       "Una Iniciativa en Consulta Pública es una propuesta regulatoria",
     );
   });
+
+  it("explains the regulatory inventory and breaks in-process initiatives down by stage", () => {
+    expect(pageSource).toContain("Iniciativas en proceso regulatorio");
+    expect(pageSource).toContain("kpis.inProcessByStage.map");
+    expect(pageSource).toContain("en borrador");
+    expect(pageSource).toContain("en agenda");
+    expect(pageSource).toContain("en elaboración");
+    expect(pageSource).toContain("por iniciar");
+    expect(pageSource).toContain("Iniciativas regulatorias registradas en la base de datos");
+    expect(pageSource).not.toContain('label={es ? "Expedientes únicos"');
+  });
 });
