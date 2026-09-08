@@ -25,6 +25,7 @@ import {
 } from "@oculis/core";
 import { AppShell } from "@/components/app-shell";
 import { CopyTextButton } from "@/components/copy-text-button";
+import { LegislativeMovementTerm } from "@/components/legislative-movement-term";
 import { LegislatorProfileTrigger } from "@/components/legislator-profile-provider";
 import { getInitiative } from "@/lib/data";
 import { formatISODate, formatISODateTime } from "@/lib/format";
@@ -43,6 +44,10 @@ import {
   type ProceduralFactPresentation,
 } from "@/lib/initiative-procedural-presentation";
 import { initiativeChamberLabel, officialStatusLabel } from "@/lib/legislative-labels";
+import {
+  legislativeMovementDefinition,
+  localizedLegislativeMovementGlossary,
+} from "@/lib/legislative-movement-glossary";
 import { officialDocumentCtaHref, officialDocumentLiveHref } from "@/lib/official-document-links";
 import { partyDisplayLabel } from "@/lib/party-presentation";
 import { initiativeSourceLabel } from "@/lib/source-labels";
@@ -181,6 +186,28 @@ export default async function Page({ params, searchParams }: InitiativeRouteProp
   const fullEvents = [...initiative.events].sort((a, b) =>
     eventTimestamp(b).localeCompare(eventTimestamp(a)),
   );
+  const recordedMovementGuide = Array.from(
+    new Map(
+      [initiative.status, ...fullEvents.map((event) => event.status)]
+        .filter((status): status is string => Boolean(status?.trim()))
+        .map((status) => {
+          const definition = legislativeMovementDefinition(status, lang);
+          return definition ? [definition.id, { status, definition }] : null;
+        })
+        .filter(
+          (
+            entry,
+          ): entry is [
+            string,
+            {
+              status: string;
+              definition: NonNullable<ReturnType<typeof legislativeMovementDefinition>>;
+            },
+          ] => entry !== null,
+        ),
+    ).values(),
+  );
+  const completeMovementGlossary = localizedLegislativeMovementGlossary(lang);
   const eventEvidence = (event: (typeof initiative.events)[number]) => {
     const committeeReport = isCommitteeReportStatus(event.status);
     return {
@@ -386,7 +413,13 @@ export default async function Page({ params, searchParams }: InitiativeRouteProp
               <HeroFact
                 icon={<SealCheck aria-hidden size={19} />}
                 label={es ? "Estado publicado" : "Published status"}
-                value={officialStatusLabel(initiative.status, lang) ?? missing}
+                value={
+                  initiative.status ? (
+                    <LegislativeMovementTerm status={initiative.status} lang={lang} />
+                  ) : (
+                    missing
+                  )
+                }
               />
               <ProceduralHeroFact
                 icon={<Buildings aria-hidden size={19} />}
@@ -527,9 +560,11 @@ export default async function Page({ params, searchParams }: InitiativeRouteProp
                             : missing}
                       </div>
                       <div>
-                        <p className="font-semibold leading-snug">
-                          {officialStatusLabel(event.status, lang)}
-                        </p>
+                        <LegislativeMovementTerm
+                          status={event.status}
+                          lang={lang}
+                          className="font-semibold"
+                        />
                         {event.note && (
                           <p
                             className="mt-1 text-xs leading-relaxed"
@@ -575,6 +610,89 @@ export default async function Page({ params, searchParams }: InitiativeRouteProp
                     : "Oculis is still checking this initiative's history."}
               </EmptyText>
             )}
+          </CardSection>
+
+          <CardSection
+            title={
+              es ? "Cómo leer los estados y movimientos" : "How to read statuses and movements"
+            }
+            icon={<Info aria-hidden size={21} />}
+          >
+            <div
+              className="rounded-xl border-l-4 p-4 text-sm leading-relaxed"
+              style={{
+                borderColor: "var(--accent)",
+                background: "var(--accent-soft)",
+              }}
+            >
+              <p className="font-semibold">
+                {es
+                  ? "Cada palabra azul explica un estado o movimiento publicado por la fuente oficial."
+                  : "Each blue term explains a status or movement published by the official source."}
+              </p>
+              <p className="mt-1" style={{ color: "var(--text-muted)" }}>
+                {es
+                  ? "Un movimiento describe un paso del trámite. La vigencia legislativa es una condición distinta. Ningún movimiento equivale por sí solo a aprobación o promulgación, y el plazo de una comisión tampoco es la vigencia de la iniciativa."
+                  : "A movement describes one procedural step. Legislative validity is a separate condition. No movement by itself equals approval or enactment, and a committee deadline is not the initiative's legislative validity."}
+              </p>
+            </div>
+
+            <section className="mt-5" aria-labelledby="recorded-movements-guide-heading">
+              <h3 id="recorded-movements-guide-heading" className="text-sm font-semibold">
+                {es
+                  ? "Estados y movimientos registrados en este expediente"
+                  : "Statuses and movements recorded in this file"}
+              </h3>
+              {recordedMovementGuide.length > 0 ? (
+                <dl className="mt-3 grid gap-3 lg:grid-cols-2">
+                  {recordedMovementGuide.map(({ status, definition }) => (
+                    <div key={definition.id} className="rounded-xl border p-4">
+                      <dt>
+                        <LegislativeMovementTerm status={status} lang={lang} />
+                      </dt>
+                      <dd
+                        className="mt-1 text-xs leading-relaxed"
+                        style={{ color: "var(--text-muted)" }}
+                      >
+                        {definition.description}
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
+              ) : (
+                <EmptyText>
+                  {es
+                    ? "La fuente todavía no publica movimientos para este expediente."
+                    : "The source has not yet published movements for this file."}
+                </EmptyText>
+              )}
+            </section>
+
+            <details className="mt-5 overflow-hidden rounded-xl border">
+              <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-semibold marker:hidden">
+                <span>
+                  {es
+                    ? `Ver guía completa de estados y movimientos · ${completeMovementGlossary.length}`
+                    : `View the complete status and movement guide · ${completeMovementGlossary.length}`}
+                </span>
+                <CaretDown aria-hidden size={15} style={{ color: "var(--text-muted)" }} />
+              </summary>
+              <dl className="grid gap-px border-t bg-[var(--border)] sm:grid-cols-2">
+                {completeMovementGlossary.map((definition) => (
+                  <div key={definition.id} className="bg-[var(--surface)] p-4">
+                    <dt className="text-sm font-semibold" style={{ color: "var(--accent)" }}>
+                      {definition.label}
+                    </dt>
+                    <dd
+                      className="mt-1 text-xs leading-relaxed"
+                      style={{ color: "var(--text-muted)" }}
+                    >
+                      {definition.description}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            </details>
           </CardSection>
 
           <CardSection
@@ -878,9 +996,11 @@ export default async function Page({ params, searchParams }: InitiativeRouteProp
                         className="absolute -left-[26px] top-1.5"
                         style={{ color: "var(--accent)" }}
                       />
-                      <p className="font-semibold leading-snug">
-                        {officialStatusLabel(event.status, lang)}
-                      </p>
+                      <LegislativeMovementTerm
+                        status={event.status}
+                        lang={lang}
+                        className="font-semibold"
+                      />
                       <p className="tnum mt-1 text-xs" style={{ color: "var(--text-muted)" }}>
                         {event.eventDate
                           ? formatISODate(event.eventDate, lang)
@@ -1278,7 +1398,7 @@ function CardSection({
   );
 }
 
-function HeroFact({ icon, label, value }: { icon: ReactNode; label: string; value: string }) {
+function HeroFact({ icon, label, value }: { icon: ReactNode; label: string; value: ReactNode }) {
   return (
     <div className="min-w-0">
       <dt

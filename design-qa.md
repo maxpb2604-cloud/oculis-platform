@@ -211,6 +211,36 @@ final result: blocked
 
 final result: passed
 
+## Iteration — Guía de estados y movimientos legislativos
+
+- Source visual truth: `/var/folders/pq/5j_515ns70x73jzfhtjw3dsr0000gn/T/TemporaryItems/NSIRD_screencaptureui_oNTDLg/Screenshot 2026-09-08 at 11.45.25 AM.png` (244 × 98 source pixels). The supplied crop showed the source-literal status `Con Plazo Fijo` as a large, unexplained text value.
+- Local implementation: `http://localhost:3001/initiatives/33717`, Spanish light-theme state, built in production mode and inspected in the Codex in-app Browser at 1085 × 980.
+- Combined reference/implementation evidence: `/Users/maxpena/Documents/Codex/2026-08-27/a/output/oculis-movement-reference-comparison.png`.
+- Focused comparison: the source-literal status remains prominent but is now blue, underlined, and interactive. Activating it opens a compact Oculis-styled explanation bubble with the normalized meaning, a plain-language description, and the exact status text originally published by the source.
+- Page hierarchy: the same interaction appears in the published status, recent movements, and full history. A new `Cómo leer los estados y movimientos` card lists the definitions actually used by the current file and exposes the complete 38-entry bilingual glossary on demand.
+- Semantic separation: `Con plazo fijo` is defined only as a deadline assigned to the commission; `Plazo vencido` is defined only as the end of that procedural deadline; and `Vigente`, `No vigente`, and `Perimida` remain separate legislative-validity concepts. No definition treats a committee deadline as initiative validity.
+- Factual coverage: the 21 distinct current statuses returned by the production initiatives API are all recognized. Historical variants observed from both chambers are normalized only for lookup; the source-literal status is retained and displayed in each bubble. A new, unknown source term receives a conservative literal fallback instead of an invented procedural meaning.
+- Interaction verification: click/touch opens the bubble; a second activation, pointer exit, blur, or `Escape` closes it. The trigger uses a semantic button, `aria-describedby`, `aria-expanded`, a `role=tooltip` explanation, visible keyboard focus, and a 44-pixel minimum target.
+- Responsive behavior: the bubble width is capped by the viewport and remains anchored to the triggering term; long labels and explanations wrap without horizontal overflow. The glossary grid is single-column by default and two columns from the small breakpoint.
+- Console verification: the in-app Browser reported zero console warnings and zero console errors after loading, opening, and closing the tooltip.
+- Automated verification: 475 web tests across 63 files passed before the final copy-only refinement; the final focused suite passes 59 tests. TypeScript, targeted ESLint, Prettier, factual-data policy, `git diff --check`, and two clean production builds pass.
+
+**Findings**
+
+- No P0, P1, or P2 visual, interaction, accessibility, or terminology defect remains in this scoped initiative-status change.
+
+**Implementation Checklist**
+
+- [x] Explain the current status and every movement shown in an initiative file.
+- [x] Add temporary explanations on hover, focus, click, and touch.
+- [x] Preserve the exact source-published term inside the explanation.
+- [x] Add a complete bilingual status and movement guide.
+- [x] Keep procedural deadlines separate from legislative validity.
+- [x] Cover every current production status and tested historical variants.
+- [x] Pass automated, visual, interaction, accessibility, and console checks.
+
+final result: passed
+
 ## Final browser sign-off — publicación de los cambios del viernes
 
 - Reference inputs: the supplied Friday screenshots for the regulatory page, the shared navigation, the calendar, the agenda detail, the congress directory, and the source-status entry.

@@ -63,6 +63,15 @@ describe("initiative detail source-status copy", () => {
     expect(shellSource).not.toContain("initiative-modal");
   });
 
+  it("explains every published movement without mixing procedure and validity", () => {
+    expect(detailSource).toContain("LegislativeMovementTerm");
+    expect(detailSource).toContain("Cómo leer los estados y movimientos");
+    expect(detailSource).toContain("Estados y movimientos registrados en este expediente");
+    expect(detailSource).toContain("Ver guía completa de estados y movimientos");
+    expect(detailSource).toContain("La vigencia legislativa es una condición distinta");
+    expect(detailSource).toContain("el plazo de una comisión tampoco es la vigencia");
+  });
+
   it("opens listed official bill text through a live guarded check", () => {
     expect(detailSource).toContain("officialDocumentLiveHref");
     expect(detailSource).not.toContain(
