@@ -103,6 +103,20 @@ jobs:
         timeout-minutes: 45
         run: npm run movements:incremental -w @oculis/worker
 
+      # A committee report can be uploaded after its history row first appears. Refresh
+      # the exact initiatives with recent movements after histories are current, so the
+      # movement can link the official report itself on the same eight-hour cycle.
+      - name: Refresh documents for recent legislative movements
+        id: daily_recent_movement_documents
+        if: >-
+          !cancelled() &&
+          steps.database_config.outcome == 'success' &&
+          ((github.event_name == 'schedule' && github.event.schedule == '15 2,10,18 * * *') ||
+          (github.event_name == 'workflow_dispatch' &&
+          (inputs.mode == 'daily' || inputs.mode == 'movements-incremental')))
+        timeout-minutes: 30
+        run: npm run ingest -w @oculis/worker -- --documents --recent-status-days 45
+
       # Link availability lasts 24 hours. This runs after metadata discovery and
       # movement capture, checkpoints every document (including failures), and
       # receives no AI configuration.

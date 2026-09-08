@@ -127,6 +127,28 @@ describe("Congress movement-day web adapter", () => {
     expect(adaptCongressMovementDay(source).movements[0]!.sourceUrl).toBeNull();
   });
 
+  it("fails closed when a committee-report attachment leaves the official source domains", () => {
+    const source = movementDay();
+    source.movements[1] = {
+      ...source.movements[1]!,
+      status: "Con informe de comisión",
+      documentPublication: {
+        status: "OFFICIAL_COMMITTEE_REPORT",
+        checkedAt: null,
+        available: true,
+        documentId: 999,
+        url: "https://evil.example/report.pdf",
+      },
+    };
+
+    expect(adaptCongressMovementDay(source).movements[1]?.documentPublication).toEqual({
+      status: "UNCONFIRMED",
+      checkedAt: null,
+      available: false,
+      documentId: null,
+    });
+  });
+
   it("rejects an invalid requested calendar day before opening the database", async () => {
     await expect(
       getCongressMovementDay({ date: "2026-02-31", chamber: "DIPUTADOS" }),

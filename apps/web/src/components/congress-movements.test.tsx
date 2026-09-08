@@ -273,7 +273,7 @@ describe("CongressMovements", () => {
     expect(html).not.toContain("null/null");
   });
 
-  it("shows only the two simple PDF states regardless of the backend evidence status", () => {
+  it("shows a deposited-PDF state only for filings and no unrelated PDF control for statuses", () => {
     const html = renderToStaticMarkup(
       <CongressMovements
         day={{
@@ -305,10 +305,39 @@ describe("CongressMovements", () => {
       />,
     );
 
-    expect(html.match(/PDF no disponible/g)).toHaveLength(2);
+    expect(html.match(/PDF no disponible/g)).toHaveLength(1);
     expect(html).not.toContain("No publicado en la última verificación");
     expect(html).not.toContain("Publicación sin confirmar");
     expect(html).not.toContain('data-pdf-control="true"');
+    expect(html).not.toContain("/api/document/open?");
+  });
+
+  it("labels a committee report clearly and opens its exact official attachment", () => {
+    const reportUrl =
+      "https://s-sil.camaradediputados.gob.do:8095/ReportesGenerales/VerDocumento?documentoId=261188";
+    const reportMovement: CongressMovement = {
+      ...day.movements[1],
+      status: "Con informe de comisión",
+      documentPublication: {
+        status: "OFFICIAL_COMMITTEE_REPORT",
+        checkedAt: null,
+        available: true,
+        documentId: 15914,
+        url: reportUrl,
+      },
+    };
+    const html = renderToStaticMarkup(
+      <CongressMovements
+        day={{ ...day, movements: [reportMovement], totalMovementCount: 1 }}
+        lang="es"
+        today="2026-08-31"
+      />,
+    );
+
+    expect(html).toContain("Informe emitido por Comisión:");
+    expect(html).toContain("Abrir informe de la Comisión");
+    expect(html).toContain(`href="${reportUrl.replaceAll("&", "&amp;")}"`);
+    expect(html).toContain('data-document-kind="committee-report"');
     expect(html).not.toContain("/api/document/open?");
   });
 

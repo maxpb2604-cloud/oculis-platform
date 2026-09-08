@@ -3,7 +3,7 @@
  *
  * Usage:
  *   npm run ingest -w @oculis/worker -- [--limit N] [--enrich] [--delay MS]
- *   npm run ingest -w @oculis/worker -- --documents [--missing-deposited] [--limit N]
+ *   npm run ingest -w @oculis/worker -- --documents [--missing-deposited | --recent-status-days N] [--limit N]
  *   npm run publications -w @oculis/worker -- [--limit N] [--full]
  *   npm run senate:fichas:full -w @oculis/worker -- [--limit N] [--batch-size N] [--resume]
  *   npm run link:initiative-proponents -w @oculis/worker -- [--limit N] [--batch-size N]
@@ -193,21 +193,32 @@ async function main() {
 
     if (flag("documents")) {
       const missingDepositedOnly = flag("missing-deposited");
-      console.log(
-        `📎 Ingesting official initiative documents ` +
-          `(${missingDepositedOnly ? "late/missing deposited-PDF sweep" : "complete metadata + URL sweep"})\n`,
-      );
+      const recentStatusDays = numericArg(process.argv, "recent-status-days", {
+        min: 1,
+        max: 366,
+      });
+      if (missingDepositedOnly && recentStatusDays != null) {
+        throw new Error("--missing-deposited cannot be combined with --recent-status-days");
+      }
+      const selectionLabel = missingDepositedOnly
+        ? "late/missing deposited-PDF sweep"
+        : recentStatusDays != null
+          ? `recent movement attachment sweep (${recentStatusDays} days)`
+          : "complete metadata + URL sweep";
+      console.log(`📎 Ingesting official initiative documents (${selectionLabel})\n`);
       const r = await ingestDocuments(db, {
         limit,
         concurrency,
         delayMs: numericArg(process.argv, "delay", { min: 0 }),
         missingDepositedOnly,
+        recentStatusDays,
         log: (m) => console.log(m),
       });
       const secs = ((Date.now() - started) / 1000).toFixed(1);
       console.log(
         `\n${r.ok ? "✔" : "⚠"} done in ${secs}s — ${r.candidates} candidates ` +
-          `(${r.missingDepositedCandidates} missing deposited PDF before the run), ` +
+          `(${r.missingDepositedCandidates} missing deposited PDF before the run; ` +
+          `selection ${r.selection}), ` +
           `${r.documents} docs observed (${r.newDocuments} new), ${r.emptyObservations} empty, ` +
           `${r.failures} failures`,
       );

@@ -7,6 +7,8 @@ import {
   latestRunsBySource,
   listDocuments,
   listInitiativesForDocuments,
+  recordStatusEvents,
+  statusEvents,
   upsertDocument,
   upsertInitiative,
   type Database,
@@ -66,6 +68,64 @@ async function seedInitiative(
 }
 
 describe("late Cámara document discovery", () => {
+  it("refreshes document metadata for initiatives with recent official movements", async () => {
+    const h = createDb();
+    try {
+      await h.ensureSchema();
+      const today = new Date().toISOString().slice(0, 10);
+      const recent = await seedInitiative(h.db, "recent-report", "CODE-RECENT");
+      const old = await seedInitiative(h.db, "old-report", "CODE-OLD-REPORT");
+      const noMovement = await seedInitiative(h.db, "no-movement", "CODE-NO-MOVEMENT");
+      await recordStatusEvents(h.db, recent.id, [
+        {
+          sourceEventId: "recent-report-status",
+          status: "Con informe de comisión",
+          date: today,
+          note: null,
+          source: "sil-diputados",
+          sourceUrl: null,
+          evidenceType: "SOURCE_HISTORY",
+        },
+      ]);
+      await recordStatusEvents(h.db, old.id, [
+        {
+          sourceEventId: "old-report-status",
+          status: "Con informe de comisión",
+          date: "2000-01-01",
+          note: null,
+          source: "sil-diputados",
+          sourceUrl: null,
+          evidenceType: "SOURCE_HISTORY",
+        },
+      ]);
+      await h.db
+        .update(statusEvents)
+        .set({ observedAt: new Date("2000-01-01T12:00:00.000Z") })
+        .where(eq(statusEvents.initiativeId, old.id));
+      const calls: string[] = [];
+      const report = officialDocument({
+        id: 261_188,
+        descripcion: "INFORME COMISIÓN OBRAS PÚBLICAS Y COMUNICACIONES",
+      });
+      const result = await ingestDocuments(h.db, {
+        recentStatusDays: 45,
+        adapter: adapter({ "recent-report": [report] }, calls),
+        delayMs: 0,
+        now: () => OBSERVED_AT,
+      });
+
+      assert.equal(result.selection, "recent-status");
+      assert.equal(result.recentStatusDays, 45);
+      assert.equal(result.candidates, 1);
+      assert.deepEqual(calls, ["recent-report"]);
+      assert.equal((await listDocuments(h.db, recent.id)).length, 1);
+      assert.equal((await listDocuments(h.db, old.id)).length, 0);
+      assert.equal((await listDocuments(h.db, noMovement.id)).length, 0);
+    } finally {
+      await h.close();
+    }
+  });
+
   it("finds a late PDF for an old filing, links by exact parent id, and stays idempotent", async () => {
     const h = createDb();
     try {

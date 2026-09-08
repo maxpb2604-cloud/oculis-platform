@@ -59,6 +59,22 @@ describe("homeMovementHeadline", () => {
     });
   });
 
+  it("explains the source status for an issued committee report", () => {
+    const input = {
+      sourceTitle: "Proyecto de ley sobre infraestructura pública",
+      displayTitle: "Proyecto de ley sobre infraestructura pública",
+      displayLanguage: "es" as const,
+      status: "Con informe de comisión",
+      sourceId: "status:617412",
+      lang: "es" as const,
+    };
+
+    expect(homeMovementHeadline(input)).toMatchObject({
+      movement: "Informe emitido por Comisión",
+      officialStatus: "Con informe de comisión",
+    });
+  });
+
   it("keeps the requested policy object instead of stopping at the official's name", () => {
     expect(
       homeMovementSubject(

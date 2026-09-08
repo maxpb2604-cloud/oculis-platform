@@ -1,5 +1,6 @@
 import React from "react";
 import Link from "next/link";
+import { isCommitteeReportStatus } from "@oculis/core";
 import {
   ArrowLeft,
   ArrowRight,
@@ -51,6 +52,10 @@ const copy = {
     pdfOpen: "Abrir PDF oficial",
     pdfUnavailable: "PDF no disponible",
     openPdf: (initiative: string) => `Abrir el PDF oficial de ${initiative} en una pestaña nueva`,
+    reportOpen: "Abrir informe de la Comisión",
+    reportUnavailable: "Informe de la Comisión no disponible",
+    openReport: (initiative: string) =>
+      `Abrir el informe oficial emitido por la Comisión para ${initiative} en una pestaña nueva`,
     translation: "Traducción de Oculis",
     translationPending: "Título oficial en español · traducción pendiente",
     statusTranslationPending: "Estado oficial en español · traducción del procedimiento pendiente",
@@ -83,6 +88,10 @@ const copy = {
     pdfOpen: "Open official PDF",
     pdfUnavailable: "PDF unavailable",
     openPdf: (initiative: string) => `Open the official PDF for ${initiative} in a new tab`,
+    reportOpen: "Open Committee report",
+    reportUnavailable: "Committee report unavailable",
+    openReport: (initiative: string) =>
+      `Open the official Committee report for ${initiative} in a new tab`,
     translation: "Oculis translation",
     translationPending: "Official Spanish title · translation pending",
     statusTranslationPending: "Official Spanish status · procedure translation pending",
@@ -199,6 +208,9 @@ export function congressMovementPdfHref(
   initiativeId: number,
   lang: Lang,
 ): string | null {
+  if (publication.status === "OFFICIAL_COMMITTEE_REPORT" && publication.available === true) {
+    return publication.url;
+  }
   const documentId = publication.documentId;
   const canOpen =
     (publication.status === "PUBLISHED_VERIFIED" && publication.available === true) ||
@@ -223,18 +235,21 @@ export function congressMovementPdfHref(
 }
 
 function MovementDocumentAvailability({
-  publication,
-  initiativeId,
+  movement,
   initiativeLabel,
   lang,
 }: {
-  publication: CongressMovement["documentPublication"];
-  initiativeId: number;
+  movement: CongressMovement;
   initiativeLabel: string;
   lang: Lang;
 }) {
   const labels = copy[lang];
-  const href = congressMovementPdfHref(publication, initiativeId, lang);
+  const isReport = movement.kind === "STATUS" && isCommitteeReportStatus(movement.status);
+  if (movement.kind === "STATUS" && !isReport) return null;
+
+  const href = congressMovementPdfHref(movement.documentPublication, movement.initiativeId, lang);
+  const openLabel = isReport ? labels.reportOpen : labels.pdfOpen;
+  const ariaLabel = isReport ? labels.openReport(initiativeLabel) : labels.openPdf(initiativeLabel);
 
   if (href) {
     return (
@@ -243,12 +258,13 @@ function MovementDocumentAvailability({
         className={`${styles.pdfAvailability} ${styles.pdfAvailable}`}
         target="_blank"
         rel="noopener noreferrer"
-        aria-label={labels.openPdf(initiativeLabel)}
+        aria-label={ariaLabel}
         data-pdf-availability="available"
         data-pdf-control="true"
+        data-document-kind={isReport ? "committee-report" : "deposited-text"}
       >
         <FilePdf size={16} weight="fill" aria-hidden="true" />
-        <span>{labels.pdfOpen}</span>
+        <span>{openLabel}</span>
         <NewTabNotice lang={lang} />
       </a>
     );
@@ -260,7 +276,7 @@ function MovementDocumentAvailability({
       data-pdf-availability="unavailable"
     >
       <FilePdf size={15} aria-hidden="true" />
-      <span>{labels.pdfUnavailable}</span>
+      <span>{isReport ? labels.reportUnavailable : labels.pdfUnavailable}</span>
     </span>
   );
 }
@@ -359,8 +375,7 @@ function MovementRow({ movement, lang }: { movement: CongressMovement; lang: Lan
 
         <div className={styles.movementActions}>
           <MovementDocumentAvailability
-            publication={movement.documentPublication}
-            initiativeId={movement.initiativeId}
+            movement={movement}
             initiativeLabel={initiativeLabel}
             lang={lang}
           />

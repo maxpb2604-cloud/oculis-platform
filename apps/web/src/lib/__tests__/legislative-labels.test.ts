@@ -61,6 +61,15 @@ describe("legislative display labels", () => {
       );
     });
 
+    it("explains an issued committee report in both interface languages", () => {
+      expect(officialStatusLabel("Con informe de comisión", "es")).toBe(
+        "Informe emitido por Comisión",
+      );
+      expect(officialStatusLabel("Con informe de comisión", "en")).toBe(
+        "Committee report issued",
+      );
+    });
+
     it("does not trim or rewrite Spanish and unknown statuses", () => {
       expect(officialStatusLabel("  dEpOsItAdO  ", "es")).toBe("  dEpOsItAdO  ");
       expect(officialStatusLabel("  Pendiente de revisión  ", "en")).toBe(

@@ -1,4 +1,5 @@
 import type { Lang } from "@/lib/i18n";
+import { isCommitteeReportStatus } from "@oculis/core";
 
 type BilingualLabel = Readonly<Record<Lang, string>>;
 
@@ -33,6 +34,8 @@ export function initiativeChamberLabel(
 const ENGLISH_OFFICIAL_STATUSES: Readonly<Record<string, string>> = {
   depositado: "Filed",
   vigente: "Active",
+  "con informe de comisión": "Committee report issued",
+  "con informe de la comisión": "Committee report issued",
   "sobre la mesa para única discusión": "Tabled for single reading",
   "auditado en única discusión": "Audited in single reading",
   "certificado en única discusión": "Certified in single reading",
@@ -47,6 +50,9 @@ const ENGLISH_OFFICIAL_STATUSES: Readonly<Record<string, string>> = {
  */
 export function officialStatusLabel(value: string | null | undefined, lang: Lang): string | null {
   if (value == null) return null;
+  if (isCommitteeReportStatus(value)) {
+    return lang === "es" ? "Informe emitido por Comisión" : "Committee report issued";
+  }
   if (lang === "es") return value;
   return ENGLISH_OFFICIAL_STATUSES[lookupKey(value)] ?? value;
 }

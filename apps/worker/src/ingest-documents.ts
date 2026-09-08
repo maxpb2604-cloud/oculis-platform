@@ -38,7 +38,8 @@ export interface DocIngestSummary {
   source: typeof DOCUMENT_DISCOVERY_SOURCE;
   ok: boolean;
   outcome: "COMPLETE" | "PARTIAL" | "FAILED";
-  selection: "all" | "missing-deposited";
+  selection: "all" | "missing-deposited" | "recent-status";
+  recentStatusDays: number | null;
   /** Rows selected for this run after applying the optional limit. */
   candidates: number;
   /** Complete current backlog, before applying the run limit. */
@@ -119,6 +120,7 @@ export async function ingestDocuments(
     delayMs?: number;
     concurrency?: number;
     missingDepositedOnly?: boolean;
+    recentStatusDays?: number;
     adapter?: DocumentDiscoveryAdapter;
     now?: () => Date;
     log?: (m: string) => void;
@@ -129,6 +131,7 @@ export async function ingestDocuments(
     delayMs = 60,
     concurrency = 6,
     missingDepositedOnly = false,
+    recentStatusDays,
     adapter = new SilDiputadosAdapter(),
     now = () => new Date(),
     log = () => {},
@@ -136,10 +139,24 @@ export async function ingestDocuments(
   if (!Number.isSafeInteger(concurrency) || concurrency < 1 || concurrency > 12) {
     throw new Error("document concurrency must be an integer from 1 to 12");
   }
-  const selection = missingDepositedOnly ? "missing-deposited" : "all";
+  if (missingDepositedOnly && recentStatusDays != null) {
+    throw new Error("document selection cannot combine missing-deposited and recent-status");
+  }
+  if (
+    recentStatusDays != null &&
+    (!Number.isSafeInteger(recentStatusDays) || recentStatusDays < 1 || recentStatusDays > 366)
+  ) {
+    throw new Error("recentStatusDays must be an integer from 1 to 366");
+  }
+  const selection = missingDepositedOnly
+    ? "missing-deposited"
+    : recentStatusDays != null
+      ? "recent-status"
+      : "all";
   const runId = await beginIngestionRun(db, DOCUMENT_DISCOVERY_SOURCE, {
     requestedLimit: limit ?? null,
     selection,
+    recentStatusDays: recentStatusDays ?? null,
   });
   let candidates = 0;
   let missingDepositedCandidates = 0;
@@ -157,6 +174,7 @@ export async function ingestDocuments(
     ok: outcome === "COMPLETE",
     outcome,
     selection,
+    recentStatusDays: recentStatusDays ?? null,
     candidates,
     missingDepositedCandidates,
     initiatives: candidates,
@@ -178,6 +196,7 @@ export async function ingestDocuments(
       error: result.error,
       details: {
         selection,
+        recentStatusDays: recentStatusDays ?? null,
         candidates,
         missingDepositedCandidates,
         documents,
@@ -200,7 +219,11 @@ export async function ingestDocuments(
       ? limit
         ? missingRows.slice(0, limit)
         : missingRows
-      : await listInitiativesForDocuments(db, { source: "sil-diputados", limit });
+      : await listInitiativesForDocuments(db, {
+          source: "sil-diputados",
+          limit,
+          recentStatusDays,
+        });
     candidates = rows.length;
     log(
       `  scanning ${candidates} candidate initiative(s); ` +

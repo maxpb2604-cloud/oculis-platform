@@ -175,6 +175,14 @@ function knownMovement(status: string, language: Lang): string | null {
       es: "Aprobada en primera lectura",
       en: "Approved in first reading",
     },
+    "con informe de comisión": {
+      es: "Informe emitido por Comisión",
+      en: "Committee report issued",
+    },
+    "con informe de la comisión": {
+      es: "Informe emitido por Comisión",
+      en: "Committee report issued",
+    },
     "en auditoría legislativa": {
       es: "En auditoría legislativa",
       en: "Under legislative review",

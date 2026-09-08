@@ -18,7 +18,11 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import React, { type ReactNode } from "react";
-import { isDepositedBillDocumentType } from "@oculis/core";
+import {
+  isCommitteeReportDocumentType,
+  isCommitteeReportStatus,
+  isDepositedBillDocumentType,
+} from "@oculis/core";
 import { AppShell } from "@/components/app-shell";
 import { CopyTextButton } from "@/components/copy-text-button";
 import { LegislatorProfileTrigger } from "@/components/legislator-profile-provider";
@@ -147,6 +151,8 @@ export default async function Page({ params, searchParams }: InitiativeRouteProp
     .map((document) => {
       const deposited =
         document.source === "sil-diputados" && isDepositedBillDocumentType(document.docType);
+      const committeeReport =
+        document.source === "sil-diputados" && isCommitteeReportDocumentType(document.docType);
       const documentFacts = {
         source: document.source,
         docType: document.docType,
@@ -156,10 +162,16 @@ export default async function Page({ params, searchParams }: InitiativeRouteProp
       const href = deposited
         ? officialDocumentLiveHref(documentFacts, document.id, initiative.id, lang)
         : officialDocumentCtaHref(documentFacts, document.id, initiative.id, lang);
-      return { document, deposited, href };
+      return { document, deposited, committeeReport, href };
     })
-    .sort((a, b) => Number(b.deposited) - Number(a.deposited));
+    .sort(
+      (a, b) =>
+        Number(b.deposited) - Number(a.deposited) ||
+        (b.document.uploadedAt ?? "").localeCompare(a.document.uploadedAt ?? "") ||
+        b.document.id - a.document.id,
+    );
   const primaryOfficialDocument = documentRows.find((row) => row.deposited && row.href);
+  const primaryCommitteeReport = documentRows.find((row) => row.committeeReport && row.href);
 
   const eventTimestamp = (event: (typeof initiative.events)[number]) =>
     event.eventDate || event.observedAt || "";
@@ -169,6 +181,24 @@ export default async function Page({ params, searchParams }: InitiativeRouteProp
   const fullEvents = [...initiative.events].sort((a, b) =>
     eventTimestamp(b).localeCompare(eventTimestamp(a)),
   );
+  const eventEvidence = (event: (typeof initiative.events)[number]) => {
+    const committeeReport = isCommitteeReportStatus(event.status);
+    return {
+      href: committeeReport ? (primaryCommitteeReport?.href ?? null) : event.sourceUrl,
+      label: committeeReport
+        ? es
+          ? "Abrir informe de la Comisión"
+          : "Open Committee report"
+        : es
+          ? "Ver evidencia"
+          : "View evidence",
+      unavailable: committeeReport
+        ? es
+          ? "Informe de la Comisión pendiente de vincular"
+          : "Committee report awaiting linkage"
+        : null,
+    };
+  };
   const contextualNews = initiative.relatedNews.filter(
     (item) => item.source !== "feed-legislative",
   );
@@ -180,7 +210,7 @@ export default async function Page({ params, searchParams }: InitiativeRouteProp
     [es ? "Provincia" : "Province", initiative.province],
     [es ? "Comisión" : "Committee", initiative.committee],
     [es ? "Tipo" : "Type", initiative.type],
-    [es ? "Estado oficial" : "Official status", initiative.status],
+    [es ? "Estado oficial" : "Official status", officialStatusLabel(initiative.status, lang)],
     [
       es ? "Último cambio oficial" : "Latest official change",
       initiative.officialStatusChangedAt
@@ -479,53 +509,60 @@ export default async function Page({ params, searchParams }: InitiativeRouteProp
           >
             {recentEvents.length > 0 ? (
               <ol className="divide-y">
-                {recentEvents.map((event) => (
-                  <li
-                    key={event.id}
-                    className="grid gap-2 py-4 first:pt-0 last:pb-0 sm:grid-cols-[150px_minmax(0,1fr)]"
-                  >
-                    <div
-                      className="tnum text-xs font-medium"
-                      style={{ color: "var(--text-muted)" }}
+                {recentEvents.map((event) => {
+                  const evidence = eventEvidence(event);
+                  return (
+                    <li
+                      key={event.id}
+                      className="grid gap-2 py-4 first:pt-0 last:pb-0 sm:grid-cols-[150px_minmax(0,1fr)]"
                     >
-                      {event.eventDate
-                        ? formatISODate(event.eventDate, lang)
-                        : event.observedAt
-                          ? formatISODateTime(event.observedAt, lang)
-                          : missing}
-                    </div>
-                    <div>
-                      <p className="font-semibold leading-snug">{event.status}</p>
-                      {event.note && (
-                        <p
-                          className="mt-1 text-xs leading-relaxed"
-                          style={{ color: "var(--text-muted)" }}
-                        >
-                          {event.note}
-                        </p>
-                      )}
                       <div
-                        className="mt-1.5 flex flex-wrap items-center gap-2 text-[11px]"
+                        className="tnum text-xs font-medium"
                         style={{ color: "var(--text-muted)" }}
                       >
-                        <span>{statusEvidenceLabel(event.evidenceType, lang)}</span>
-                        {event.sourceUrl && (
-                          <a
-                            href={event.sourceUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 font-semibold underline-offset-4 hover:underline"
-                            style={{ color: "var(--accent)" }}
-                          >
-                            {es ? "Ver evidencia" : "View evidence"}
-                            <ArrowSquareOut aria-hidden size={12} />
-                            <NewTabNotice lang={lang} />
-                          </a>
-                        )}
+                        {event.eventDate
+                          ? formatISODate(event.eventDate, lang)
+                          : event.observedAt
+                            ? formatISODateTime(event.observedAt, lang)
+                            : missing}
                       </div>
-                    </div>
-                  </li>
-                ))}
+                      <div>
+                        <p className="font-semibold leading-snug">
+                          {officialStatusLabel(event.status, lang)}
+                        </p>
+                        {event.note && (
+                          <p
+                            className="mt-1 text-xs leading-relaxed"
+                            style={{ color: "var(--text-muted)" }}
+                          >
+                            {event.note}
+                          </p>
+                        )}
+                        <div
+                          className="mt-1.5 flex flex-wrap items-center gap-2 text-[11px]"
+                          style={{ color: "var(--text-muted)" }}
+                        >
+                          <span>{statusEvidenceLabel(event.evidenceType, lang)}</span>
+                          {evidence.href ? (
+                            <a
+                              href={evidence.href}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 font-semibold underline-offset-4 hover:underline"
+                              style={{ color: "var(--accent)" }}
+                            >
+                              {evidence.label}
+                              <ArrowSquareOut aria-hidden size={12} />
+                              <NewTabNotice lang={lang} />
+                            </a>
+                          ) : evidence.unavailable ? (
+                            <span>{evidence.unavailable}</span>
+                          ) : null}
+                        </div>
+                      </div>
+                    </li>
+                  );
+                })}
               </ol>
             ) : (
               <EmptyText>
@@ -551,7 +588,7 @@ export default async function Page({ params, searchParams }: InitiativeRouteProp
           >
             {documentRows.length > 0 ? (
               <ul className="divide-y">
-                {documentRows.map(({ document, deposited, href }) => {
+                {documentRows.map(({ document, deposited, committeeReport, href }) => {
                   const label = document.docType ?? document.sourceDocId ?? missing;
                   return (
                     <li
@@ -568,11 +605,15 @@ export default async function Page({ params, searchParams }: InitiativeRouteProp
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-2">
                           <h3 className="font-semibold leading-snug">
-                            {deposited && es
-                              ? "Texto depositado del proyecto"
-                              : deposited
-                                ? "Filed bill text"
-                                : label}
+                            {committeeReport && es
+                              ? "Informe emitido por Comisión"
+                              : committeeReport
+                                ? "Committee report issued"
+                                : deposited && es
+                                  ? "Texto depositado del proyecto"
+                                  : deposited
+                                    ? "Filed bill text"
+                                    : label}
                           </h3>
                           {deposited && document.pdfAvailable && (
                             <span className="rounded-full bg-[var(--verified-soft)] px-2 py-0.5 text-[10px] font-semibold text-[var(--verified)]">
@@ -600,13 +641,17 @@ export default async function Page({ params, searchParams }: InitiativeRouteProp
                             className="mt-2 inline-flex min-h-11 items-center gap-1.5 text-xs font-semibold underline-offset-4 hover:underline"
                             style={{ color: "var(--accent)" }}
                           >
-                            {deposited
+                            {committeeReport
                               ? es
-                                ? "Abrir PDF oficial"
-                                : "Open official PDF"
-                              : es
-                                ? "Abrir archivo oficial"
-                                : "Open official file"}
+                                ? "Abrir informe de la Comisión"
+                                : "Open Committee report"
+                              : deposited
+                                ? es
+                                  ? "Abrir PDF oficial"
+                                  : "Open official PDF"
+                                : es
+                                  ? "Abrir archivo oficial"
+                                  : "Open official file"}
                             <ArrowSquareOut aria-hidden size={13} />
                             <NewTabNotice lang={lang} />
                           </a>
@@ -822,47 +867,56 @@ export default async function Page({ params, searchParams }: InitiativeRouteProp
             </h2>
             {fullEvents.length > 0 ? (
               <ol className="relative ml-1 mt-4 border-l pl-5">
-                {fullEvents.map((event) => (
-                  <li key={event.id} className="relative mb-5 last:mb-0">
-                    <Circle
-                      aria-hidden
-                      size={9}
-                      weight="fill"
-                      className="absolute -left-[26px] top-1.5"
-                      style={{ color: "var(--accent)" }}
-                    />
-                    <p className="font-semibold leading-snug">{event.status}</p>
-                    <p className="tnum mt-1 text-xs" style={{ color: "var(--text-muted)" }}>
-                      {event.eventDate
-                        ? formatISODate(event.eventDate, lang)
-                        : event.observedAt
-                          ? formatISODateTime(event.observedAt, lang)
-                          : missing}
-                      {` · ${initiativeSourceLabel(event.source, lang)} · ${statusEvidenceLabel(event.evidenceType, lang)}`}
-                    </p>
-                    {event.note && (
-                      <p
-                        className="mt-1 text-xs leading-relaxed"
-                        style={{ color: "var(--text-muted)" }}
-                      >
-                        {event.note}
-                      </p>
-                    )}
-                    {event.sourceUrl && (
-                      <a
-                        href={event.sourceUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="mt-1 inline-flex items-center gap-1 text-xs font-semibold underline-offset-4 hover:underline"
+                {fullEvents.map((event) => {
+                  const evidence = eventEvidence(event);
+                  return (
+                    <li key={event.id} className="relative mb-5 last:mb-0">
+                      <Circle
+                        aria-hidden
+                        size={9}
+                        weight="fill"
+                        className="absolute -left-[26px] top-1.5"
                         style={{ color: "var(--accent)" }}
-                      >
-                        {es ? "Abrir evidencia" : "Open evidence"}
-                        <ArrowSquareOut aria-hidden size={12} />
-                        <NewTabNotice lang={lang} />
-                      </a>
-                    )}
-                  </li>
-                ))}
+                      />
+                      <p className="font-semibold leading-snug">
+                        {officialStatusLabel(event.status, lang)}
+                      </p>
+                      <p className="tnum mt-1 text-xs" style={{ color: "var(--text-muted)" }}>
+                        {event.eventDate
+                          ? formatISODate(event.eventDate, lang)
+                          : event.observedAt
+                            ? formatISODateTime(event.observedAt, lang)
+                            : missing}
+                        {` · ${initiativeSourceLabel(event.source, lang)} · ${statusEvidenceLabel(event.evidenceType, lang)}`}
+                      </p>
+                      {event.note && (
+                        <p
+                          className="mt-1 text-xs leading-relaxed"
+                          style={{ color: "var(--text-muted)" }}
+                        >
+                          {event.note}
+                        </p>
+                      )}
+                      {evidence.href ? (
+                        <a
+                          href={evidence.href}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="mt-1 inline-flex items-center gap-1 text-xs font-semibold underline-offset-4 hover:underline"
+                          style={{ color: "var(--accent)" }}
+                        >
+                          {evidence.label}
+                          <ArrowSquareOut aria-hidden size={12} />
+                          <NewTabNotice lang={lang} />
+                        </a>
+                      ) : evidence.unavailable ? (
+                        <p className="mt-1 text-xs" style={{ color: "var(--text-muted)" }}>
+                          {evidence.unavailable}
+                        </p>
+                      ) : null}
+                    </li>
+                  );
+                })}
               </ol>
             ) : (
               <EmptyText>

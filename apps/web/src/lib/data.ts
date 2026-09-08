@@ -148,10 +148,28 @@ export type CongressMovement = DbCongressMovement;
 export function adaptCongressMovementDay(row: DbCongressMovementDay): CongressMovementDay {
   return {
     ...row,
-    movements: row.movements.map((movement) => ({
-      ...movement,
-      sourceUrl: safeOfficialUrl(movement.sourceUrl, movement.source),
-    })),
+    movements: row.movements.map((movement) => {
+      const publication = movement.documentPublication;
+      const documentPublication =
+        publication.status === "OFFICIAL_COMMITTEE_REPORT"
+          ? (() => {
+              const url = safeOfficialUrl(publication.url, movement.source);
+              return url
+                ? { ...publication, url }
+                : {
+                    status: "UNCONFIRMED" as const,
+                    checkedAt: null,
+                    available: false as const,
+                    documentId: null,
+                  };
+            })()
+          : publication;
+      return {
+        ...movement,
+        sourceUrl: safeOfficialUrl(movement.sourceUrl, movement.source),
+        documentPublication,
+      };
+    }),
   };
 }
 

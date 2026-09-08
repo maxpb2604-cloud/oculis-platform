@@ -6,7 +6,9 @@ import { and, eq, ilike, inArray, isNotNull, isNull, notInArray, or, sql } from 
 import { createHash } from "node:crypto";
 import {
   classifyLegislativeValidity,
+  isCommitteeReportStatus,
   isDepositedBillDocumentType,
+  officialCommitteeReportPdfUrl,
   officialDepositedBillPdfUrl,
 } from "@oculis/core";
 import type { Database } from "./client.js";
@@ -3094,8 +3096,16 @@ export async function upsertDocument(db: Database, d: NewDocument): Promise<bool
 /** Initiatives that still need a document sweep (source id + code to query/link). */
 export async function listInitiativesForDocuments(
   db: Database,
-  opts: { source?: string; limit?: number; missingDepositedOnly?: boolean } = {},
+  opts: {
+    source?: string;
+    limit?: number;
+    missingDepositedOnly?: boolean;
+    recentStatusDays?: number;
+  } = {},
 ): Promise<Array<{ id: number; sourceId: string; code: string | null }>> {
+  if (opts.missingDepositedOnly && opts.recentStatusDays != null) {
+    throw new Error("document selection cannot combine missingDepositedOnly and recentStatusDays");
+  }
   const conditions = [eq(initiatives.kind, "LEGISLATIVE")];
   if (opts.source) conditions.push(eq(initiatives.source, opts.source));
   if (opts.missingDepositedOnly) {
@@ -3111,6 +3121,29 @@ export async function listInitiativesForDocuments(
          and candidate_document.url is not null
          and lower(trim(coalesce(candidate_document.doc_type, '')))
                in ('proyecto depositado', 'p depositado')
+    )`);
+  }
+  if (opts.recentStatusDays != null) {
+    const days = Math.trunc(opts.recentStatusDays);
+    if (!Number.isSafeInteger(days) || days < 1 || days > 366) {
+      throw new Error("recentStatusDays must be an integer from 1 to 366");
+    }
+    // Refresh document metadata soon after any official movement. This catches a
+    // committee report uploaded after the source first published the history row,
+    // without turning each eight-hour run into a complete multi-thousand-row sweep.
+    conditions.push(sql<boolean>`exists (
+      select 1
+        from ${statusEvents} recent_status
+       where recent_status.initiative_id = ${initiatives.id}
+         and recent_status.retired_at is null
+         and recent_status.evidence_type = 'SOURCE_HISTORY'
+         and (
+           (
+             recent_status.event_date ~ '^\d{4}-\d{2}-\d{2}$'
+             and recent_status.event_date::date >= current_date - ${days}::integer
+           )
+           or recent_status.observed_at >= now() - (${days} * interval '1 day')
+         )
     )`);
   }
   const q = db
@@ -5939,6 +5972,7 @@ export type CongressMovementKind = "FILED" | "STATUS";
 export type CongressMovementDocumentStatus =
   | "PUBLISHED_VERIFIED"
   | "REGISTERED_UNVERIFIED"
+  | "OFFICIAL_COMMITTEE_REPORT"
   | "NOT_PUBLISHED_LATEST_CHECK"
   | "UNCONFIRMED"
   | "UNSUPPORTED";
@@ -5962,9 +5996,18 @@ export type CongressMovementDocumentPublication =
       documentId: number;
     }
   | {
+      status: "OFFICIAL_COMMITTEE_REPORT";
+      checkedAt: null;
+      /** The official document collection identifies an exact committee-report attachment. */
+      available: true;
+      documentId: number;
+      /** Exact official attachment URL; the web trust boundary validates it again. */
+      url: string;
+    }
+  | {
       status: Exclude<
         CongressMovementDocumentStatus,
-        "PUBLISHED_VERIFIED" | "REGISTERED_UNVERIFIED"
+        "PUBLISHED_VERIFIED" | "REGISTERED_UNVERIFIED" | "OFFICIAL_COMMITTEE_REPORT"
       >;
       /** Exact successful document-collection observation used for a negative result. */
       checkedAt: string | null;
@@ -6381,6 +6424,47 @@ async function congressMovementDocumentPublications(
   return result;
 }
 
+async function congressMovementCommitteeReportPublications(
+  db: Database,
+  chamber: CongressMovementChamber,
+  initiativeIds: readonly number[],
+): Promise<Map<number, CongressMovementDocumentPublication>> {
+  const result = new Map<number, CongressMovementDocumentPublication>();
+  if (chamber !== "DIPUTADOS") return result;
+  const uniqueIds = [...new Set(initiativeIds)];
+  if (uniqueIds.length === 0) return result;
+
+  const rows = await db
+    .select({
+      id: documents.id,
+      initiativeId: documents.initiativeId,
+      source: documents.source,
+      docType: documents.docType,
+      url: documents.url,
+    })
+    .from(documents)
+    .where(and(inArray(documents.initiativeId, uniqueIds), eq(documents.source, "sil-diputados")))
+    .orderBy(
+      documents.initiativeId,
+      sql`${documents.uploadedAt} desc nulls last`,
+      sql`${documents.id} desc`,
+    );
+
+  for (const row of rows) {
+    if (row.initiativeId == null || result.has(row.initiativeId)) continue;
+    const url = officialCommitteeReportPdfUrl(row);
+    if (!url) continue;
+    result.set(row.initiativeId, {
+      status: "OFFICIAL_COMMITTEE_REPORT",
+      checkedAt: null,
+      available: true,
+      documentId: row.id,
+      url,
+    });
+  }
+  return result;
+}
+
 async function congressDepositedPdfMonitoring(
   db: Database,
   chamber: CongressMovementChamber,
@@ -6647,18 +6731,23 @@ export async function readCongressMovementDay(
     };
   });
   const orderedMovements = [...filedMovements, ...statusMovements].sort(compareCongressMovements);
-  const [documentPublications, depositedPdfs] = await Promise.all([
-    congressMovementDocumentPublications(
-      db,
-      opts.chamber,
-      orderedMovements.map((movement) => movement.initiativeId),
-    ),
-    congressDepositedPdfMonitoring(db, opts.chamber, filedInitiativeIds),
-  ]);
+  const reportMovementInitiativeIds = orderedMovements
+    .filter((movement) => movement.kind === "STATUS" && isCommitteeReportStatus(movement.status))
+    .map((movement) => movement.initiativeId);
+  const [depositedDocumentPublications, committeeReportPublications, depositedPdfs] =
+    await Promise.all([
+      congressMovementDocumentPublications(db, opts.chamber, filedInitiativeIds),
+      congressMovementCommitteeReportPublications(db, opts.chamber, reportMovementInitiativeIds),
+      congressDepositedPdfMonitoring(db, opts.chamber, filedInitiativeIds),
+    ]);
   const movements = orderedMovements.map((movement) => ({
     ...movement,
     documentPublication:
-      documentPublications.get(movement.initiativeId) ??
+      (movement.kind === "FILED"
+        ? depositedDocumentPublications.get(movement.initiativeId)
+        : isCommitteeReportStatus(movement.status)
+          ? committeeReportPublications.get(movement.initiativeId)
+          : undefined) ??
       (opts.chamber === "SENADO"
         ? {
             status: "UNSUPPORTED" as const,

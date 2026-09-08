@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  isCommitteeReportDocumentType,
+  isCommitteeReportStatus,
   isDepositedBillDocumentType,
+  officialCommitteeReportPdfUrl,
   officialDepositedBillPdfUrl,
 } from "../src/official-document-policy.js";
 
@@ -40,6 +43,43 @@ describe("official deposited bill PDF policy", () => {
     expect(isDepositedBillDocumentType("PROYECTO DEPOSITADO PREVIO")).toBe(false);
     expect(isDepositedBillDocumentType("INFORME COMISIÓN")).toBe(false);
     expect(isDepositedBillDocumentType(null)).toBe(false);
+  });
+
+  it("recognizes committee-report statuses and document labels without mixing them", () => {
+    expect(isCommitteeReportStatus("Con informe de comisión")).toBe(true);
+    expect(isCommitteeReportStatus(" CON INFORME DE LA COMISION ")).toBe(true);
+    expect(isCommitteeReportStatus("Enviada a comisión")).toBe(false);
+    expect(isCommitteeReportDocumentType("INFORME COMISIÓN OBRAS PÚBLICAS")).toBe(true);
+    expect(isCommitteeReportDocumentType("Informe favorable de la Comisión de Justicia")).toBe(
+      true,
+    );
+    expect(isCommitteeReportDocumentType("PROYECTO DEPOSITADO")).toBe(false);
+  });
+
+  it("accepts only an exact official committee-report PDF URL", () => {
+    const url =
+      "https://s-sil.camaradediputados.gob.do:8095/ReportesGenerales/VerDocumento?documentoId=261188";
+    expect(
+      officialCommitteeReportPdfUrl({
+        source: "sil-diputados",
+        docType: "INFORME COMISIÓN OBRAS PÚBLICAS Y COMUNICACIONES",
+        url,
+      }),
+    ).toBe(url);
+    expect(
+      officialCommitteeReportPdfUrl({
+        source: "sil-diputados",
+        docType: "PROYECTO DEPOSITADO",
+        url,
+      }),
+    ).toBeNull();
+    expect(
+      officialCommitteeReportPdfUrl({
+        source: "sil-diputados",
+        docType: "INFORME COMISIÓN",
+        url: "https://evil.example/ReportesGenerales/VerDocumento?documentoId=261188",
+      }),
+    ).toBeNull();
   });
 
   it("rejects contextual types, HTTP, hostile hosts, credentials, and generic pages", () => {

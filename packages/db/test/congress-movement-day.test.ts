@@ -527,6 +527,63 @@ describe("readCongressMovementDay", () => {
     expect(fallbackChamber.id).toBeGreaterThan(0);
   });
 
+  it("links a committee-report movement to the exact report instead of the deposited text", async () => {
+    const selectedDate = "2097-02-03";
+    const row = await upsertInitiative(
+      h.db,
+      initiative("committee-report-link", { filedAt: null, status: "Con informe de comisión" }),
+    );
+    await recordStatusEvents(h.db, row.id, [
+      {
+        sourceEventId: "committee-report-status",
+        status: "Con informe de comisión",
+        date: selectedDate,
+        note: null,
+        source: "sil-diputados",
+        sourceUrl: "https://www.diputadosrd.gob.do/sil/iniciativa/committee-report-link",
+        evidenceType: "SOURCE_HISTORY",
+      },
+    ]);
+    await upsertDocument(h.db, {
+      source: "sil-diputados",
+      sourceDocId: "261188",
+      initiativeId: row.id,
+      initiativeCode: "MOV-committee-report-link",
+      docType: "INFORME COMISIÓN OBRAS PÚBLICAS Y COMUNICACIONES",
+      extension: "pdf",
+      url: "https://s-sil.camaradediputados.gob.do:8095/ReportesGenerales/VerDocumento?documentoId=261188",
+      uploadedAt: "2097-02-07",
+    });
+    await upsertDocument(h.db, {
+      source: "sil-diputados",
+      sourceDocId: "248936",
+      initiativeId: row.id,
+      initiativeCode: "MOV-committee-report-link",
+      docType: "PROYECTO DEPOSITADO",
+      extension: "pdf",
+      url: "https://s-sil.camaradediputados.gob.do:8095/ReportesGenerales/VerDocumento?documentoId=248936",
+      uploadedAt: "2097-01-14",
+    });
+
+    const result = await readCongressMovementDay(h.db, {
+      date: selectedDate,
+      chamber: "DIPUTADOS",
+    });
+    expect(result.movements).toHaveLength(1);
+    expect(result.movements[0]).toMatchObject({
+      kind: "STATUS",
+      status: "Con informe de comisión",
+      documentPublication: {
+        status: "OFFICIAL_COMMITTEE_REPORT",
+        available: true,
+        url: expect.stringContaining("documentoId=261188"),
+      },
+    });
+    expect(result.movements[0]?.documentPublication).not.toMatchObject({
+      url: expect.stringContaining("documentoId=248936"),
+    });
+  });
+
   it("marks Senate initiative documents unsupported and never presents monitoring as 0/0", async () => {
     const selectedDate = "2097-01-20";
     const senateInitiative = await upsertInitiative(

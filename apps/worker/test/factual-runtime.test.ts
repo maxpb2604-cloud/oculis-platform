@@ -276,22 +276,25 @@ describe("cloud monitoring lanes", () => {
     }
   });
 
-  it("discovers late document metadata before daily data and movements, then verifies PDFs", () => {
+  it("discovers late documents, refreshes recent movement attachments, then verifies PDFs", () => {
     const workflow = cloudWorkflow();
     const discovery = workflowStep(workflow, "daily_missing_documents");
     const daily = workflowStep(workflow, "daily_monitoring");
     const movements = workflowStep(workflow, "daily_movement_histories");
+    const recentDocuments = workflowStep(workflow, "daily_recent_movement_documents");
     const verification = workflowStep(workflow, "verify_documents");
 
     assert.ok(workflow.indexOf(discovery) < workflow.indexOf(daily));
     assert.ok(workflow.indexOf(daily) < workflow.indexOf(movements));
-    assert.ok(workflow.indexOf(movements) < workflow.indexOf(verification));
+    assert.ok(workflow.indexOf(movements) < workflow.indexOf(recentDocuments));
+    assert.ok(workflow.indexOf(recentDocuments) < workflow.indexOf(verification));
     assert.match(discovery, /--documents --missing-deposited/);
     assert.match(daily, /npm run daily -w @oculis\/worker/);
     assert.match(movements, /npm run movements:incremental -w @oculis\/worker/);
+    assert.match(recentDocuments, /--documents --recent-status-days 45/);
     assert.match(verification, /npm run verify-documents -w @oculis\/worker -- --all/);
 
-    for (const step of [discovery, daily, movements, verification]) {
+    for (const step of [discovery, daily, movements, recentDocuments, verification]) {
       assert.match(step, /github\.event\.schedule == '15 2,10,18 \* \* \*'/);
       assert.match(step, /!cancelled\(\)/);
       assert.match(step, /steps\.database_config\.outcome == 'success'/);
