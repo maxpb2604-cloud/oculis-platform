@@ -1,10 +1,21 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { GET } from "./route";
 
 describe("GET /api/health", () => {
-  afterEach(() => {
+  const originalRenderGitCommit = process.env.RENDER_GIT_COMMIT;
+  const originalGitHubSha = process.env.GITHUB_SHA;
+
+  beforeEach(() => {
     delete process.env.RENDER_GIT_COMMIT;
     delete process.env.GITHUB_SHA;
+  });
+
+  afterEach(() => {
+    if (originalRenderGitCommit === undefined) delete process.env.RENDER_GIT_COMMIT;
+    else process.env.RENDER_GIT_COMMIT = originalRenderGitCommit;
+
+    if (originalGitHubSha === undefined) delete process.env.GITHUB_SHA;
+    else process.env.GITHUB_SHA = originalGitHubSha;
   });
 
   it("reports process liveness without requiring the database", async () => {
