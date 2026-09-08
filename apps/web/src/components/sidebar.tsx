@@ -12,6 +12,7 @@ import {
   Gavel,
   House,
   List,
+  Briefcase,
   SidebarSimple,
   UserList,
   X,
@@ -19,7 +20,15 @@ import {
 import { langQuery, type Lang } from "@/lib/i18n";
 
 /** Persistent editorial rail. Oculis is the primary product identity. */
-export function Sidebar({ lang, open }: { lang: Lang; open: boolean }) {
+export function Sidebar({
+  lang,
+  open,
+  adminSession,
+}: {
+  lang: Lang;
+  open: boolean;
+  adminSession: { displayName: string; email: string } | null;
+}) {
   return (
     <aside
       id="desktop-navigation"
@@ -32,14 +41,20 @@ export function Sidebar({ lang, open }: { lang: Lang; open: boolean }) {
       }
     >
       <Brand lang={lang} />
-      <Navigation lang={lang} />
+      <Navigation lang={lang} adminSession={adminSession} />
       <Endorsement lang={lang} />
     </aside>
   );
 }
 
 /** Focus-managed navigation drawer for tablet and mobile. */
-export function MobileNavigation({ lang }: { lang: Lang }) {
+export function MobileNavigation({
+  lang,
+  adminSession,
+}: {
+  lang: Lang;
+  adminSession: { displayName: string; email: string } | null;
+}) {
   const [open, setOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
   const closeRef = useRef<HTMLButtonElement>(null);
@@ -141,7 +156,11 @@ export function MobileNavigation({ lang }: { lang: Lang }) {
                   <X size={20} aria-hidden="true" />
                 </button>
               </div>
-              <Navigation lang={lang} onNavigate={() => setOpen(false)} />
+              <Navigation
+                lang={lang}
+                onNavigate={() => setOpen(false)}
+                adminSession={adminSession}
+              />
               <Endorsement lang={lang} />
             </aside>
           </div>,
@@ -178,7 +197,15 @@ function Brand({ lang, compact = false }: { lang: Lang; compact?: boolean }) {
   );
 }
 
-function Navigation({ lang, onNavigate }: { lang: Lang; onNavigate?: () => void }) {
+function Navigation({
+  lang,
+  onNavigate,
+  adminSession,
+}: {
+  lang: Lang;
+  onNavigate?: () => void;
+  adminSession: { displayName: string; email: string } | null;
+}) {
   const pathname = usePathname();
   const q = langQuery(lang);
   const es = lang === "es";
@@ -261,6 +288,37 @@ function Navigation({ lang, onNavigate }: { lang: Lang; onNavigate?: () => void 
           </Link>
         );
       })}
+      {adminSession ? (
+        <div className="mt-5 border-t border-[var(--nav-border)] pt-4">
+          <p className="mb-2 px-2.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--nav-muted)]">
+            {es ? "Panel administrativo" : "Administrative panel"}
+          </p>
+          <Link
+            href={`/admin${q}`}
+            aria-current={pathname.startsWith("/admin") ? "page" : undefined}
+            onClick={onNavigate}
+            className="group relative flex min-h-11 items-center gap-3 rounded-[var(--radius-md)] px-2.5 py-2 text-[13.5px] font-medium transition-colors"
+            style={{
+              color: pathname.startsWith("/admin") ? "var(--nav-text)" : "var(--nav-muted)",
+              background: pathname.startsWith("/admin") ? "var(--nav-bg-2)" : "transparent",
+            }}
+          >
+            {pathname.startsWith("/admin") ? (
+              <span className="absolute inset-y-2 left-0 w-[3px] rounded-full bg-[#4f80ff]" />
+            ) : null}
+            <Briefcase
+              size={19}
+              weight={pathname.startsWith("/admin") ? "fill" : "regular"}
+              aria-hidden="true"
+              className={pathname.startsWith("/admin") ? "text-[#6f9cff]" : "text-current"}
+            />
+            <span>{es ? "Administrar clientes" : "Manage clients"}</span>
+          </Link>
+          <p className="mt-2 truncate px-2.5 text-[10px] text-[var(--nav-muted)]">
+            {adminSession.displayName}
+          </p>
+        </div>
+      ) : null}
     </nav>
   );
 }

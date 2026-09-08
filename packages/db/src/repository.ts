@@ -15,6 +15,8 @@ import type { Database } from "./client.js";
 import {
   activityEvents,
   activityInitiatives,
+  clientInitiativeAssignments,
+  clients,
   commissions,
   commissionMembers,
   documentContents,
@@ -31,6 +33,7 @@ import {
   initiativeTitleTranslations,
   initiatives,
   legislators,
+  portalUsers,
   regulations,
   statusEvents,
 } from "./schema.js";
@@ -7097,4 +7100,344 @@ export async function rosterByProvince(
 ): Promise<Array<{ province: string | null; member: RosterMember }>> {
   const rows = await listLegislators(db);
   return rows.map((member) => ({ province: member.province, member }));
+}
+
+// ---------------------------------------------------------------------------
+// Private administrative/client portal
+// ---------------------------------------------------------------------------
+
+export interface PortalUserAuthRecord {
+  id: number;
+  clientId: number | null;
+  email: string;
+  displayName: string;
+  passwordHash: string | null;
+  role: "ADMIN" | "CLIENT";
+  active: boolean;
+}
+
+function normalizePortalEmail(email: string): string {
+  return email.trim().toLowerCase();
+}
+
+export async function findPortalUserByEmail(
+  db: Database,
+  email: string,
+): Promise<PortalUserAuthRecord | null> {
+  const normalized = normalizePortalEmail(email);
+  if (!normalized) return null;
+  const [row] = await db
+    .select({
+      id: portalUsers.id,
+      clientId: portalUsers.clientId,
+      email: portalUsers.email,
+      displayName: portalUsers.displayName,
+      passwordHash: portalUsers.passwordHash,
+      role: portalUsers.role,
+      active: portalUsers.active,
+    })
+    .from(portalUsers)
+    .where(sql`lower(${portalUsers.email}) = ${normalized}`)
+    .limit(1);
+  if (!row || (row.role !== "ADMIN" && row.role !== "CLIENT")) return null;
+  return { ...row, role: row.role };
+}
+
+export async function findPortalUserById(
+  db: Database,
+  id: number,
+): Promise<PortalUserAuthRecord | null> {
+  if (!Number.isSafeInteger(id) || id <= 0) return null;
+  const [row] = await db
+    .select({
+      id: portalUsers.id,
+      clientId: portalUsers.clientId,
+      email: portalUsers.email,
+      displayName: portalUsers.displayName,
+      passwordHash: portalUsers.passwordHash,
+      role: portalUsers.role,
+      active: portalUsers.active,
+    })
+    .from(portalUsers)
+    .where(eq(portalUsers.id, id))
+    .limit(1);
+  if (!row || (row.role !== "ADMIN" && row.role !== "CLIENT")) return null;
+  return { ...row, role: row.role };
+}
+
+export async function createAdminPortalUserIfAbsent(
+  db: Database,
+  input: { email: string; displayName: string; passwordHash: string },
+): Promise<PortalUserAuthRecord> {
+  const email = normalizePortalEmail(input.email);
+  const displayName = input.displayName.replace(/\s+/g, " ").trim();
+  const passwordHash = input.passwordHash.trim();
+  if (!email || !displayName || !passwordHash) throw new Error("admin identity is incomplete");
+  await db
+    .insert(portalUsers)
+    .values({ email, displayName, passwordHash, role: "ADMIN", active: true })
+    .onConflictDoNothing();
+  const user = await findPortalUserByEmail(db, email);
+  if (!user || user.role !== "ADMIN") throw new Error("admin bootstrap email is already in use");
+  return user;
+}
+
+export interface AdminClientChoice {
+  id: number;
+  name: string;
+  slug: string;
+}
+
+export async function listActiveAdminClients(db: Database): Promise<AdminClientChoice[]> {
+  return db
+    .select({ id: clients.id, name: clients.name, slug: clients.slug })
+    .from(clients)
+    .where(eq(clients.active, true))
+    .orderBy(clients.name, clients.id);
+}
+
+export interface AdminClientUserSummary {
+  id: number;
+  email: string;
+  displayName: string;
+  active: boolean;
+  activationPending: boolean;
+}
+
+export interface AdminClientAssignmentSummary {
+  id: number;
+  kind: "LEGISLATIVE" | "REGULATORY";
+  recordId: number;
+  code: string | null;
+  institution: string | null;
+  title: string;
+  impactOnBusiness: string;
+  executiveSupport: string;
+  keyStakeholderSupport: string;
+  publicOpinion: string;
+  internalNote: string | null;
+  updatedAt: string;
+}
+
+export interface AdminClientSummary extends AdminClientChoice {
+  active: boolean;
+  users: AdminClientUserSummary[];
+  assignments: AdminClientAssignmentSummary[];
+}
+
+export async function listAdminClientSummaries(db: Database): Promise<AdminClientSummary[]> {
+  const [clientRows, userRows, assignmentRows] = await Promise.all([
+    db
+      .select({ id: clients.id, name: clients.name, slug: clients.slug, active: clients.active })
+      .from(clients)
+      .orderBy(sql`${clients.active} desc`, clients.name, clients.id),
+    db
+      .select({
+        id: portalUsers.id,
+        clientId: portalUsers.clientId,
+        email: portalUsers.email,
+        displayName: portalUsers.displayName,
+        passwordHash: portalUsers.passwordHash,
+        active: portalUsers.active,
+      })
+      .from(portalUsers)
+      .where(eq(portalUsers.role, "CLIENT"))
+      .orderBy(portalUsers.displayName, portalUsers.id),
+    db
+      .select({
+        id: clientInitiativeAssignments.id,
+        clientId: clientInitiativeAssignments.clientId,
+        initiativeId: clientInitiativeAssignments.initiativeId,
+        regulationId: clientInitiativeAssignments.regulationId,
+        initiativeCode: initiatives.code,
+        initiativeTitle: initiatives.title,
+        regulationInstitution: regulations.institution,
+        regulationTitle: regulations.title,
+        impactOnBusiness: clientInitiativeAssignments.impactOnBusiness,
+        executiveSupport: clientInitiativeAssignments.executiveSupport,
+        keyStakeholderSupport: clientInitiativeAssignments.keyStakeholderSupport,
+        publicOpinion: clientInitiativeAssignments.publicOpinion,
+        internalNote: clientInitiativeAssignments.internalNote,
+        updatedAt: sql<string>`${clientInitiativeAssignments.updatedAt}::text`,
+      })
+      .from(clientInitiativeAssignments)
+      .leftJoin(initiatives, eq(clientInitiativeAssignments.initiativeId, initiatives.id))
+      .leftJoin(regulations, eq(clientInitiativeAssignments.regulationId, regulations.id))
+      .orderBy(sql`${clientInitiativeAssignments.updatedAt} desc`, clientInitiativeAssignments.id),
+  ]);
+
+  const usersByClient = new Map<number, AdminClientUserSummary[]>();
+  for (const user of userRows) {
+    if (user.clientId == null) continue;
+    const bucket = usersByClient.get(user.clientId) ?? [];
+    bucket.push({
+      id: user.id,
+      email: user.email,
+      displayName: user.displayName,
+      active: user.active,
+      activationPending: user.passwordHash == null,
+    });
+    usersByClient.set(user.clientId, bucket);
+  }
+
+  const assignmentsByClient = new Map<number, AdminClientAssignmentSummary[]>();
+  for (const assignment of assignmentRows) {
+    const legislative = assignment.initiativeId != null;
+    const recordId = legislative ? assignment.initiativeId : assignment.regulationId;
+    const title = legislative ? assignment.initiativeTitle : assignment.regulationTitle;
+    if (recordId == null || !title) continue;
+    const bucket = assignmentsByClient.get(assignment.clientId) ?? [];
+    bucket.push({
+      id: assignment.id,
+      kind: legislative ? "LEGISLATIVE" : "REGULATORY",
+      recordId,
+      code: legislative ? assignment.initiativeCode : null,
+      institution: legislative ? null : assignment.regulationInstitution,
+      title,
+      impactOnBusiness: assignment.impactOnBusiness,
+      executiveSupport: assignment.executiveSupport,
+      keyStakeholderSupport: assignment.keyStakeholderSupport,
+      publicOpinion: assignment.publicOpinion,
+      internalNote: assignment.internalNote,
+      updatedAt: assignment.updatedAt,
+    });
+    assignmentsByClient.set(assignment.clientId, bucket);
+  }
+
+  return clientRows.map((client) => ({
+    ...client,
+    users: usersByClient.get(client.id) ?? [],
+    assignments: assignmentsByClient.get(client.id) ?? [],
+  }));
+}
+
+export async function createPortalClient(
+  db: Database,
+  input: { name: string; slug: string },
+): Promise<AdminClientChoice> {
+  const name = input.name.replace(/\s+/g, " ").trim();
+  const slug = input.slug.trim().toLowerCase();
+  if (!name || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) {
+    throw new Error("client name or slug is invalid");
+  }
+  const [row] = await db
+    .insert(clients)
+    .values({ name, slug })
+    .returning({ id: clients.id, name: clients.name, slug: clients.slug });
+  if (!row) throw new Error("client could not be created");
+  return row;
+}
+
+export async function addClientPortalUser(
+  db: Database,
+  input: { clientId: number; email: string; displayName: string; passwordHash: string },
+): Promise<AdminClientUserSummary> {
+  const email = normalizePortalEmail(input.email);
+  const displayName = input.displayName.replace(/\s+/g, " ").trim();
+  const passwordHash = input.passwordHash.trim();
+  if (
+    !Number.isSafeInteger(input.clientId) ||
+    input.clientId <= 0 ||
+    !email ||
+    !displayName ||
+    !passwordHash
+  ) {
+    throw new Error("client user identity is invalid");
+  }
+  const [row] = await db
+    .insert(portalUsers)
+    .values({
+      clientId: input.clientId,
+      email,
+      displayName,
+      passwordHash,
+      role: "CLIENT",
+      active: true,
+    })
+    .returning({
+      id: portalUsers.id,
+      email: portalUsers.email,
+      displayName: portalUsers.displayName,
+      active: portalUsers.active,
+    });
+  if (!row) throw new Error("client user could not be created");
+  return { ...row, activationPending: false };
+}
+
+export type AdminAssignmentRecord =
+  | { kind: "LEGISLATIVE"; recordId: number }
+  | { kind: "REGULATORY"; recordId: number };
+
+export interface UpsertClientAssignmentInput {
+  clientId: number;
+  record: AdminAssignmentRecord;
+  impactOnBusiness: "HIGH" | "MEDIUM" | "LOW" | "TO_ASSESS";
+  executiveSupport: "SUPPORTS" | "NEUTRAL" | "OPPOSES" | "UNKNOWN";
+  keyStakeholderSupport: "SUPPORTS" | "MIXED" | "OPPOSES" | "UNKNOWN";
+  publicOpinion: "FAVORABLE" | "MIXED" | "UNFAVORABLE" | "UNKNOWN";
+  internalNote?: string | null;
+  assignedByUserId: number;
+}
+
+export async function upsertClientInitiativeAssignment(
+  db: Database,
+  input: UpsertClientAssignmentInput,
+): Promise<{ id: number; created: boolean }> {
+  const initiativeId = input.record.kind === "LEGISLATIVE" ? input.record.recordId : null;
+  const regulationId = input.record.kind === "REGULATORY" ? input.record.recordId : null;
+  const internalNote = input.internalNote?.replace(/\s+/g, " ").trim() || null;
+  if (
+    !Number.isSafeInteger(input.clientId) ||
+    input.clientId <= 0 ||
+    !Number.isSafeInteger(input.record.recordId) ||
+    input.record.recordId <= 0 ||
+    !Number.isSafeInteger(input.assignedByUserId) ||
+    input.assignedByUserId <= 0
+  ) {
+    throw new Error("assignment identity is invalid");
+  }
+
+  return db.transaction(async (tx) => {
+    const where =
+      initiativeId != null
+        ? and(
+            eq(clientInitiativeAssignments.clientId, input.clientId),
+            eq(clientInitiativeAssignments.initiativeId, initiativeId),
+          )
+        : and(
+            eq(clientInitiativeAssignments.clientId, input.clientId),
+            eq(clientInitiativeAssignments.regulationId, regulationId!),
+          );
+    const [existing] = await tx
+      .select({ id: clientInitiativeAssignments.id })
+      .from(clientInitiativeAssignments)
+      .where(where)
+      .limit(1)
+      .for("update");
+    const values = {
+      clientId: input.clientId,
+      initiativeId,
+      regulationId,
+      impactOnBusiness: input.impactOnBusiness,
+      executiveSupport: input.executiveSupport,
+      keyStakeholderSupport: input.keyStakeholderSupport,
+      publicOpinion: input.publicOpinion,
+      internalNote,
+      assignedByUserId: input.assignedByUserId,
+      updatedAt: new Date(),
+    };
+    if (existing) {
+      await tx
+        .update(clientInitiativeAssignments)
+        .set(values)
+        .where(eq(clientInitiativeAssignments.id, existing.id));
+      return { id: existing.id, created: false };
+    }
+    const [created] = await tx
+      .insert(clientInitiativeAssignments)
+      .values(values)
+      .returning({ id: clientInitiativeAssignments.id });
+    if (!created) throw new Error("assignment could not be created");
+    return { id: created.id, created: true };
+  });
 }

@@ -2,11 +2,13 @@ import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
 import {
+  getAdminClientChoices,
   getRegulatoryOverview,
   SOURCE_REGISTRY,
   type RegulatoryInstitutionSummary,
   type SourceRegistryEntry,
 } from "@/lib/data";
+import { getAdminSession } from "@/lib/admin-auth";
 import { formatISODate } from "@/lib/format";
 import { parseLang, type Lang } from "@/lib/i18n";
 import type { RegulatoryProcessStage } from "@/lib/regulatory-status";
@@ -162,6 +164,8 @@ export default async function RegulatorioPage({
     selectedInstitution,
     selectedRegulations,
   } = await getRegulatoryOverview({ institution: params.institution });
+  const adminSession = await getAdminSession();
+  const adminClients = adminSession ? await getAdminClientChoices() : undefined;
   const sources = SOURCE_REGISTRY.filter((source) => source.id.startsWith("reg-"));
   const langSuffix = lang === "en" ? "?lang=en" : "";
   const hasData = kpis.total > 0;
@@ -407,6 +411,7 @@ export default async function RegulatorioPage({
                 <RegulationList
                   items={selectedRegulations as RegulationItem[]}
                   lang={lang}
+                  adminClients={adminClients}
                   empty={
                     es
                       ? "Esta institución no tiene iniciativas verificadas en la base."
@@ -440,6 +445,7 @@ export default async function RegulatorioPage({
             <RegulationList
               items={recent as RegulationItem[]}
               lang={lang}
+              adminClients={adminClients}
               empty={
                 es
                   ? "No hay iniciativas regulatorias recientes verificadas en esta base."

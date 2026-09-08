@@ -1,8 +1,9 @@
 import { AppShellFrame } from "@/components/app-shell-frame";
+import { getAdminSession } from "@/lib/admin-auth";
 import type { Lang } from "@/lib/i18n";
 
 /** Page chrome shared by every route: module rail + top bar + content area. */
-export function AppShell({
+export async function AppShell({
   lang,
   title,
   subtitle,
@@ -15,6 +16,7 @@ export function AppShell({
   titleIsHeading?: boolean;
   children: React.ReactNode;
 }) {
+  const adminSession = await getAdminSession();
   const dateLabel = new Intl.DateTimeFormat(lang === "es" ? "es-DO" : "en-US", {
     timeZone: "America/Santo_Domingo",
     weekday: "long",
@@ -32,6 +34,9 @@ export function AppShell({
       title={title}
       subtitle={subtitle}
       titleIsHeading={titleIsHeading}
+      adminSession={
+        adminSession ? { displayName: adminSession.displayName, email: adminSession.email } : null
+      }
     >
       {children}
     </AppShellFrame>

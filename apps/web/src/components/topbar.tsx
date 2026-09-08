@@ -19,11 +19,13 @@ export function TopBar({
   dateLabel,
   desktopSidebarOpen,
   onDesktopSidebarToggle,
+  adminSession,
 }: {
   lang: Lang;
   dateLabel: string;
   desktopSidebarOpen: boolean;
   onDesktopSidebarToggle: () => void;
+  adminSession: { displayName: string; email: string } | null;
 }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -72,7 +74,7 @@ export function TopBar({
             <SidebarSimple size={19} aria-hidden="true" />
           </button>
         </span>
-        <MobileNavigation lang={lang} />
+        <MobileNavigation lang={lang} adminSession={adminSession} />
         <form
           action="/initiatives"
           method="get"

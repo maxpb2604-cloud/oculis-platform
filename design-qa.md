@@ -482,3 +482,17 @@ final result: passed
 - [x] Verify the deployed desktop sidebar and browser console.
 
 final result: passed
+
+## Iteration — Panel administrativo y asignación a clientes
+
+- Fecha: 2026-09-08.
+- Referencias: boceto del usuario para clientes, cuentas autorizadas y creación de clientes; captura del formulario de asignación con cliente, impacto en el negocio, apoyo del Poder Ejecutivo, apoyo de actores clave y opinión pública.
+- Comparación visual: las referencias y las capturas finales del navegador se normalizaron por altura y se revisaron juntas, lado a lado. La segunda referencia era un recorte parcial, por lo que la comparación se hizo contra el mismo estado funcional —formulario de asignación abierto— y no contra un viewport completo inexistente en la referencia.
+- Resultado visual: el panel conserva el sistema visual existente de Oculis; la separación “Panel administrativo” aparece después de “Fuentes y cobertura” únicamente durante una sesión administrativa; las tarjetas de cliente reúnen usuarios autorizados, estado de acceso e iniciativas asignadas.
+- Formulario: reproduce todos los campos solicitados, añade el contexto de la iniciativa y distingue expresamente las valoraciones internas de FHC de los estados oficiales. Los textos largos se envuelven o limitan y la rejilla colapsa a una columna en anchos pequeños.
+- Seguridad: inicio y cierre de sesión probados; las contraseñas temporales exigen al menos 12 caracteres, se transforman en un hash salado y no vuelven a mostrarse.
+- Flujo probado: creación de cliente, registro de usuario y asignación regulatoria de principio a fin, incluida la confirmación de la iniciativa en la cartera del cliente.
+- Accesibilidad: el modal mantiene el foco, tiene campos etiquetados, cierre, estados de éxito/error y controles utilizables por teclado. No aparecieron errores de aplicación en la consola.
+- Nota de entorno: una compilación de producción ejecutada simultáneamente invalidó temporalmente los activos del servidor de desarrollo; se reinició el servidor y se repitió la revisión sobre los activos finales. No es un defecto del producto desplegado.
+
+final result: passed

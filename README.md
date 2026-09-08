@@ -98,16 +98,20 @@ flowchart LR
 
 ## Variables de entorno
 
-| Variable                   | Requerida               | Uso                                                                              |
-| -------------------------- | ----------------------- | -------------------------------------------------------------------------------- |
-| `DATABASE_URL`             | Sí en nube              | Conexión PostgreSQL/Neon. Debe mantenerse secreta y usar TLS.                    |
-| `DB_DRIVER`                | Solo PGlite intencional | Define `pglite`; evita el fallback accidental en producción.                     |
-| `PGLITE_DIR`               | Para PGlite persistente | Directorio absoluto de la base embebida.                                         |
-| `PG_POOL_MAX`              | No                      | Máximo de conexiones por proceso; valor recomendado para Neon Free: `5` o menos. |
-| `OCULIS_DB_APP_NAME`       | No                      | Nombre del proceso visible en PostgreSQL.                                        |
-| `OCULIS_AUTO_MIGRATE`      | No                      | `1` permite bootstrap DDL desde la web; evitarlo normalmente en producción.      |
-| `NEXT_PUBLIC_MAPBOX_TOKEN` | No                      | Habilita el mapa. Es público por diseño; restríngelo por dominio en Mapbox.      |
-| `X_BEARER_TOKEN`           | No                      | Feed de X; requiere acceso compatible a la API de X.                             |
+| Variable                          | Requerida               | Uso                                                                               |
+| --------------------------------- | ----------------------- | --------------------------------------------------------------------------------- |
+| `DATABASE_URL`                    | Sí en nube              | Conexión PostgreSQL/Neon. Debe mantenerse secreta y usar TLS.                     |
+| `DB_DRIVER`                       | Solo PGlite intencional | Define `pglite`; evita el fallback accidental en producción.                      |
+| `PGLITE_DIR`                      | Para PGlite persistente | Directorio absoluto de la base embebida.                                          |
+| `PG_POOL_MAX`                     | No                      | Máximo de conexiones por proceso; valor recomendado para Neon Free: `5` o menos.  |
+| `OCULIS_DB_APP_NAME`              | No                      | Nombre del proceso visible en PostgreSQL.                                         |
+| `OCULIS_AUTO_MIGRATE`             | No                      | `1` permite bootstrap DDL desde la web; evitarlo normalmente en producción.       |
+| `OCULIS_SESSION_SECRET`           | Sí para admin           | Firma sesiones; usa 32 o más caracteres aleatorios y guárdala como secreto.       |
+| `OCULIS_BOOTSTRAP_ADMIN_EMAIL`    | Inicio del admin        | Correo del primer administrador; se provisiona al iniciar sesión por primera vez. |
+| `OCULIS_BOOTSTRAP_ADMIN_PASSWORD` | Inicio del admin        | Contraseña inicial de 12+ caracteres; nunca se guarda en el repositorio.          |
+| `OCULIS_BOOTSTRAP_ADMIN_NAME`     | No                      | Nombre visible del primer administrador.                                          |
+| `NEXT_PUBLIC_MAPBOX_TOKEN`        | No                      | Habilita el mapa. Es público por diseño; restríngelo por dominio en Mapbox.       |
+| `X_BEARER_TOKEN`                  | No                      | Feed de X; requiere acceso compatible a la API de X.                              |
 
 Consulta [`.env.example`](./.env.example) para una plantilla sin credenciales reales.
 
@@ -487,9 +491,18 @@ para desarrollo, CI o recuperación controlada.
 
 ## Seguridad
 
-- La aplicación no incluye todavía autenticación de usuarios ni separación por cliente.
-  Trátala como un producto de datos públicos; no cargues notas confidenciales ni la
-  expongas como portal privado hasta integrar OIDC/sesiones y autorización server-side.
+- El panel `/admin` exige una cuenta administrativa activa, contraseña con hash `scrypt`
+  y sesión HTTP-only firmada. Las rutas de escritura vuelven a comprobar la sesión y el
+  origen de la solicitud en el servidor; ocultar el enlace del menú no constituye la barrera.
+- `OCULIS_BOOTSTRAP_ADMIN_EMAIL` y `OCULIS_BOOTSTRAP_ADMIN_PASSWORD` solo crean el primer
+  administrador cuando ese correo todavía no existe. Configura también
+  `OCULIS_SESSION_SECRET` con al menos 32 caracteres aleatorios. Conserva los tres valores
+  en el almacén de secretos del proveedor y rota la contraseña inicial después de habilitar
+  un flujo formal de administración de credenciales.
+- Los usuarios de cliente se registran con una contraseña temporal que se transforma
+  inmediatamente en un hash `scrypt` y nunca vuelve a mostrarse. La experiencia y la
+  autorización del portal de cliente se completarán en esa fase; hasta entonces, las
+  valoraciones internas solo se leen desde el panel administrativo.
 - No confirmes `.env`, `.env.local`, URLs de base de datos, tokens ni archivos descargados
   con cookies. Los patrones sensibles ya están incluidos en `.gitignore`.
 - Usa secretos de GitHub y variables cifradas del proveedor de hosting. Rota cualquier

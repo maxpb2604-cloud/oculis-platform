@@ -313,6 +313,7 @@ a.dateArrow:hover {
 
 .movementActions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 10px;
   padding-right: clamp(20px, 4vw, 56px);

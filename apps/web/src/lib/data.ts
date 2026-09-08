@@ -29,8 +29,12 @@ import {
   listLegislatorPortraitCandidates,
   listLegislatorSummaries,
   commissionsWithMembers,
+  createAdminPortalUserIfAbsent,
+  createPortalClient,
   getLegislatorProfileById as getDbLegislatorProfileById,
   getLegislatorInitiativeStats,
+  findPortalUserByEmail,
+  findPortalUserById,
   legislatorCommittees,
   type LegislatorInitiativeStats,
   type LegislatorProfile as DbLegislatorProfile,
@@ -44,6 +48,8 @@ import {
   getOfficialDepositedDocumentById,
   latestRunsBySource,
   listActivity,
+  listActiveAdminClients,
+  listAdminClientSummaries,
   listCommissions,
   listDeposits,
   listDocuments,
@@ -52,6 +58,7 @@ import {
   listRecentInitiatives,
   listRegulations,
   listSourceDocuments,
+  addClientPortalUser,
   type DepositItem,
   regulatoryKpis,
   listFeedItems,
@@ -63,6 +70,11 @@ import {
   listRecentStatusEvents,
   readCongressMovementDay,
   resolveActiveLegislatorProfileIds,
+  upsertClientInitiativeAssignment,
+  type AdminClientChoice,
+  type AdminClientSummary,
+  type PortalUserAuthRecord,
+  type UpsertClientAssignmentInput,
   type FeedFilters as DbFeedFilters,
   type FeedCursor as DbFeedCursor,
   type FeedListItem as DbFeedListItem,
@@ -281,6 +293,51 @@ async function db() {
     });
   }
   return (await globalDb.__oculisDbHandlePromise).db;
+}
+
+/** Private portal wrappers reuse the same singleton DB handle as all public pages. */
+export async function getPortalUserByEmail(email: string): Promise<PortalUserAuthRecord | null> {
+  return findPortalUserByEmail(await db(), email);
+}
+
+export async function getPortalUserById(id: number): Promise<PortalUserAuthRecord | null> {
+  return findPortalUserById(await db(), id);
+}
+
+export async function bootstrapAdminPortalUser(input: {
+  email: string;
+  displayName: string;
+  passwordHash: string;
+}): Promise<PortalUserAuthRecord> {
+  return createAdminPortalUserIfAbsent(await db(), input);
+}
+
+export async function getAdminClientChoices(): Promise<AdminClientChoice[]> {
+  return listActiveAdminClients(await db());
+}
+
+export async function getAdminClientSummaries(): Promise<AdminClientSummary[]> {
+  return listAdminClientSummaries(await db());
+}
+
+export async function createAdminClient(input: {
+  name: string;
+  slug: string;
+}): Promise<AdminClientChoice> {
+  return createPortalClient(await db(), input);
+}
+
+export async function createAdminClientUser(input: {
+  clientId: number;
+  email: string;
+  displayName: string;
+  passwordHash: string;
+}) {
+  return addClientPortalUser(await db(), input);
+}
+
+export async function saveAdminClientAssignment(input: UpsertClientAssignmentInput) {
+  return upsertClientInitiativeAssignment(await db(), input);
 }
 
 /** Server-owned lookup used by the guarded document opener; never accepts a URL. */

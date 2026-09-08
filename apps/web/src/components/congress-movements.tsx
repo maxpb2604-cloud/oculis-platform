@@ -1,6 +1,7 @@
 import React from "react";
 import Link from "next/link";
 import { isCommitteeReportStatus } from "@oculis/core";
+import { AssignClientDialog, type AssignmentClientChoice } from "@/components/assign-client-dialog";
 import {
   ArrowLeft,
   ArrowRight,
@@ -23,6 +24,7 @@ interface CongressMovementsProps {
   day: CongressMovementDay;
   lang: Lang;
   today: string;
+  adminClients?: AssignmentClientChoice[];
 }
 
 const copy = {
@@ -281,7 +283,15 @@ function MovementDocumentAvailability({
   );
 }
 
-function MovementRow({ movement, lang }: { movement: CongressMovement; lang: Lang }) {
+function MovementRow({
+  movement,
+  lang,
+  adminClients,
+}: {
+  movement: CongressMovement;
+  lang: Lang;
+  adminClients?: AssignmentClientChoice[];
+}) {
   const labels = copy[lang];
   const title = initiativeTitlePresentation(
     { title: movement.title, titleEn: movement.titleEn },
@@ -379,13 +389,23 @@ function MovementRow({ movement, lang }: { movement: CongressMovement; lang: Lan
             initiativeLabel={initiativeLabel}
             lang={lang}
           />
+          {adminClients ? (
+            <AssignClientDialog
+              clients={adminClients}
+              kind="LEGISLATIVE"
+              recordId={movement.initiativeId}
+              title={movement.title}
+              reference={movement.code}
+              lang={lang}
+            />
+          ) : null}
         </div>
       </div>
     </li>
   );
 }
 
-export function CongressMovements({ day, lang, today }: CongressMovementsProps) {
+export function CongressMovements({ day, lang, today, adminClients }: CongressMovementsProps) {
   const labels = copy[lang];
   const selectedDateLabel = capitalizeDate(
     formatISODate(day.selectedDate, lang, {
@@ -475,6 +495,7 @@ export function CongressMovements({ day, lang, today }: CongressMovementsProps) 
                 key={`${movement.source}:${movement.kind}:${movement.sourceEventId ?? "no-event"}:${movement.initiativeId}:${movement.status ?? "no-status"}:${movement.eventDate}:${index}`}
                 movement={movement}
                 lang={lang}
+                adminClients={adminClients}
               />
             ))}
           </ol>

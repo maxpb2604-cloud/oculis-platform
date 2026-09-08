@@ -5,6 +5,7 @@
 import Link from "next/link";
 import { ArrowRight, ArrowSquareOut } from "@phosphor-icons/react/dist/ssr";
 import React, { type CSSProperties } from "react";
+import { AssignClientDialog, type AssignmentClientChoice } from "@/components/assign-client-dialog";
 import { t, type Lang } from "@/lib/i18n";
 import { formatISODate, formatISODayMonth, formatOfficialTime } from "@/lib/format";
 import { safeHttpUrl } from "@/lib/input";
@@ -179,7 +180,7 @@ export function ActivityRow({ item, lang = "es" }: { item: ActivityItem; lang?: 
   // show description only when it adds detail beyond the body title
   const showDesc = item.description && item.description.trim() !== (item.body ?? "").trim();
   return (
-    <div className="flex items-start gap-3 border-b px-5 py-3 last:border-0">
+    <div className="flex flex-col items-start gap-3 border-b px-5 py-3 last:border-0 sm:flex-row">
       <div className="pt-0.5">
         <ScopeChip scope={item.scope} lang={lang} />
       </div>
@@ -571,7 +572,15 @@ export function regulatoryOfficialStatusLabel(status: string, lang: Lang): strin
   return status;
 }
 
-export function RegulationRow({ item, lang = "es" }: { item: RegulationItem; lang?: Lang }) {
+export function RegulationRow({
+  item,
+  lang = "es",
+  adminClients,
+}: {
+  item: RegulationItem;
+  lang?: Lang;
+  adminClients?: AssignmentClientChoice[];
+}) {
   const sourceUrl = safeHttpUrl(item.url);
   const missing = lang === "es" ? "No informado" : "Not reported";
   const isPublicConsultation = item.isConsulta === true;
@@ -635,11 +644,21 @@ export function RegulationRow({ item, lang = "es" }: { item: RegulationItem; lan
           )}
         </div>
       </div>
-      <div className="shrink-0 text-right">
+      <div className="flex w-full shrink-0 flex-col items-start gap-2 text-left sm:w-auto sm:items-end sm:text-right">
         <div className="tnum text-[13px]" style={{ color: "var(--text-muted)" }}>
           {lang === "es" ? "Inicio / publicación" : "Start / publication"}:{" "}
           {item.publishedAt ? formatISODate(item.publishedAt, lang) : missing}
         </div>
+        {adminClients ? (
+          <AssignClientDialog
+            clients={adminClients}
+            kind="REGULATORY"
+            recordId={item.id}
+            title={item.title}
+            reference={item.institution}
+            lang={lang}
+          />
+        ) : null}
       </div>
     </div>
   );
@@ -649,10 +668,12 @@ export function RegulationList({
   items,
   empty,
   lang = "es",
+  adminClients,
 }: {
   items: RegulationItem[];
   empty: React.ReactNode;
   lang?: Lang;
+  adminClients?: AssignmentClientChoice[];
 }) {
   if (!items.length)
     return (
@@ -667,7 +688,7 @@ export function RegulationList({
   return (
     <div>
       {items.map((i) => (
-        <RegulationRow key={i.id} item={i} lang={lang} />
+        <RegulationRow key={i.id} item={i} lang={lang} adminClients={adminClients} />
       ))}
     </div>
   );

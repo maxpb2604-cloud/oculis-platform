@@ -162,6 +162,13 @@
       "when": 1788363234558,
       "tag": "0022_dark_human_robot",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1788870600000,
+      "tag": "0023_admin_client_portal",
+      "breakpoints": true
     }
   ]
 }

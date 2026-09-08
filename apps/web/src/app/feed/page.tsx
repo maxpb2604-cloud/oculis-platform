@@ -1,7 +1,13 @@
 import type { Metadata } from "next";
 import { AppShell } from "@/components/app-shell";
 import { CongressMovements } from "@/components/congress-movements";
-import { getCongressMovementDay, todayISO, type CongressMovementChamber } from "@/lib/data";
+import { getAdminSession } from "@/lib/admin-auth";
+import {
+  getAdminClientChoices,
+  getCongressMovementDay,
+  todayISO,
+  type CongressMovementChamber,
+} from "@/lib/data";
 import { parseLang, type Lang } from "@/lib/i18n";
 import { isISODate } from "@/lib/input";
 
@@ -38,6 +44,8 @@ export default async function FeedPage({ searchParams }: { searchParams: Promise
   const chamber = movementChamber(sp.chamber);
   const requestedDate = isISODate(sp.date) ? sp.date : undefined;
   const day = await getCongressMovementDay({ date: requestedDate, chamber });
+  const adminSession = await getAdminSession();
+  const adminClients = adminSession ? await getAdminClientChoices() : undefined;
   const today = todayISO();
 
   return (
@@ -50,7 +58,7 @@ export default async function FeedPage({ searchParams }: { searchParams: Promise
           : "What happened to each initiative, day by day, based on dates and documents published by official sources."
       }
     >
-      <CongressMovements day={day} lang={lang} today={today} />
+      <CongressMovements day={day} lang={lang} today={today} adminClients={adminClients} />
     </AppShell>
   );
 }

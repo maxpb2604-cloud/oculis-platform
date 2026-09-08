@@ -932,6 +932,120 @@ export const feedAccounts = pgTable(
   }),
 );
 
+/** Organizations whose users receive a private, client-specific Oculis view. */
+export const clients = pgTable(
+  "clients",
+  {
+    id: serial("id").primaryKey(),
+    name: text("name").notNull(),
+    slug: text("slug").notNull(),
+    active: boolean("active").notNull().default(true),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    slugUq: uniqueIndex("clients_slug_uq").on(t.slug),
+    activeIdx: index("clients_active_idx").on(t.active),
+    validSlug: check("clients_slug_check", sql`${t.slug} ~ '^[a-z0-9]+(?:-[a-z0-9]+)*$'`),
+    nonEmptyName: check("clients_name_check", sql`length(trim(${t.name})) > 0`),
+  }),
+);
+
+/**
+ * Accounts for both the FHC administrative team and, later, each client's portal.
+ * Password material is always a one-way hash. The nullable column preserves a safe
+ * migration path for any legacy invitation without usable credentials.
+ */
+export const portalUsers = pgTable(
+  "portal_users",
+  {
+    id: serial("id").primaryKey(),
+    clientId: integer("client_id").references(() => clients.id, { onDelete: "cascade" }),
+    email: text("email").notNull(),
+    displayName: text("display_name").notNull(),
+    passwordHash: text("password_hash"),
+    role: text("role").notNull(), // ADMIN | CLIENT
+    active: boolean("active").notNull().default(true),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    emailUq: uniqueIndex("portal_users_email_uq").on(sql`lower(${t.email})`),
+    byClient: index("portal_users_client_idx").on(t.clientId),
+    byRole: index("portal_users_role_idx").on(t.role),
+    nonEmptyIdentity: check(
+      "portal_users_identity_check",
+      sql`length(trim(${t.email})) > 3 and position('@' in ${t.email}) > 1
+          and length(trim(${t.displayName})) > 0`,
+    ),
+    roleScope: check(
+      "portal_users_role_scope_check",
+      sql`(${t.role} = 'ADMIN' and ${t.clientId} is null)
+          or (${t.role} = 'CLIENT' and ${t.clientId} is not null)`,
+    ),
+  }),
+);
+
+/**
+ * Private FHC assignment of one legislative or regulatory initiative to one client.
+ * These analyst assessments are never source facts and must remain inside client/admin
+ * surfaces. Exactly one of initiativeId/regulationId identifies the assigned record.
+ */
+export const clientInitiativeAssignments = pgTable(
+  "client_initiative_assignments",
+  {
+    id: serial("id").primaryKey(),
+    clientId: integer("client_id")
+      .notNull()
+      .references(() => clients.id, { onDelete: "cascade" }),
+    initiativeId: integer("initiative_id").references(() => initiatives.id, {
+      onDelete: "cascade",
+    }),
+    regulationId: integer("regulation_id").references(() => regulations.id, {
+      onDelete: "cascade",
+    }),
+    impactOnBusiness: text("impact_on_business").notNull(),
+    executiveSupport: text("executive_support").notNull(),
+    keyStakeholderSupport: text("key_stakeholder_support").notNull(),
+    publicOpinion: text("public_opinion").notNull(),
+    internalNote: text("internal_note"),
+    assignedByUserId: integer("assigned_by_user_id").references(() => portalUsers.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => ({
+    legislativeUq: uniqueIndex("client_assignments_legislative_uq")
+      .on(t.clientId, t.initiativeId)
+      .where(sql`${t.initiativeId} is not null`),
+    regulatoryUq: uniqueIndex("client_assignments_regulatory_uq")
+      .on(t.clientId, t.regulationId)
+      .where(sql`${t.regulationId} is not null`),
+    byClient: index("client_assignments_client_idx").on(t.clientId, t.updatedAt.desc()),
+    exactlyOneRecord: check(
+      "client_assignments_exactly_one_record_check",
+      sql`num_nonnulls(${t.initiativeId}, ${t.regulationId}) = 1`,
+    ),
+    validImpact: check(
+      "client_assignments_impact_check",
+      sql`${t.impactOnBusiness} in ('HIGH', 'MEDIUM', 'LOW', 'TO_ASSESS')`,
+    ),
+    validExecutiveSupport: check(
+      "client_assignments_executive_support_check",
+      sql`${t.executiveSupport} in ('SUPPORTS', 'NEUTRAL', 'OPPOSES', 'UNKNOWN')`,
+    ),
+    validStakeholderSupport: check(
+      "client_assignments_stakeholder_support_check",
+      sql`${t.keyStakeholderSupport} in ('SUPPORTS', 'MIXED', 'OPPOSES', 'UNKNOWN')`,
+    ),
+    validPublicOpinion: check(
+      "client_assignments_public_opinion_check",
+      sql`${t.publicOpinion} in ('FAVORABLE', 'MIXED', 'UNFAVORABLE', 'UNKNOWN')`,
+    ),
+  }),
+);
+
 export type Initiative = typeof initiatives.$inferSelect;
 export type NewInitiative = typeof initiatives.$inferInsert;
 export type InitiativeTitleTranslation = typeof initiativeTitleTranslations.$inferSelect;
@@ -968,3 +1082,9 @@ export type FeedItemEntity = typeof feedItemEntities.$inferSelect;
 export type NewFeedItemEntity = typeof feedItemEntities.$inferInsert;
 export type FeedAccount = typeof feedAccounts.$inferSelect;
 export type NewFeedAccount = typeof feedAccounts.$inferInsert;
+export type Client = typeof clients.$inferSelect;
+export type NewClient = typeof clients.$inferInsert;
+export type PortalUser = typeof portalUsers.$inferSelect;
+export type NewPortalUser = typeof portalUsers.$inferInsert;
+export type ClientInitiativeAssignment = typeof clientInitiativeAssignments.$inferSelect;
+export type NewClientInitiativeAssignment = typeof clientInitiativeAssignments.$inferInsert;

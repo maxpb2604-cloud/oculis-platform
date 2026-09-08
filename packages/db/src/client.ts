@@ -1046,4 +1046,76 @@ const DDL: string[] = [
                 AND stakeholder_support IS NULL AND social_pressure_count IS NULL);
      END IF;
    END $$`,
+  `
+    CREATE TABLE IF NOT EXISTS clients (
+      id serial PRIMARY KEY,
+      name text NOT NULL,
+      slug text NOT NULL,
+      active boolean NOT NULL DEFAULT true,
+      created_at timestamp NOT NULL DEFAULT now(),
+      updated_at timestamp NOT NULL DEFAULT now(),
+      CONSTRAINT clients_slug_check CHECK (slug ~ '^[a-z0-9]+(?:-[a-z0-9]+)*$'),
+      CONSTRAINT clients_name_check CHECK (length(trim(name)) > 0)
+    )`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS clients_slug_uq ON clients (slug)`,
+  `CREATE INDEX IF NOT EXISTS clients_active_idx ON clients (active)`,
+  `
+    CREATE TABLE IF NOT EXISTS portal_users (
+      id serial PRIMARY KEY,
+      client_id integer REFERENCES clients(id) ON DELETE CASCADE,
+      email text NOT NULL,
+      display_name text NOT NULL,
+      password_hash text,
+      role text NOT NULL,
+      active boolean NOT NULL DEFAULT true,
+      created_at timestamp NOT NULL DEFAULT now(),
+      updated_at timestamp NOT NULL DEFAULT now(),
+      CONSTRAINT portal_users_identity_check CHECK (
+        length(trim(email)) > 3 AND position('@' in email) > 1 AND length(trim(display_name)) > 0
+      ),
+      CONSTRAINT portal_users_role_scope_check CHECK (
+        (role = 'ADMIN' AND client_id IS NULL) OR (role = 'CLIENT' AND client_id IS NOT NULL)
+      )
+    )`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS portal_users_email_uq ON portal_users (lower(email))`,
+  `CREATE INDEX IF NOT EXISTS portal_users_client_idx ON portal_users (client_id)`,
+  `CREATE INDEX IF NOT EXISTS portal_users_role_idx ON portal_users (role)`,
+  `
+    CREATE TABLE IF NOT EXISTS client_initiative_assignments (
+      id serial PRIMARY KEY,
+      client_id integer NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+      initiative_id integer REFERENCES initiatives(id) ON DELETE CASCADE,
+      regulation_id integer REFERENCES regulations(id) ON DELETE CASCADE,
+      impact_on_business text NOT NULL,
+      executive_support text NOT NULL,
+      key_stakeholder_support text NOT NULL,
+      public_opinion text NOT NULL,
+      internal_note text,
+      assigned_by_user_id integer REFERENCES portal_users(id) ON DELETE SET NULL,
+      created_at timestamp NOT NULL DEFAULT now(),
+      updated_at timestamp NOT NULL DEFAULT now(),
+      CONSTRAINT client_assignments_exactly_one_record_check CHECK (
+        num_nonnulls(initiative_id, regulation_id) = 1
+      ),
+      CONSTRAINT client_assignments_impact_check CHECK (
+        impact_on_business IN ('HIGH', 'MEDIUM', 'LOW', 'TO_ASSESS')
+      ),
+      CONSTRAINT client_assignments_executive_support_check CHECK (
+        executive_support IN ('SUPPORTS', 'NEUTRAL', 'OPPOSES', 'UNKNOWN')
+      ),
+      CONSTRAINT client_assignments_stakeholder_support_check CHECK (
+        key_stakeholder_support IN ('SUPPORTS', 'MIXED', 'OPPOSES', 'UNKNOWN')
+      ),
+      CONSTRAINT client_assignments_public_opinion_check CHECK (
+        public_opinion IN ('FAVORABLE', 'MIXED', 'UNFAVORABLE', 'UNKNOWN')
+      )
+    )`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS client_assignments_legislative_uq
+     ON client_initiative_assignments (client_id, initiative_id)
+     WHERE initiative_id IS NOT NULL`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS client_assignments_regulatory_uq
+     ON client_initiative_assignments (client_id, regulation_id)
+     WHERE regulation_id IS NOT NULL`,
+  `CREATE INDEX IF NOT EXISTS client_assignments_client_idx
+     ON client_initiative_assignments (client_id, updated_at DESC)`,
 ];
