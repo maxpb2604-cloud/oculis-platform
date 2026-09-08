@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useId, useState } from "react";
+import React, { useId, useState } from "react";
 import { Briefcase, CheckCircle, Plus, X } from "@/components/ui/icons";
 import { Modal } from "@/components/ui/modal";
 import type { Lang } from "@/lib/i18n";

@@ -51,4 +51,18 @@ describe("RegulationRow public-consultation terminology", () => {
     expect(html).not.toContain("VIGENTE");
     expect(html).not.toContain("En aplicación");
   });
+
+  it("shows the client assignment action only inside an authenticated admin view", () => {
+    const publicHtml = renderToStaticMarkup(<RegulationRow item={baseItem} lang="es" />);
+    const adminHtml = renderToStaticMarkup(
+      <RegulationRow
+        item={baseItem}
+        lang="es"
+        adminClients={[{ id: 7, name: "Cliente de prueba", slug: "cliente-de-prueba" }]}
+      />,
+    );
+
+    expect(publicHtml).not.toContain("Asignar al cliente");
+    expect(adminHtml).toContain("Asignar al cliente");
+  });
 });

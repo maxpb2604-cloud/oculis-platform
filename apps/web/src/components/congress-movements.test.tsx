@@ -116,6 +116,23 @@ describe("CongressMovements", () => {
     expect(html).not.toContain("Publicaciones registradas en catálogos monitoreados");
   });
 
+  it("shows client assignment actions only when the administrator is authenticated", () => {
+    const publicHtml = renderToStaticMarkup(
+      <CongressMovements day={day} lang="es" today="2026-08-31" />,
+    );
+    const adminHtml = renderToStaticMarkup(
+      <CongressMovements
+        day={day}
+        lang="es"
+        today="2026-08-31"
+        adminClients={[{ id: 7, name: "Cliente de prueba", slug: "cliente-de-prueba" }]}
+      />,
+    );
+
+    expect(publicHtml).not.toContain("Asignar al cliente");
+    expect(adminHtml.match(/Asignar al cliente/g)).toHaveLength(2);
+  });
+
   it("omits the retired Today and latest-record shortcuts in both languages", () => {
     const spanish = renderToStaticMarkup(
       <CongressMovements
