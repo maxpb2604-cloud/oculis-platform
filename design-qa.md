@@ -213,6 +213,39 @@ final result: blocked
 
 final result: passed
 
+## Iteration — Informe emitido por Comisión y acceso directo al PDF
+
+- Source visual truth: `/var/folders/pq/5j_515ns70x73jzfhtjw3dsr0000gn/T/TemporaryItems/NSIRD_screencaptureui_hfYz5C/Screenshot 2026-09-07 at 5.16.04 PM.png`, `/var/folders/pq/5j_515ns70x73jzfhtjw3dsr0000gn/T/TemporaryItems/NSIRD_screencaptureui_eOPwXG/Screenshot 2026-09-07 at 5.17.36 PM.png`, and `/var/folders/pq/5j_515ns70x73jzfhtjw3dsr0000gn/T/TemporaryItems/NSIRD_screencaptureui_TSMkOK/Screenshot 2026-09-07 at 5.18.07 PM.png`.
+- Published implementation: `https://oculis-auribus.onrender.com/feed?date=2026-09-03&chamber=DIPUTADOS` and `https://oculis-auribus.onrender.com/initiatives/194`.
+- Factual target: initiative `05577-2024-2028-CD`, official SIL initiative `158039`, movement date `03/09/2026`, committee report document `261188`.
+- Copy verification: the source literal `Con informe de comisión` remains preserved in stored official history, while user-facing movement labels now read `Informe emitido por Comisión` so the meaning is explicit.
+- Interaction verification: the feed movement, recent movement, full-history movement, and committee-report document card all resolve to `https://s-sil.camaradediputados.gob.do:8095/ReportesGenerales/VerDocumento?documentoId=261188`.
+- Response verification: the actual published href was checked against the authoritative official URL `https://s-sil.camaradediputados.gob.do:8095/ReportesGenerales/VerDocumento?documentoId=261188`; the official server returns HTTP 200-compatible headers, `content-type: application/pdf`, and `content-disposition: inline; filename = "786077.pdf"`.
+- Association verification: a committee-report movement receives only a verified official committee-report PDF; a filing movement receives the deposited project text; unrelated status movements no longer inherit the deposited PDF.
+- Freshness verification: the eight-hour history lane now refreshes document metadata for initiatives with recent movements, while the daily complete sweep remains the safety net for older initiatives whose report is uploaded later.
+- Automated verification: targeted Core, DB, Worker, and Web tests passed; TypeScript, ESLint, factual-data policy, and `git diff --check` passed; GitHub CI run `34175363144` completed successfully; the document recovery run `34175419694` completed successfully and populated report `261188` in production.
+- Browser-rendered comparison: temporarily blocked because the Mac locked before the final in-app Browser capture. The production HTML, exact href, label, target initiative, and PDF response were independently verified after deployment; no layout primitives were changed in this iteration.
+
+**Findings**
+
+- [P2] A final screenshot comparison and physical click in the user's in-app Browser remain unavailable while the Mac is locked.
+  Location: production feed and initiative detail.
+  Evidence: the Browser controller reports `The Mac is locked and automatic unlock could not unlock it.`
+  Impact: functional production evidence is complete, but visual sign-off cannot be recorded from the selected browser in this session.
+  Fix: unlock the Mac, reload either published URL, and click `Abrir informe de la Comisión`; the verified target is the inline official PDF for document `261188`.
+
+**Implementation Checklist**
+
+- [x] Clarify the movement label as `Informe emitido por Comisión`.
+- [x] Resolve the exact official committee-report document instead of the deposited project text.
+- [x] Link report controls directly to the official inline PDF.
+- [x] Fail closed when no verified report URL exists.
+- [x] Refresh late-uploaded report metadata autonomously.
+- [x] Verify CI, cloud ingestion, published HTML, exact href, and PDF response.
+- [ ] Capture the final browser-rendered comparison after the Mac is unlocked.
+
+final result: blocked
+
 ## Iteration — Contraste del logo de la Superintendencia de Bancos
 
 - Source visual truth: `/var/folders/pq/5j_515ns70x73jzfhtjw3dsr0000gn/T/TemporaryItems/NSIRD_screencaptureui_ukJQih/Screenshot 2026-09-07 at 4.26.13 PM.png` (818 × 302 source pixels). The supplied defect state showed the white official SB wordmark on a white card header, leaving only the light-blue accent and “REPÚBLICA DOMINICANA” visible.
