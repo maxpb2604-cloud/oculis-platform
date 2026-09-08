@@ -185,15 +185,16 @@ final result: blocked
 ## Iteration — Desglose de iniciativas en proceso regulatorio
 
 - Source visual truth: `/var/folders/pq/5j_515ns70x73jzfhtjw3dsr0000gn/T/TemporaryItems/NSIRD_screencaptureui_SAnPtn/Screenshot 2026-09-08 at 11.20.22 AM.png` (1662 × 258 source pixels). The supplied KPI strip showed `Propuestas en proceso`, `Instituciones observadas`, and `Expedientes únicos` with large tabular totals and narrow colored rules.
-- Rendered implementation: `http://localhost:3001/regulatorio`, inspected in the Codex in-app Browser in Spanish and light theme after a fresh production-mode build.
+- Rendered implementation: `http://localhost:3001/regulatorio` after a fresh production-mode build, followed by the deployed `https://oculis-auribus.onrender.com/regulatorio?release=5d0aaad`; both were inspected in the Codex in-app Browser in Spanish and light theme.
 - Full-view comparison: the KPI strip preserves the existing Oculis typography, tabular figures, color rules, spacing, and responsive grid. The new copy wraps inside its own column without colliding with adjacent indicators.
 - Focused-region comparison: `Propuestas en proceso` is now the more precise `Iniciativas en proceso regulatorio`; its total can expose a compact, wrapping list of the non-zero source-reported stages directly underneath. `Expedientes únicos` is now `Iniciativas regulatorias registradas en la base de datos`, which states exactly what the total represents.
 - Factual behavior: the stage list is derived from the same deduplicated records as the KPI total and includes only explicit statuses reported by the source: borrador, agenda, elaboración, por iniciar, en proceso, or estado `Iniciativa`. Zero-count categories are omitted.
 - Semantic separation: records identified as `Iniciativas en Consulta Pública` are explicitly excluded from the regulatory-process stage breakdown, preserving the platform rule that public-consultation status and regulatory-process status are different concepts.
 - Responsive evidence: the existing grid remains one column at the base breakpoint, two columns from `sm`, and four columns from `xl`; the breakdown itself uses `flex-wrap`, so long bilingual labels cannot force horizontal overflow.
 - Accessibility evidence: the breakdown is a semantic list with an `aria-label` that identifies the total being explained. The original KPI component remains backward-compatible for all other pages.
-- Console and route evidence: the local production route returned HTTP 200 and rendered both new labels in the accessibility tree. No new interactive control or asset was introduced.
-- Automated verification: 420 web tests across 61 files passed; TypeScript, Prettier, the factual-data policy, the production web build, and `git diff --check` passed.
+- Production-data evidence: the deployed total of 19 initiatives is visibly reconciled as 16 `en borrador`, 2 `en agenda`, and 1 `con estado «Iniciativa»`; the database-inventory KPI visibly reports 302 initiatives across 11 observed institutions.
+- Route evidence: the local and published production routes returned HTTP 200 and rendered both new labels plus the stage list in the accessibility tree. No new interactive control or asset was introduced.
+- Automated verification: 420 web tests across 61 files passed locally; TypeScript, Prettier, the factual-data policy, the production web build, and `git diff --check` passed. GitHub CI run `34246113564` also completed successfully before the published-page verification.
 
 **Findings**
 
