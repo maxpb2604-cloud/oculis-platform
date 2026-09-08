@@ -5,7 +5,9 @@ services:
     runtime: node
     plan: free
     region: virginia
-    buildCommand: npm ci && npm run build -w @oculis/web
+    # Never reuse a generated Next.js output from an earlier release. Render may
+    # retain dependency caches, but every commit must produce a fresh web bundle.
+    buildCommand: npm ci && rm -rf apps/web/.next && npm run build -w @oculis/web
     startCommand: node_modules/.bin/next start apps/web
     healthCheckPath: /api/health
     autoDeployTrigger: commit
