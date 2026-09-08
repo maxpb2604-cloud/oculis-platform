@@ -6,10 +6,13 @@ export const dynamic = "force-dynamic";
  * Source/database freshness remains visible on /estado-fuentes.
  */
 export async function GET() {
+  const release = process.env.RENDER_GIT_COMMIT?.trim() || process.env.GITHUB_SHA?.trim();
+
   return Response.json(
     {
       status: "ok",
       service: "oculis-web",
+      ...(release ? { release } : {}),
     },
     {
       headers: {
