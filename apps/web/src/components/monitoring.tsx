@@ -588,7 +588,10 @@ export function RegulationRow({
     ? publicConsultationStatePresentation(item.consultationState ?? "UNKNOWN", lang)
     : regulatoryProcessStatePresentation(item.regulatoryProcessState ?? "UNKNOWN", lang);
   return (
-    <div className="flex items-start gap-3 border-b px-5 py-3 last:border-0">
+    <div
+      id={`regulation-${item.id}`}
+      className="flex scroll-mt-24 items-start gap-3 border-b px-5 py-3 last:border-0"
+    >
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
           <span

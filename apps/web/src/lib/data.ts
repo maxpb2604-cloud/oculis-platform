@@ -35,6 +35,7 @@ import {
   getLegislatorInitiativeStats,
   findPortalUserByEmail,
   findPortalUserById,
+  findActivePortalClientById,
   legislatorCommittees,
   type LegislatorInitiativeStats,
   type LegislatorProfile as DbLegislatorProfile,
@@ -50,6 +51,7 @@ import {
   listActivity,
   listActiveAdminClients,
   listAdminClientSummaries,
+  listClientAssignedInitiatives,
   listCommissions,
   listDeposits,
   listDocuments,
@@ -302,6 +304,14 @@ export async function getPortalUserByEmail(email: string): Promise<PortalUserAut
 
 export async function getPortalUserById(id: number): Promise<PortalUserAuthRecord | null> {
   return findPortalUserById(await db(), id);
+}
+
+export async function getActivePortalClientById(id: number) {
+  return findActivePortalClientById(await db(), id);
+}
+
+export async function getClientAssignedInitiatives(clientId: number) {
+  return listClientAssignedInitiatives(await db(), clientId);
 }
 
 export async function bootstrapAdminPortalUser(input: {

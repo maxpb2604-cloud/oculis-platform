@@ -7196,6 +7196,59 @@ export async function listActiveAdminClients(db: Database): Promise<AdminClientC
     .orderBy(clients.name, clients.id);
 }
 
+export async function findActivePortalClientById(
+  db: Database,
+  id: number,
+): Promise<AdminClientChoice | null> {
+  if (!Number.isSafeInteger(id) || id <= 0) return null;
+  const [client] = await db
+    .select({ id: clients.id, name: clients.name, slug: clients.slug })
+    .from(clients)
+    .where(and(eq(clients.id, id), eq(clients.active, true)))
+    .limit(1);
+  return client ?? null;
+}
+
+/** Tenant-scoped projection: no analyst notes, other clients, or user credentials. */
+export async function listClientAssignedInitiatives(db: Database, clientId: number) {
+  if (!Number.isSafeInteger(clientId) || clientId <= 0) return [];
+  const rows = await db
+    .select({
+      id: clientInitiativeAssignments.id,
+      initiativeId: clientInitiativeAssignments.initiativeId,
+      regulationId: clientInitiativeAssignments.regulationId,
+      initiativeCode: initiatives.code,
+      initiativeTitle: initiatives.title,
+      regulationInstitution: regulations.institution,
+      regulationTitle: regulations.title,
+      impactOnBusiness: clientInitiativeAssignments.impactOnBusiness,
+      updatedAt: sql<string>`${clientInitiativeAssignments.updatedAt}::text`,
+    })
+    .from(clientInitiativeAssignments)
+    .leftJoin(initiatives, eq(clientInitiativeAssignments.initiativeId, initiatives.id))
+    .leftJoin(regulations, eq(clientInitiativeAssignments.regulationId, regulations.id))
+    .where(eq(clientInitiativeAssignments.clientId, clientId))
+    .orderBy(sql`${clientInitiativeAssignments.updatedAt} desc`, clientInitiativeAssignments.id);
+  return rows.flatMap((row) => {
+    const legislative = row.initiativeId != null;
+    const recordId = legislative ? row.initiativeId : row.regulationId;
+    const title = legislative ? row.initiativeTitle : row.regulationTitle;
+    if (recordId == null || !title) return [];
+    return [
+      {
+        id: row.id,
+        kind: legislative ? ("LEGISLATIVE" as const) : ("REGULATORY" as const),
+        recordId,
+        code: legislative ? row.initiativeCode : null,
+        institution: legislative ? null : row.regulationInstitution,
+        title,
+        impactOnBusiness: row.impactOnBusiness,
+        updatedAt: row.updatedAt,
+      },
+    ];
+  });
+}
+
 export interface AdminClientUserSummary {
   id: number;
   email: string;

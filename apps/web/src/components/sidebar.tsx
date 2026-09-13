@@ -24,10 +24,12 @@ export function Sidebar({
   lang,
   open,
   adminSession,
+  clientSession,
 }: {
   lang: Lang;
   open: boolean;
   adminSession: { displayName: string; email: string } | null;
+  clientSession: { displayName: string; clientName: string } | null;
 }) {
   return (
     <aside
@@ -41,7 +43,7 @@ export function Sidebar({
       }
     >
       <Brand lang={lang} />
-      <Navigation lang={lang} adminSession={adminSession} />
+      <Navigation lang={lang} adminSession={adminSession} clientSession={clientSession} />
       <Endorsement lang={lang} />
     </aside>
   );
@@ -51,9 +53,11 @@ export function Sidebar({
 export function MobileNavigation({
   lang,
   adminSession,
+  clientSession,
 }: {
   lang: Lang;
   adminSession: { displayName: string; email: string } | null;
+  clientSession: { displayName: string; clientName: string } | null;
 }) {
   const [open, setOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
@@ -160,6 +164,7 @@ export function MobileNavigation({
                 lang={lang}
                 onNavigate={() => setOpen(false)}
                 adminSession={adminSession}
+                clientSession={clientSession}
               />
               <Endorsement lang={lang} />
             </aside>
@@ -201,10 +206,12 @@ function Navigation({
   lang,
   onNavigate,
   adminSession,
+  clientSession,
 }: {
   lang: Lang;
   onNavigate?: () => void;
   adminSession: { displayName: string; email: string } | null;
+  clientSession: { displayName: string; clientName: string } | null;
 }) {
   const pathname = usePathname();
   const q = langQuery(lang);
@@ -212,7 +219,7 @@ function Navigation({
 
   const items = [
     {
-      href: "/",
+      href: "/tablero",
       label: es ? "Tablero inicial" : "Main Dashboard",
       icon: House,
     },
@@ -249,7 +256,7 @@ function Navigation({
   ];
 
   const activeFor = (href: string) => {
-    if (href === "/") return pathname === "/";
+    if (href === "/tablero") return pathname === "/tablero";
     if (href === "/hoy") return pathname.startsWith("/hoy") || pathname.startsWith("/agenda/");
     if (href === "/regulatorio") return pathname === "/regulatorio" || pathname === "/regulatory";
     return pathname.startsWith(href);
@@ -316,6 +323,37 @@ function Navigation({
           </Link>
           <p className="mt-2 truncate px-2.5 text-[10px] text-[var(--nav-muted)]">
             {adminSession.displayName}
+          </p>
+        </div>
+      ) : null}
+      {clientSession ? (
+        <div className="mt-5 border-t border-[var(--nav-border)] pt-4">
+          <p className="mb-2 px-2.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--nav-muted)]">
+            {es ? "Espacio del cliente" : "Client space"}
+          </p>
+          <Link
+            href={`/cliente${q}`}
+            aria-current={pathname.startsWith("/cliente") ? "page" : undefined}
+            onClick={onNavigate}
+            className="group relative flex min-h-11 items-center gap-3 rounded-[var(--radius-md)] px-2.5 py-2 text-[13.5px] font-medium transition-colors"
+            style={{
+              color: pathname.startsWith("/cliente") ? "var(--nav-text)" : "var(--nav-muted)",
+              background: pathname.startsWith("/cliente") ? "var(--nav-bg-2)" : "transparent",
+            }}
+          >
+            {pathname.startsWith("/cliente") ? (
+              <span className="absolute inset-y-2 left-0 w-[3px] rounded-full bg-[#4f80ff]" />
+            ) : null}
+            <Briefcase
+              size={19}
+              weight={pathname.startsWith("/cliente") ? "fill" : "regular"}
+              aria-hidden="true"
+              className={pathname.startsWith("/cliente") ? "text-[#6f9cff]" : "text-current"}
+            />
+            <span>{es ? "Mis iniciativas" : "My initiatives"}</span>
+          </Link>
+          <p className="mt-2 truncate px-2.5 text-[10px] text-[var(--nav-muted)]">
+            {clientSession.clientName}
           </p>
         </div>
       ) : null}

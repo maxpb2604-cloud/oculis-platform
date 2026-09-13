@@ -53,6 +53,7 @@ export function AppShellFrame({
   titleIsHeading,
   children,
   adminSession,
+  clientSession,
 }: {
   lang: Lang;
   dateLabel: string;
@@ -61,6 +62,7 @@ export function AppShellFrame({
   titleIsHeading: boolean;
   children: React.ReactNode;
   adminSession: { displayName: string; email: string } | null;
+  clientSession: { displayName: string; clientName: string } | null;
 }) {
   const desktopSidebarOpen = useSyncExternalStore(
     subscribeToSidebarPreference,
@@ -77,7 +79,12 @@ export function AppShellFrame({
         {lang === "es" ? "Saltar al contenido" : "Skip to content"}
       </a>
       <div className="flex min-h-dvh bg-[var(--bg)]">
-        <Sidebar lang={lang} open={desktopSidebarOpen} adminSession={adminSession} />
+        <Sidebar
+          lang={lang}
+          open={desktopSidebarOpen}
+          adminSession={adminSession}
+          clientSession={clientSession}
+        />
         <div className="min-w-0 flex-1">
           <TopBar
             lang={lang}
@@ -85,6 +92,7 @@ export function AppShellFrame({
             desktopSidebarOpen={desktopSidebarOpen}
             onDesktopSidebarToggle={() => saveSidebarPreference(!desktopSidebarOpen)}
             adminSession={adminSession}
+            clientSession={clientSession}
           />
           <main
             id="main-content"

@@ -362,8 +362,8 @@ export function AdminClientManager({
                 </ul>
                 <p className="mt-2 text-[11px] leading-relaxed text-[var(--text-muted)]">
                   {es
-                    ? "Por seguridad, Oculis nunca muestra ni guarda contraseñas en texto legible. El acceso preparado se utilizará cuando habilitemos el portal del cliente."
-                    : "For security, Oculis never displays or stores readable passwords. Prepared access will be used when the client portal is enabled."}
+                    ? "Por seguridad, Oculis nunca muestra ni guarda contraseñas en texto legible. El cliente puede iniciar sesión desde la portada con su cuenta autorizada."
+                    : "For security, Oculis never displays or stores readable passwords. Clients can sign in from the homepage with their authorized account."}
                 </p>
               </section>
 
