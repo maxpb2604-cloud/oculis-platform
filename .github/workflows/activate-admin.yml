@@ -1,0 +1,29 @@
+name: Activate Oculis administrator
+
+on:
+  workflow_dispatch:
+    inputs:
+      email:
+        description: "Administrator email to activate or rotate"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  activate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      OCULIS_ADMIN_ACTIVATION_EMAIL: ${{ inputs.email }}
+      OCULIS_ADMIN_ACTIVATION_PASSWORD: ${{ secrets.OCULIS_ADMIN_ACTIVATION_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: node scripts/activate-admin.mjs
