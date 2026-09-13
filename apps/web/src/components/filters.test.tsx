@@ -14,6 +14,21 @@ import { Filters } from "./filters";
 const facets = { parties: [], statuses: [], provinces: [] };
 
 describe("initiative catalog legislator filter", () => {
+  it("shows one option per equivalent status and offers the explanation button", () => {
+    navigation.query = "status=Depositado";
+    const html = renderToStaticMarkup(
+      <Filters
+        lang="es"
+        facets={{ ...facets, statuses: ["Depositada", "Depositado", "En Agenda"] }}
+      />,
+    );
+    expect(html).toContain("¿Qué significa cada estado?");
+    expect(html).toContain('aria-haspopup="dialog"');
+    expect(html).toContain("Estado: Iniciativa depositada");
+    expect(html.match(/<option /g)).toHaveLength(5);
+    expect(html).not.toContain(">Depositado</option>");
+  });
+
   it("explains the exact sponsor/co-sponsor scope and renders a removable Spanish chip", () => {
     navigation.query = "legislator=13";
     const html = renderToStaticMarkup(

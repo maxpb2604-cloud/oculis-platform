@@ -2011,6 +2011,8 @@ export interface InitiativeFilters {
   search?: string;
   party?: string;
   status?: string;
+  /** Source-literal aliases for one catalog status; never rewrites the official value. */
+  statusValues?: string[];
   chamber?: string;
   /**
    * Exact Cámara SIL `legisladorId` archived on an official proponent row. Includes
@@ -2094,7 +2096,13 @@ export interface InitiativePage {
 function filterConds(f: InitiativeFilters) {
   const conds = [];
   if (f.party) conds.push(eq(effectiveInitiativeSponsorPartySql(), f.party));
-  if (f.status?.trim()) {
+  if (f.statusValues?.length) {
+    conds.push(
+      inArray(sql<string>`upper(trim(${initiatives.status}))`, [
+        ...new Set(f.statusValues.map((value) => value.trim().toUpperCase()).filter(Boolean)),
+      ]),
+    );
+  } else if (f.status?.trim()) {
     conds.push(sql`upper(trim(${initiatives.status})) = upper(trim(${f.status}))`);
   }
   if (f.chamber) conds.push(eq(initiatives.chamber, f.chamber));

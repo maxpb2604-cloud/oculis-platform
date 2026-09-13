@@ -33,6 +33,252 @@ function normalizeMovement(value: string): string {
  */
 export const LEGISLATIVE_MOVEMENT_DEFINITIONS: readonly LegislativeMovementDefinition[] = [
   {
+    id: "approved-first-amended",
+    label: {
+      es: "Aprobada en primera lectura con modificaciones",
+      en: "Approved on first reading with amendments",
+    },
+    description: {
+      es: "La cámara registra aprobación en primera lectura con cambios al texto. Si corresponde una segunda lectura, aún queda pendiente esa etapa; consulte el texto modificado oficial.",
+      en: "The chamber records approval on first reading with changes. If a second reading is required, that stage remains; consult the official amended text.",
+    },
+    patterns: [/^aprobad[oa] en (1ra|primera) con modificaciones$/],
+  },
+  {
+    id: "order-of-business-first",
+    label: { es: "En orden del día para primera discusión", en: "On the agenda for first debate" },
+    description: {
+      es: "La iniciativa fue programada para primera discusión. Estar en el orden del día no confirma que se haya votado o aprobado.",
+      en: "The initiative was scheduled for first debate. Being on the agenda does not confirm a vote or approval.",
+    },
+    patterns: [/^en orden del dia para (1era|1ra|primera) discusion$/],
+  },
+  {
+    id: "order-of-business-single",
+    label: { es: "En orden del día para única discusión", en: "On the agenda for single debate" },
+    description: {
+      es: "La iniciativa fue programada para discusión única; la programación no indica que ya se haya conocido o aprobado.",
+      en: "The initiative was scheduled for a single debate; scheduling does not establish that it was considered or approved.",
+    },
+    patterns: [/^en orden del dia para unica discusion$/],
+  },
+  {
+    id: "accepted-by-senate",
+    label: { es: "Aceptada por el Senado", en: "Accepted by the Senate" },
+    description: {
+      es: "El Senado registró la aceptación de la iniciativa en esa etapa. La expresión no indica por sí sola promulgación ni el resultado de trámites posteriores.",
+      en: "The Senate recorded acceptance of the initiative at this stage. This label alone does not establish enactment or the result of later steps.",
+    },
+    patterns: [/^aceptad[oa] por el senado$/],
+  },
+  {
+    id: "postponed-single",
+    label: { es: "Aplazada para única discusión", en: "Postponed for single debate" },
+    description: {
+      es: "Se pospuso el conocimiento de la iniciativa para una discusión única posterior; no indica que haya sido aprobada o rechazada.",
+      en: "Consideration was postponed to a later single debate; this does not indicate approval or rejection.",
+    },
+    patterns: [/^aplazad[oa] para unica discusion$/],
+  },
+  {
+    id: "approved-special-committee",
+    label: {
+      es: "Aprobada conformación de Comisión Especial",
+      en: "Special Committee formation approved",
+    },
+    description: {
+      es: "Se aprobó conformar una comisión especial para tratar el asunto. La decisión sobre la comisión no es una aprobación final de la iniciativa.",
+      en: "Formation of a special committee was approved. The decision about a committee is not final approval of the initiative.",
+    },
+    patterns: [/^aprobad[oa] en unica lectura conformacion comision especial$/],
+  },
+  {
+    id: "approved-single-amended",
+    label: {
+      es: "Aprobada en única lectura con modificaciones",
+      en: "Approved in single reading with amendments",
+    },
+    description: {
+      es: "La cámara aprobó la iniciativa en lectura única con cambios. El texto modificado y los pasos posteriores deben comprobarse en los documentos oficiales.",
+      en: "The chamber approved the initiative in a single reading with changes. Verify the amended text and later steps in the official documents.",
+    },
+    patterns: [
+      /^aprobad[oa] en unica con modificaciones$/,
+      /^aprobad[oa] en unica lectura con modificaciones$/,
+    ],
+  },
+  {
+    id: "approved-general-committee",
+    label: {
+      es: "Aprobada conformación de Comisión General",
+      en: "General Committee formation approved",
+    },
+    description: {
+      es: "Se aprobó constituir una comisión general. Es una decisión sobre el órgano de trabajo, no la aprobación final de la propuesta.",
+      en: "The formation of a general committee was approved. This is a decision about the working body, not final approval of the proposal.",
+    },
+    patterns: [/^aprobad[oa] la conformacion de la comision general$/],
+  },
+  {
+    id: "approved-investigative-committee",
+    label: {
+      es: "Aprobada conformación de Comisión de Investigación",
+      en: "Investigative Committee formation approved",
+    },
+    description: {
+      es: "Se aprobó conformar una comisión para investigar el asunto. Esto no indica que la iniciativa haya recibido aprobación final.",
+      en: "A committee was formed to investigate the matter. This does not establish final approval of the initiative.",
+    },
+    patterns: [/^aprobad[oa] la conformacion de la comision para la investigacion$/],
+  },
+  {
+    id: "left-tabled",
+    label: { es: "Dejada sobre la mesa", en: "Left on the table" },
+    description: {
+      es: "Se dejó pendiente el conocimiento de la iniciativa. No es una votación de aprobación ni un rechazo.",
+      en: "Consideration of the initiative was left pending. This is neither an approval vote nor a rejection.",
+    },
+    patterns: [/^dejad[oa] sobre la mesa$/],
+  },
+  {
+    id: "discharged",
+    label: { es: "Descargada", en: "Discharged" },
+    description: {
+      es: "La fuente registra que el expediente fue descargado del trámite indicado. Sin otro movimiento o documento, no se puede inferir el motivo ni una aprobación.",
+      en: "The source records that the file was discharged from the indicated process. Without another movement or document, its reason and approval cannot be inferred.",
+    },
+    patterns: [/^descargad[oa]$/],
+  },
+  {
+    id: "dispatched-executive",
+    label: { es: "Despachada al Ejecutivo", en: "Sent to the Executive" },
+    description: {
+      es: "La cámara remitió el expediente al Poder Ejecutivo. El despacho no demuestra que ya haya sido promulgado.",
+      en: "The chamber sent the record to the Executive Branch. Dispatch does not establish that it has been enacted.",
+    },
+    patterns: [/^despachad[oa] al ejecutivo$/],
+  },
+  {
+    id: "dispatched-single",
+    label: { es: "Despachada tras única lectura", en: "Dispatched after single reading" },
+    description: {
+      es: "El expediente fue despachado luego de su trámite en lectura única. El destino y la decisión posterior requieren evidencia adicional.",
+      en: "The record was dispatched after single-reading proceedings. Its destination and later outcome require further evidence.",
+    },
+    patterns: [/^despachad[oa] unica lectura$/],
+  },
+  {
+    id: "sent-to-committee-amendments",
+    label: {
+      es: "Enviada a Comisión por modificaciones de la Cámara",
+      en: "Sent to Committee for chamber amendments",
+    },
+    description: {
+      es: "La iniciativa fue remitida a comisión para conocer las modificaciones de la otra cámara. La remisión no equivale a aceptar esos cambios.",
+      en: "The initiative was referred to a committee to review the other chamber's changes. Referral does not mean those changes were accepted.",
+    },
+    patterns: [/^enviad[oa] a comision modificaciones de la camara$/],
+  },
+  {
+    id: "sent-to-committee-second",
+    label: {
+      es: "Enviada a Comisión en segunda discusión",
+      en: "Sent to Committee during second debate",
+    },
+    description: {
+      es: "Durante la segunda discusión se remitió la iniciativa a una comisión para estudio. No acredita aprobación en segunda lectura.",
+      en: "During the second debate, the initiative was referred to a committee for review. This does not establish approval on second reading.",
+    },
+    patterns: [/^enviad[oa] a comision en (2da|segunda) discusion$/],
+  },
+  {
+    id: "report-read-amended",
+    label: { es: "Informe leído con modificaciones", en: "Amended report read" },
+    description: {
+      es: "El pleno conoció la lectura de un informe que incorpora modificaciones. La lectura no equivale a aprobar el informe ni la iniciativa.",
+      en: "The plenary heard a report containing amendments. Reading it does not approve the report or the initiative.",
+    },
+    patterns: [/^informe leido con modificaciones$/],
+  },
+  {
+    id: "management-report-read",
+    label: { es: "Informe de gestión leído", en: "Management report read" },
+    description: {
+      es: "Se leyó un informe de gestión. No debe confundirse con una votación ni, sin evidencia adicional, con un informe de comisión sobre el fondo de la iniciativa.",
+      en: "A management report was read. Do not confuse this with a vote or, without more evidence, with a committee report on the substance of the initiative.",
+    },
+    patterns: [/^informe de gestion leido$/],
+  },
+  {
+    id: "pending-previous-order",
+    label: { es: "Pendiente del orden del día anterior", en: "Pending from the previous agenda" },
+    description: {
+      es: "El asunto quedó pendiente desde el orden del día anterior. No confirma que haya sido debatido ni votado.",
+      en: "The matter remains pending from the prior order of business. It does not confirm debate or a vote.",
+    },
+    patterns: [/^pendiente orden del dia anterior$/],
+  },
+  {
+    id: "pending-single-order",
+    label: {
+      es: "Pendiente en orden del día para única discusión",
+      en: "Pending on the single-debate agenda",
+    },
+    description: {
+      es: "Quedó pendiente su tratamiento en el orden del día para una discusión única; la fuente no registra aquí una aprobación.",
+      en: "Treatment on the agenda for a single debate remains pending; this label does not record approval.",
+    },
+    patterns: [/^pendiente orden del dia unica discusion$/],
+  },
+  {
+    id: "expired-from-senate",
+    label: { es: "Perimida procedente del Senado", en: "Expired record originating in the Senate" },
+    description: {
+      es: "La fuente identifica como perimido un expediente procedente del Senado. Una propuesta reintroducida tendría un expediente nuevo; no se debe asumir que este se reactivó.",
+      en: "The source identifies a record originating in the Senate as expired. A reintroduced proposal would have a new record; do not assume this one was reactivated.",
+    },
+    patterns: [/^perimid[oa] procedente del senado$/],
+  },
+  {
+    id: "referred-to-archives",
+    label: {
+      es: "Remitida a Archivo y Correspondencia",
+      en: "Referred to Archives and Correspondence",
+    },
+    description: {
+      es: "El expediente fue enviado al área de Archivo y Correspondencia. El envío es un paso administrativo, no una decisión de fondo.",
+      en: "The record was sent to Archives and Correspondence. Referral is an administrative step, not a decision on its substance.",
+    },
+    patterns: [/^remitid[oa] a archivo y correspondencia$/],
+  },
+  {
+    id: "tabled-first",
+    label: { es: "Sobre la mesa en primera discusión", en: "Tabled during first debate" },
+    description: {
+      es: "Se aplazó el tratamiento de la iniciativa en primera discusión. No equivale a aprobarla en primera lectura.",
+      en: "Consideration was postponed during first debate. This does not equal approval on first reading.",
+    },
+    patterns: [/^sobre la mesa (1era|1ra|primera) discusion$/],
+  },
+  {
+    id: "tabled-single",
+    label: { es: "Sobre la mesa para única discusión", en: "Tabled for single debate" },
+    description: {
+      es: "Se dejó pendiente la discusión única de la iniciativa; no hay aprobación por este movimiento.",
+      en: "The initiative's single debate was left pending; this movement does not establish approval.",
+    },
+    patterns: [/^sobre la mesa para unica discusion$/],
+  },
+  {
+    id: "tabled-second",
+    label: { es: "Sobre la mesa en segunda discusión", en: "Tabled during second debate" },
+    description: {
+      es: "Se aplazó el tratamiento en segunda discusión. No equivale a aprobación en segunda lectura ni a pérdida de vigencia.",
+      en: "Consideration was postponed during second debate. This does not equal second-reading approval or loss of legislative validity.",
+    },
+    patterns: [/^sobre la mesa (2da|segunda) discusion$/],
+  },
+  {
     id: "filed",
     label: { es: "Iniciativa depositada", en: "Initiative filed" },
     description: {

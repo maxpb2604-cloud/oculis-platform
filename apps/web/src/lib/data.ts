@@ -842,10 +842,14 @@ export async function getInitiativeCatalogLegislatorFilter(
 
 export async function browseInitiatives(f: InitiativeBrowseFilters) {
   const d = await db();
-  const [{ PROVINCIAS }, page, facetVals] = await Promise.all([
+  const facetVals = await facets(d);
+  const { statusVariantsForSelection } = await import("./initiative-status-catalog");
+  const [{ PROVINCIAS }, page] = await Promise.all([
     import("./province-data"),
-    listInitiatives(d, f),
-    facets(d),
+    listInitiatives(d, {
+      ...f,
+      statusValues: statusVariantsForSelection(facetVals.statuses, f.status),
+    }),
   ]);
   return {
     ...page,

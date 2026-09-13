@@ -5,6 +5,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import React, { useEffect, useState } from "react";
 import { type Lang } from "@/lib/i18n";
 import { partyDisplayLabel } from "@/lib/party-presentation";
+import { catalogStatuses, statusSelectionLabel } from "@/lib/initiative-status-catalog";
+import { StatusGuide } from "@/components/status-guide";
 
 interface Facets {
   parties: string[];
@@ -59,6 +61,10 @@ export function Filters({
   const valueFor = (key: string) => sp.get(key) ?? "";
   const selectedParty = valueFor("party");
   const selectedStatus = valueFor("status");
+  const statusOptions = catalogStatuses(facets.statuses, lang);
+  const selectedStatusOption = statusOptions.find(
+    (entry) => entry.value === selectedStatus || entry.variants.includes(selectedStatus),
+  );
   const selectedChamber = legislatorFilter?.chamber ?? valueFor("chamber");
   const selectedProvince = valueFor("province");
   const selectedLegislator = valueFor("legislator");
@@ -104,7 +110,9 @@ export function Filters({
     selectedStatus
       ? {
           key: "status",
-          label: es ? `Estado: ${selectedStatus}` : `Status: ${selectedStatus}`,
+          label: es
+            ? `Estado: ${statusSelectionLabel(facets.statuses, selectedStatus, lang)}`
+            : `Status: ${statusSelectionLabel(facets.statuses, selectedStatus, lang)}`,
           removable: true,
         }
       : null,
@@ -276,14 +284,17 @@ export function Filters({
             }))}
             allLabel={es ? "Todos los partidos" : "All parties"}
           />
-          <Select
-            id="initiative-status"
-            label={es ? "Estado oficial" : "Official status"}
-            value={selectedStatus}
-            onChange={(value) => navigate({ status: value })}
-            options={facets.statuses.map((status) => ({ value: status, label: status }))}
-            allLabel={es ? "Todos los estados" : "All statuses"}
-          />
+          <div className="min-w-0">
+            <Select
+              id="initiative-status"
+              label={es ? "Estado oficial" : "Official status"}
+              value={selectedStatusOption?.value ?? selectedStatus}
+              onChange={(value) => navigate({ status: value })}
+              options={statusOptions.map(({ value, label }) => ({ value, label }))}
+              allLabel={es ? "Todos los estados" : "All statuses"}
+            />
+            <StatusGuide statuses={statusOptions} lang={lang} />
+          </div>
         </div>
 
         {(activeFilters.length > 0 || anyFilter) && (

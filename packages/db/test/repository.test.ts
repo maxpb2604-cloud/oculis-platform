@@ -205,6 +205,25 @@ describe("upsertInitiative", () => {
   });
 });
 
+it("filters one catalog status across source-literal gender variants without including a different step", async () => {
+  const title = "Catálogo estados equivalentes 94736";
+  for (const [sourceId, status] of [
+    ["catalog-gender-a", "Depositada"],
+    ["catalog-gender-o", "Depositado"],
+    ["catalog-different-step", "Depositado en revisión"],
+  ]) {
+    await upsertInitiative(h.db, fixture({ sourceId, title, status }));
+  }
+  const result = await listInitiatives(h.db, {
+    search: title,
+    statusValues: ["Depositada", "Depositado"],
+  });
+  expect(result.total).toBe(2);
+  expect(new Set(result.rows.map((row) => row.status))).toEqual(
+    new Set(["Depositada", "Depositado"]),
+  );
+});
+
 describe("HOME province initiative sample", () => {
   it("counts vigente initiatives from the two-legislature filing window", async () => {
     const province = "Provincia conteo vigente";

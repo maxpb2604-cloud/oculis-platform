@@ -22,10 +22,10 @@ describe("legislative movement glossary", () => {
     ["Liberado de Comisión", "released-from-committee"],
     ["Liberada de Trámites", "procedures-waived"],
     ["Sobre la mesa", "tabled"],
-    ["Sobre la Mesa 2da. discusión", "tabled"],
+    ["Sobre la Mesa 2da. discusión", "tabled-second"],
     ["Orden del Día de siguiente sesión", "next-session-order"],
     ["En Orden del Día", "order-of-business"],
-    ["En Orden del Día para 1era. discusión", "order-of-business"],
+    ["En Orden del Día para 1era. discusión", "order-of-business-first"],
     ["En Orden del Día para 2da. discusión", "order-of-business"],
     ["Declarado de Urgencia", "urgent"],
     ["Declarado de Urgencia y aprobado en 1ra. lectura", "urgent-first-approved"],
@@ -43,7 +43,7 @@ describe("legislative movement glossary", () => {
     ["Esperando Firmas Presidente y Secretarios", "awaiting-signatures"],
     ["Firmado Presidencia y Secretarios", "signed"],
     ["Despachada", "dispatched"],
-    ["Despachado única lectura", "dispatched"],
+    ["Despachado única lectura", "dispatched-single"],
     ["Promulgada", "promulgated"],
     ["Fusionado", "merged"],
     ["Retirado", "withdrawn"],
@@ -51,12 +51,43 @@ describe("legislative movement glossary", () => {
     ["Reintroducida", "reintroduced"],
     ["Rechazado", "rejected"],
     ["En Archivo y Correspondencia", "archives"],
-    ["Remitido a Archivo y Correspondencia", "archives"],
+    ["Remitido a Archivo y Correspondencia", "referred-to-archives"],
     ["En Pleno", "plenary"],
     ["Vigente", "valid"],
     ["No vigente", "not-valid"],
   ])("maps the official status %s to %s", (status, expectedId) => {
     expect(legislativeMovementDefinition(status, "es")?.id).toBe(expectedId);
+  });
+
+  it.each([
+    ["Aceptado por el Senado", "accepted-by-senate"],
+    ["Aplazado para única discusión", "postponed-single"],
+    ["Aprobada en Primera Con Modificaciones", "approved-first-amended"],
+    ["Aprobada en Unica Lectura Conformación Comisión Especial", "approved-special-committee"],
+    ["Aprobada en Unica con Modificaciones", "approved-single-amended"],
+    ["Aprobada la Conformacion de la Comision General", "approved-general-committee"],
+    [
+      "Aprobada la conformación de la Comisión para la investigación",
+      "approved-investigative-committee",
+    ],
+    ["Dejada sobre la mesa", "left-tabled"],
+    ["Descargada", "discharged"],
+    ["Despachado al Ejecutivo", "dispatched-executive"],
+    ["En Orden del Día para única discusión", "order-of-business-single"],
+    ["Enviada a Comisión Modificaciones de la Cámara", "sent-to-committee-amendments"],
+    ["Enviado a Comisión en 2da. Discusión", "sent-to-committee-second"],
+    ["Informe Leído con Modificaciones", "report-read-amended"],
+    ["Informe de Gestión Leído", "management-report-read"],
+    ["Pendiente Orden del Día anterior", "pending-previous-order"],
+    ["Pendiente Orden del Día única discusión", "pending-single-order"],
+    ["Perimido procedente del Senado", "expired-from-senate"],
+    ["Sobre la mesa 1era discusión", "tabled-first"],
+    ["Sobre la mesa para única discusión", "tabled-single"],
+  ])("explains the previously undocumented movement %s", (status, expectedId) => {
+    expect(legislativeMovementDefinition(status, "es")).toMatchObject({
+      id: expectedId,
+      known: true,
+    });
   });
 
   it("keeps a committee deadline separate from legislative validity", () => {
