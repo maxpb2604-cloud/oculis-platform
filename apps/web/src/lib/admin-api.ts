@@ -7,10 +7,20 @@ export function requestHasSameOrigin(request: NextRequest): boolean {
   const origin = request.headers.get("origin");
   if (!origin) return false;
   try {
-    return new URL(origin).origin === new URL(request.url).origin;
+    const suppliedOrigin = new URL(origin).origin;
+    if (suppliedOrigin === new URL(request.url).origin) return true;
+    // Render's proxy may expose an internal request URL to Next.js. Trust only
+    // Render's own externally assigned URL, never an arbitrary forwarded host.
+    const renderUrl = process.env.RENDER === "true" ? process.env.RENDER_EXTERNAL_URL : null;
+    return Boolean(renderUrl && suppliedOrigin === new URL(renderUrl).origin);
   } catch {
     return false;
   }
+}
+
+export function sameOriginRedirectUrl(request: NextRequest, path: string): URL {
+  if (!requestHasSameOrigin(request)) throw new Error("Request origin is not allowed");
+  return new URL(path, new URL(request.headers.get("origin")!).origin);
 }
 
 export async function authorizedAdminRequest(

@@ -5,7 +5,7 @@ import {
   authenticateAdmin,
   createAdminSessionToken,
 } from "@/lib/admin-auth";
-import { requestHasSameOrigin } from "@/lib/admin-api";
+import { requestHasSameOrigin, sameOriginRedirectUrl } from "@/lib/admin-api";
 import {
   CLIENT_SESSION_COOKIE,
   authenticateClient,
@@ -38,12 +38,12 @@ export async function POST(request: NextRequest) {
   const lang = form.get("lang") === "en" ? "en" : "es";
   const suffix = lang === "en" ? "?lang=en" : "";
   if (form.get("intent") === "logout") {
-    const response = NextResponse.redirect(new URL(`/login${suffix}`, request.url), 303);
+    const response = NextResponse.redirect(sameOriginRedirectUrl(request, `/login${suffix}`), 303);
     response.cookies.set(ADMIN_SESSION_COOKIE, "", { ...adminSessionCookieOptions, maxAge: 0 });
     response.cookies.set(CLIENT_SESSION_COOKIE, "", { ...clientSessionCookieOptions, maxAge: 0 });
     return response;
   }
-  const failure = new URL(`/login?error=1${lang === "en" ? "&lang=en" : ""}`, request.url);
+  const failure = sameOriginRedirectUrl(request, `/login?error=1${lang === "en" ? "&lang=en" : ""}`);
   if (limited(request)) return NextResponse.redirect(failure, 303);
   const email = typeof form.get("email") === "string" ? String(form.get("email")) : "";
   const password = typeof form.get("password") === "string" ? String(form.get("password")) : "";
@@ -54,7 +54,7 @@ export async function POST(request: NextRequest) {
     const admin = await authenticateAdmin(email, password);
     if (admin) {
       attempts.delete(clientKey(request));
-      const response = NextResponse.redirect(new URL(`/admin${suffix}`, request.url), 303);
+      const response = NextResponse.redirect(sameOriginRedirectUrl(request, `/admin${suffix}`), 303);
       response.cookies.set(
         ADMIN_SESSION_COOKIE,
         createAdminSessionToken(admin),
@@ -66,7 +66,7 @@ export async function POST(request: NextRequest) {
     const client = await authenticateClient(email, password);
     if (client) {
       attempts.delete(clientKey(request));
-      const response = NextResponse.redirect(new URL(`/cliente${suffix}`, request.url), 303);
+      const response = NextResponse.redirect(sameOriginRedirectUrl(request, `/cliente${suffix}`), 303);
       response.cookies.set(
         CLIENT_SESSION_COOKIE,
         createClientSessionToken(client),

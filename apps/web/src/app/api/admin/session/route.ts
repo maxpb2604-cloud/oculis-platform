@@ -5,7 +5,7 @@ import {
   authenticateAdmin,
   createAdminSessionToken,
 } from "@/lib/admin-auth";
-import { requestHasSameOrigin } from "@/lib/admin-api";
+import { requestHasSameOrigin, sameOriginRedirectUrl } from "@/lib/admin-api";
 
 const attempts = new Map<string, { count: number; resetAt: number }>();
 
@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
   }
   const form = await request.formData();
   const lang = form.get("lang") === "en" ? "en" : "es";
-  const loginUrl = new URL(`/admin/login?error=1${lang === "en" ? "&lang=en" : ""}`, request.url);
+  const loginUrl = sameOriginRedirectUrl(request, `/admin/login?error=1${lang === "en" ? "&lang=en" : ""}`);
   if (limited(request)) return NextResponse.redirect(loginUrl, 303);
   const email = typeof form.get("email") === "string" ? String(form.get("email")) : "";
   const password = typeof form.get("password") === "string" ? String(form.get("password")) : "";
@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
     if (!user) return NextResponse.redirect(loginUrl, 303);
     attempts.delete(clientKey(request));
     const response = NextResponse.redirect(
-      new URL(`/admin${lang === "en" ? "?lang=en" : ""}`, request.url),
+      sameOriginRedirectUrl(request, `/admin${lang === "en" ? "?lang=en" : ""}`),
       303,
     );
     response.cookies.set(
