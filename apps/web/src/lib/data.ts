@@ -53,6 +53,7 @@ import {
   listActiveAdminClients,
   listAdminClientSummaries,
   listAdminPortalUsers,
+  replacePortalUserPassword,
   listClientAssignedInitiatives,
   listCommissions,
   listDeposits,
@@ -343,6 +344,10 @@ export async function createAdminTeamUser(input: {
   passwordHash: string;
 }): Promise<AdminPortalUserSummary> {
   return addAdminPortalUser(await db(), input);
+}
+
+export async function changePortalUserPassword(input: { userId: number; passwordHash: string }) {
+  return replacePortalUserPassword(await db(), input);
 }
 
 export async function createAdminClient(input: {

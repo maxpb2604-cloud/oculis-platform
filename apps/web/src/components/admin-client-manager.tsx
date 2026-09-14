@@ -60,9 +60,9 @@ const impactLabels = {
   en: { HIGH: "High", MEDIUM: "Medium", LOW: "Low", TO_ASSESS: "To assess" },
 } as const;
 
-async function postJson(url: string, body: Record<string, unknown>) {
+async function requestJson(method: "POST" | "PATCH", url: string, body: Record<string, unknown>) {
   const response = await fetch(url, {
-    method: "POST",
+    method,
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
   });
@@ -88,6 +88,7 @@ export function AdminClientManager({
   const [addingClient, setAddingClient] = useState(false);
   const [addingAdmin, setAddingAdmin] = useState(false);
   const [addingUserFor, setAddingUserFor] = useState<number | null>(null);
+  const [changingPasswordFor, setChangingPasswordFor] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
 
@@ -95,7 +96,7 @@ export function AdminClientManager({
     setBusy(true);
     setMessage(null);
     try {
-      await postJson("/api/admin/users", {
+      await requestJson("POST", "/api/admin/users", {
         displayName: String(form.get("displayName") ?? ""),
         email: String(form.get("email") ?? ""),
         password: String(form.get("password") ?? ""),
@@ -117,7 +118,7 @@ export function AdminClientManager({
     setBusy(true);
     setMessage(null);
     try {
-      await postJson("/api/admin/clients", { name: String(form.get("name") ?? "") });
+      await requestJson("POST", "/api/admin/clients", { name: String(form.get("name") ?? "") });
       setAddingClient(false);
       setMessage({ tone: "ok", text: es ? "Cliente creado." : "Client created." });
       router.refresh();
@@ -132,7 +133,7 @@ export function AdminClientManager({
     setBusy(true);
     setMessage(null);
     try {
-      await postJson(`/api/admin/clients/${clientId}/users`, {
+      await requestJson("POST", `/api/admin/clients/${clientId}/users`, {
         displayName: String(form.get("displayName") ?? ""),
         email: String(form.get("email") ?? ""),
         password: String(form.get("password") ?? ""),
@@ -148,6 +149,63 @@ export function AdminClientManager({
     } finally {
       setBusy(false);
     }
+  }
+
+  async function changePassword(userId: number, form: FormData) {
+    const password = String(form.get("password") ?? "");
+    const confirmation = String(form.get("confirmation") ?? "");
+    if (password !== confirmation) {
+      setMessage({ tone: "error", text: es ? "Las contraseñas no coinciden." : "Passwords do not match." });
+      return;
+    }
+    setBusy(true);
+    setMessage(null);
+    try {
+      await requestJson("PATCH", `/api/admin/accounts/${userId}/password`, { password });
+      setChangingPasswordFor(null);
+      if (adminUsers.some((user) => user.id === userId && user.email.toLowerCase() === adminEmail.toLowerCase())) {
+        await signOut();
+        return;
+      }
+      setMessage({
+        tone: "ok",
+        text: es ? "Contraseña cambiada. Las sesiones anteriores de esa cuenta quedaron invalidadas." : "Password changed. Existing sessions for that account are now invalid.",
+      });
+      router.refresh();
+    } catch (error) {
+      setMessage({ tone: "error", text: (error as Error).message });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function passwordForm(userId: number) {
+    if (changingPasswordFor !== userId) return null;
+    return (
+      <form
+        action={(form) => changePassword(userId, form)}
+        className="grid gap-3 border-t bg-[var(--surface-2)] p-4 sm:grid-cols-2"
+      >
+        <div>
+          <label htmlFor={`new-password-${userId}`} className="mb-1.5 block text-xs font-semibold">
+            {es ? "Nueva contraseña" : "New password"}
+          </label>
+          <input id={`new-password-${userId}`} name="password" type="password" required minLength={12} maxLength={256} autoComplete="new-password" className="ui-input w-full" />
+        </div>
+        <div>
+          <label htmlFor={`confirm-password-${userId}`} className="mb-1.5 block text-xs font-semibold">
+            {es ? "Confirmar nueva contraseña" : "Confirm new password"}
+          </label>
+          <input id={`confirm-password-${userId}`} name="confirmation" type="password" required minLength={12} maxLength={256} autoComplete="new-password" className="ui-input w-full" />
+        </div>
+        <p className="text-xs text-[var(--text-muted)] sm:col-span-2">
+          {es ? "Mínimo 12 caracteres. La contraseña actual no puede mostrarse; al guardar, se reemplaza y se cierran las sesiones anteriores." : "Minimum 12 characters. The current password cannot be shown; saving replaces it and invalidates existing sessions."}
+        </p>
+        <button disabled={busy} className="min-h-10 rounded-lg bg-[var(--accent)] px-4 text-sm font-semibold text-white disabled:opacity-50 sm:col-span-2">
+          {busy ? (es ? "Guardando…" : "Saving…") : es ? "Guardar nueva contraseña" : "Save new password"}
+        </button>
+      </form>
+    );
   }
 
   async function signOut() {
@@ -195,7 +253,8 @@ export function AdminClientManager({
         </p>
         <ul className="mt-5 divide-y rounded-lg border" role="list">
           {adminUsers.map((user) => (
-            <li key={user.id} className="flex flex-wrap items-center gap-3 px-4 py-3">
+            <li key={user.id}>
+              <div className="flex flex-wrap items-center gap-3 px-4 py-3">
               <ShieldCheck size={21} aria-hidden="true" className="shrink-0 text-[var(--accent)]" />
               <div className="min-w-0 flex-1">
                 <div className="text-sm font-semibold">{user.displayName}</div>
@@ -215,6 +274,11 @@ export function AdminClientManager({
                     ? es ? "Pendiente de activación" : "Activation pending"
                     : es ? "Activo" : "Active"}
               </span>
+              <button type="button" onClick={() => setChangingPasswordFor(changingPasswordFor === user.id ? null : user.id)} className="ui-button min-h-9 px-3 text-xs">
+                {es ? "Cambiar contraseña" : "Change password"}
+              </button>
+              </div>
+              {passwordForm(user.id)}
             </li>
           ))}
         </ul>
@@ -423,7 +487,7 @@ export function AdminClientManager({
                         htmlFor={`user-password-${client.id}`}
                         className="mb-1.5 block text-xs font-semibold"
                       >
-                        {es ? "Contraseña temporal" : "Temporary password"}
+                        {es ? "Contraseña inicial" : "Initial password"}
                       </label>
                       <input
                         id={`user-password-${client.id}`}
@@ -441,8 +505,8 @@ export function AdminClientManager({
                         className="mt-1.5 text-[11px] leading-relaxed text-[var(--text-muted)]"
                       >
                         {es
-                          ? "Mínimo 12 caracteres. Se cifra al guardar y no podrá volver a consultarse."
-                          : "Minimum 12 characters. It is hashed when saved and cannot be viewed again."}
+                          ? "Mínimo 12 caracteres. Se protege al guardar y no podrá volver a consultarse."
+                          : "Minimum 12 characters. It is protected when saved and cannot be viewed again."}
                       </p>
                     </div>
                     <button
@@ -463,10 +527,8 @@ export function AdminClientManager({
                 <ul className="mt-4 divide-y rounded-lg border" role="list">
                   {client.users.length ? (
                     client.users.map((user) => (
-                      <li
-                        key={user.id}
-                        className="flex items-center justify-between gap-3 px-3 py-3"
-                      >
+                      <li key={user.id}>
+                        <div className="flex flex-wrap items-center justify-between gap-3 px-3 py-3">
                         <div className="min-w-0">
                           <div className="truncate text-sm font-semibold">{user.displayName}</div>
                           <div className="truncate text-xs text-[var(--text-muted)]">
@@ -484,6 +546,11 @@ export function AdminClientManager({
                               ? "Activo"
                               : "Active"}
                         </span>
+                        <button type="button" onClick={() => setChangingPasswordFor(changingPasswordFor === user.id ? null : user.id)} className="ui-button min-h-9 px-3 text-xs">
+                          {es ? "Cambiar contraseña" : "Change password"}
+                        </button>
+                        </div>
+                        {passwordForm(user.id)}
                       </li>
                     ))
                   ) : (

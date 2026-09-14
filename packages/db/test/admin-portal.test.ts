@@ -5,9 +5,11 @@ import {
   createAdminPortalUserIfAbsent,
   createDb,
   createPortalClient,
+  findPortalUserById,
   listActiveAdminClients,
   listAdminClientSummaries,
   listAdminPortalUsers,
+  replacePortalUserPassword,
   upsertClientInitiativeAssignment,
 } from "../src/index.js";
 import { initiatives, regulations } from "../src/schema.js";
@@ -42,6 +44,15 @@ describe("administrative client portal persistence", () => {
       });
       expect(await listAdminPortalUsers(handle.db)).toEqual([admin]);
       expect(JSON.stringify(await listAdminPortalUsers(handle.db))).not.toContain("secret-hash");
+      expect(await replacePortalUserPassword(handle.db, {
+        userId: admin.id,
+        passwordHash: "replacement-hash",
+      })).toEqual({ id: admin.id, role: "ADMIN", email: admin.email });
+      expect((await findPortalUserById(handle.db, admin.id))?.passwordHash).toBe("replacement-hash");
+      expect(await replacePortalUserPassword(handle.db, {
+        userId: 999999,
+        passwordHash: "replacement-hash",
+      })).toBeNull();
       await expect(
         addAdminPortalUser(handle.db, {
           email: "equipo@fhc.test",

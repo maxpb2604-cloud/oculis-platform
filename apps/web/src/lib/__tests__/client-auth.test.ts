@@ -16,7 +16,7 @@ vi.mock("@/lib/data", () => ({
 }));
 
 import { createClientSessionToken, authenticateClient, getClientSession } from "../client-auth";
-import { hashPortalPassword } from "../admin-auth";
+import { hashPortalPassword, portalCredentialFingerprint } from "../admin-auth";
 
 const client = { id: 3, name: "Empresa de prueba", slug: "empresa-prueba" };
 const user = {
@@ -52,10 +52,13 @@ describe("client portal authorization", () => {
       userId: 9,
       email: user.email,
       displayName: user.displayName,
+      credentialFingerprint: portalCredentialFingerprint(user.passwordHash),
     });
     cookieStore.get.mockReturnValue({ value: token });
     getPortalUserById.mockResolvedValue(user);
     expect(await getClientSession()).toMatchObject({ userId: 9, client });
+    getPortalUserById.mockResolvedValue({ ...user, passwordHash: hashPortalPassword("different-password") });
+    expect(await getClientSession()).toBeNull();
     getPortalUserById.mockResolvedValue({ ...user, active: false });
     expect(await getClientSession()).toBeNull();
     getPortalUserById.mockResolvedValue(user);

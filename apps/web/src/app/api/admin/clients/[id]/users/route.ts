@@ -25,7 +25,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     }
     if (password.length < 12 || password.length > 256) {
       return NextResponse.json(
-        { error: "La contraseña temporal debe tener entre 12 y 256 caracteres." },
+        { error: "La contraseña inicial debe tener entre 12 y 256 caracteres." },
         { status: 400 },
       );
     }

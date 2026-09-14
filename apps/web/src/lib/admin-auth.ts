@@ -1,6 +1,6 @@
 import "server-only";
 
-import { createHmac, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 import { cookies } from "next/headers";
 import { bootstrapAdminPortalUser, getPortalUserByEmail, getPortalUserById } from "@/lib/data";
 
@@ -12,13 +12,19 @@ export interface AdminSession {
   userId: number;
   email: string;
   displayName: string;
+  credentialFingerprint: string;
   expiresAt: number;
 }
 
 interface SessionPayload {
   sub: number;
   email: string;
+  cv: string;
   exp: number;
+}
+
+export function portalCredentialFingerprint(passwordHash: string): string {
+  return createHash("sha256").update(passwordHash).digest("base64url");
 }
 
 const developmentSecrets = globalThis as typeof globalThis & {
@@ -95,6 +101,7 @@ export function createAdminSessionToken(
   const payload: SessionPayload = {
     sub: session.userId,
     email: session.email.trim().toLowerCase(),
+    cv: session.credentialFingerprint,
     exp: now + SESSION_DURATION_SECONDS,
   };
   const encoded = Buffer.from(JSON.stringify(payload)).toString("base64url");
@@ -115,6 +122,8 @@ export function verifyAdminSessionToken(token: string, now = Math.floor(Date.now
       !Number.isSafeInteger(payload.sub) ||
       Number(payload.sub) <= 0 ||
       typeof payload.email !== "string" ||
+      typeof payload.cv !== "string" ||
+      !/^[A-Za-z0-9_-]{43}$/.test(payload.cv) ||
       !Number.isSafeInteger(payload.exp) ||
       Number(payload.exp) <= now
     ) {
@@ -151,7 +160,12 @@ export async function authenticateAdmin(email: string, password: string) {
   ) {
     return null;
   }
-  return { userId: user.id, email: user.email, displayName: user.displayName };
+  return {
+    userId: user.id,
+    email: user.email,
+    displayName: user.displayName,
+    credentialFingerprint: portalCredentialFingerprint(user.passwordHash),
+  };
 }
 
 export async function getAdminSession(): Promise<AdminSession | null> {
@@ -169,6 +183,8 @@ export async function getAdminSession(): Promise<AdminSession | null> {
     !user ||
     !user.active ||
     user.role !== "ADMIN" ||
+    !user.passwordHash ||
+    portalCredentialFingerprint(user.passwordHash) !== payload.cv ||
     user.email.toLowerCase() !== payload.email
   ) {
     return null;
@@ -177,6 +193,7 @@ export async function getAdminSession(): Promise<AdminSession | null> {
     userId: user.id,
     email: user.email,
     displayName: user.displayName,
+    credentialFingerprint: payload.cv,
     expiresAt: payload.exp,
   };
 }

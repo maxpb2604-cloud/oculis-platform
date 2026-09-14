@@ -4,6 +4,7 @@ import { cookies } from "next/headers";
 import {
   adminSessionCookieOptions,
   createAdminSessionToken,
+  portalCredentialFingerprint,
   verifyAdminSessionToken,
 } from "@/lib/admin-auth";
 import { getActivePortalClientById, getPortalUserByEmail, getPortalUserById } from "@/lib/data";
@@ -26,7 +27,12 @@ export async function authenticateClient(email: string, password: string) {
     return null;
   const client = await getActivePortalClientById(user.clientId);
   if (!client) return null;
-  return { userId: user.id, email: user.email, displayName: user.displayName };
+  return {
+    userId: user.id,
+    email: user.email,
+    displayName: user.displayName,
+    credentialFingerprint: portalCredentialFingerprint(user.passwordHash),
+  };
 }
 
 export async function getClientSession() {
@@ -45,6 +51,8 @@ export async function getClientSession() {
     !user.active ||
     user.role !== "CLIENT" ||
     !user.clientId ||
+    !user.passwordHash ||
+    portalCredentialFingerprint(user.passwordHash) !== payload.cv ||
     user.email.toLowerCase() !== payload.email
   )
     return null;

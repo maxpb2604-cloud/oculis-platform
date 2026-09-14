@@ -7236,6 +7236,23 @@ export async function addAdminPortalUser(
   return { ...row, activationPending: false };
 }
 
+/** Replace an account credential without disclosing the old or new hash to callers. */
+export async function replacePortalUserPassword(
+  db: Database,
+  input: { userId: number; passwordHash: string },
+): Promise<{ id: number; role: "ADMIN" | "CLIENT"; email: string } | null> {
+  if (!Number.isSafeInteger(input.userId) || input.userId <= 0 || !input.passwordHash.trim()) {
+    throw new Error("invalid account credential update");
+  }
+  const [user] = await db
+    .update(portalUsers)
+    .set({ passwordHash: input.passwordHash.trim(), updatedAt: new Date() })
+    .where(eq(portalUsers.id, input.userId))
+    .returning({ id: portalUsers.id, role: portalUsers.role, email: portalUsers.email });
+  if (!user || (user.role !== "ADMIN" && user.role !== "CLIENT")) return null;
+  return { id: user.id, role: user.role, email: user.email };
+}
+
 export interface AdminClientChoice {
   id: number;
   name: string;
