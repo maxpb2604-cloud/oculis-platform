@@ -91,6 +91,20 @@ export default async function LoginPage({
                   : "We could not sign you in. Check your credentials and try again."}
               </div>
             )}
+            {params.error === "unavailable" && (
+              <div role="alert" className="portal-login-error">
+                {es
+                  ? "El servicio de acceso no está disponible en este momento. Su contraseña no ha sido rechazada; inténtelo más tarde."
+                  : "The sign-in service is temporarily unavailable. Your password has not been rejected; please try again later."}
+              </div>
+            )}
+            {params.error === "limited" && (
+              <div role="alert" className="portal-login-error">
+                {es
+                  ? "Demasiados intentos desde esta conexión. Espere 15 minutos antes de volver a intentar."
+                  : "Too many attempts from this connection. Please wait 15 minutes before trying again."}
+              </div>
+            )}
             <form action="/api/portal/session" method="post" className="portal-login-form">
               <input type="hidden" name="lang" value={lang} />
               <label htmlFor="portal-email">{es ? "Correo electrónico" : "Email address"}</label>

@@ -43,8 +43,13 @@ export async function POST(request: NextRequest) {
     response.cookies.set(CLIENT_SESSION_COOKIE, "", { ...clientSessionCookieOptions, maxAge: 0 });
     return response;
   }
-  const failure = sameOriginRedirectUrl(request, `/login?error=1${lang === "en" ? "&lang=en" : ""}`);
-  if (limited(request)) return NextResponse.redirect(failure, 303);
+  const loginError = (reason: "1" | "unavailable" | "limited") =>
+    sameOriginRedirectUrl(
+      request,
+      `/login?error=${reason}${lang === "en" ? "&lang=en" : ""}`,
+    );
+  const failure = loginError("1");
+  if (limited(request)) return NextResponse.redirect(loginError("limited"), 303);
   const email = typeof form.get("email") === "string" ? String(form.get("email")) : "";
   const password = typeof form.get("password") === "string" ? String(form.get("password")) : "";
   if (email.length > 254 || password.length < 12 || password.length > 256) {
@@ -76,7 +81,8 @@ export async function POST(request: NextRequest) {
       return response;
     }
   } catch {
-    // Keep authentication failure generic; do not reveal account existence or role.
+    // A backend failure is not an incorrect password; reveal neither account nor role.
+    return NextResponse.redirect(loginError("unavailable"), 303);
   }
   return NextResponse.redirect(failure, 303);
 }

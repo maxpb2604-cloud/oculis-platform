@@ -1826,7 +1826,7 @@ type InitiativeListBase = Omit<
 async function attachInitiativeSponsorProfiles<
   T extends {
     id: number;
-    raw: unknown;
+    raw?: unknown;
     sponsor: string | null;
     sponsorRole: string | null;
     party: string | null;
@@ -2207,7 +2207,6 @@ export async function listInitiatives(
       expiresAt: initiatives.expiresAt,
       legislature: initiatives.legislature,
       sourceUrl: initiatives.sourceUrl,
-      raw: initiatives.raw,
     })
     .from(initiatives)
     .where(where)
@@ -4482,7 +4481,6 @@ export async function listDeposits(
       province: effectiveInitiativeSponsorProvinceSql().as("sponsor_province"),
       filedAt: initiatives.filedAt,
       sourceUrl: initiatives.sourceUrl,
-      raw: initiatives.raw,
     })
     .from(initiatives)
     .where(
@@ -4729,7 +4727,6 @@ export async function listRecentInitiatives(
       legislature: initiatives.legislature,
       sourceUrl: initiatives.sourceUrl,
       filteredProponentRelationship: sql<null>`null`,
-      raw: initiatives.raw,
     })
     .from(initiatives)
     .where(where)
