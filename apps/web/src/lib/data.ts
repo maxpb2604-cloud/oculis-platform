@@ -20,6 +20,7 @@ import { resolveProvince } from "./provinces";
 import { isISODate, safeHttpUrl, safeOfficialUrl } from "./input";
 export { normProvince, resolveProvince } from "./provinces";
 import {
+  addAdminPortalUser,
   createDb,
   activityCountsByDate,
   countActiveRosterByChamberParty,
@@ -51,6 +52,7 @@ import {
   listActivity,
   listActiveAdminClients,
   listAdminClientSummaries,
+  listAdminPortalUsers,
   listClientAssignedInitiatives,
   listCommissions,
   listDeposits,
@@ -75,6 +77,7 @@ import {
   upsertClientInitiativeAssignment,
   type AdminClientChoice,
   type AdminClientSummary,
+  type AdminPortalUserSummary,
   type PortalUserAuthRecord,
   type UpsertClientAssignmentInput,
   type FeedFilters as DbFeedFilters,
@@ -328,6 +331,18 @@ export async function getAdminClientChoices(): Promise<AdminClientChoice[]> {
 
 export async function getAdminClientSummaries(): Promise<AdminClientSummary[]> {
   return listAdminClientSummaries(await db());
+}
+
+export async function getAdminPortalUsers(): Promise<AdminPortalUserSummary[]> {
+  return listAdminPortalUsers(await db());
+}
+
+export async function createAdminTeamUser(input: {
+  email: string;
+  displayName: string;
+  passwordHash: string;
+}): Promise<AdminPortalUserSummary> {
+  return addAdminPortalUser(await db(), input);
 }
 
 export async function createAdminClient(input: {

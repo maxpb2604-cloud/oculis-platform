@@ -7187,6 +7187,55 @@ export async function createAdminPortalUserIfAbsent(
   return user;
 }
 
+export interface AdminPortalUserSummary {
+  id: number;
+  email: string;
+  displayName: string;
+  active: boolean;
+  activationPending: boolean;
+}
+
+/** Private FHC-only projection; never return a password hash to the browser. */
+export async function listAdminPortalUsers(db: Database): Promise<AdminPortalUserSummary[]> {
+  const rows = await db
+    .select({
+      id: portalUsers.id,
+      email: portalUsers.email,
+      displayName: portalUsers.displayName,
+      active: portalUsers.active,
+      passwordHash: portalUsers.passwordHash,
+    })
+    .from(portalUsers)
+    .where(eq(portalUsers.role, "ADMIN"))
+    .orderBy(portalUsers.displayName, portalUsers.id);
+  return rows.map(({ passwordHash, ...user }) => ({
+    ...user,
+    activationPending: passwordHash == null,
+  }));
+}
+
+/** Create a distinct FHC administrator; an existing email is never silently rotated. */
+export async function addAdminPortalUser(
+  db: Database,
+  input: { email: string; displayName: string; passwordHash: string },
+): Promise<AdminPortalUserSummary> {
+  const email = normalizePortalEmail(input.email);
+  const displayName = input.displayName.replace(/\s+/g, " ").trim();
+  const passwordHash = input.passwordHash.trim();
+  if (!email || !displayName || !passwordHash) throw new Error("admin identity is incomplete");
+  const [row] = await db
+    .insert(portalUsers)
+    .values({ email, displayName, passwordHash, role: "ADMIN", active: true })
+    .returning({
+      id: portalUsers.id,
+      email: portalUsers.email,
+      displayName: portalUsers.displayName,
+      active: portalUsers.active,
+    });
+  if (!row) throw new Error("admin user could not be created");
+  return { ...row, activationPending: false };
+}
+
 export interface AdminClientChoice {
   id: number;
   name: string;

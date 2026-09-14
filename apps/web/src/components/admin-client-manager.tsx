@@ -8,6 +8,7 @@ import {
   Buildings,
   List,
   Plus,
+  ShieldCheck,
   SignOut,
   UserPlus,
   UsersThree,
@@ -46,6 +47,14 @@ interface ClientSummary {
   assignments: ClientAssignment[];
 }
 
+interface AdminUser {
+  id: number;
+  email: string;
+  displayName: string;
+  active: boolean;
+  activationPending: boolean;
+}
+
 const impactLabels = {
   es: { HIGH: "Alto", MEDIUM: "Medio", LOW: "Bajo", TO_ASSESS: "Por evaluar" },
   en: { HIGH: "High", MEDIUM: "Medium", LOW: "Low", TO_ASSESS: "To assess" },
@@ -62,20 +71,47 @@ async function postJson(url: string, body: Record<string, unknown>) {
 }
 
 export function AdminClientManager({
+  adminUsers,
   clients,
   adminName,
+  adminEmail,
   lang,
 }: {
+  adminUsers: AdminUser[];
   clients: ClientSummary[];
   adminName: string;
+  adminEmail: string;
   lang: Lang;
 }) {
   const router = useRouter();
   const es = lang === "es";
   const [addingClient, setAddingClient] = useState(false);
+  const [addingAdmin, setAddingAdmin] = useState(false);
   const [addingUserFor, setAddingUserFor] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
+
+  async function addAdmin(form: FormData) {
+    setBusy(true);
+    setMessage(null);
+    try {
+      await postJson("/api/admin/users", {
+        displayName: String(form.get("displayName") ?? ""),
+        email: String(form.get("email") ?? ""),
+        password: String(form.get("password") ?? ""),
+      });
+      setAddingAdmin(false);
+      setMessage({
+        tone: "ok",
+        text: es ? "Administrador de FHC agregado." : "FHC administrator added.",
+      });
+      router.refresh();
+    } catch (error) {
+      setMessage({ tone: "error", text: (error as Error).message });
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function addClient(form: FormData) {
     setBusy(true);
@@ -121,7 +157,119 @@ export function AdminClientManager({
 
   return (
     <div data-testid="admin-client-manager">
-      <section className="grid gap-4 border-b pb-7 sm:grid-cols-3">
+      <section
+        aria-labelledby="admin-access-title"
+        className="rounded-[var(--radius-lg)] border bg-[var(--surface)] p-5 shadow-sm sm:p-6"
+      >
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <p className="eyebrow text-[var(--accent)]">
+              {es ? "Equipo Ferdinand Herrera" : "Ferdinand Herrera team"}
+            </p>
+            <h2 id="admin-access-title" className="section-title mt-2">
+              {es ? "Accesos de administradores" : "Administrator access"}
+            </h2>
+            <p className="mt-2 max-w-2xl text-sm leading-relaxed text-[var(--text-muted)]">
+              {es
+                ? "Estas cuentas pueden gestionar clientes, crear accesos y asignar iniciativas. Son independientes de las cuentas de cada cliente."
+                : "These accounts can manage clients, create access, and assign initiatives. They are separate from each client's accounts."}
+            </p>
+          </div>
+          <div className="flex shrink-0 flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => setAddingAdmin((value) => !value)}
+              className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-[var(--accent)] px-4 text-sm font-semibold text-white hover:opacity-90"
+            >
+              <UserPlus size={17} aria-hidden="true" />
+              {es ? "Agregar administrador" : "Add administrator"}
+            </button>
+            <button type="button" onClick={signOut} className="ui-button min-h-11 gap-2 px-4 text-sm">
+              <SignOut size={17} aria-hidden="true" />
+              {es ? "Cerrar sesión" : "Sign out"}
+            </button>
+          </div>
+        </div>
+        <p className="mt-4 text-xs text-[var(--text-muted)]">
+          {es ? `Sesión iniciada como ${adminName} (${adminEmail}).` : `Signed in as ${adminName} (${adminEmail}).`}
+        </p>
+        <ul className="mt-5 divide-y rounded-lg border" role="list">
+          {adminUsers.map((user) => (
+            <li key={user.id} className="flex flex-wrap items-center gap-3 px-4 py-3">
+              <ShieldCheck size={21} aria-hidden="true" className="shrink-0 text-[var(--accent)]" />
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-semibold">{user.displayName}</div>
+                <div className="break-all text-xs text-[var(--text-muted)]">{user.email}</div>
+              </div>
+              {user.email.toLowerCase() === adminEmail.toLowerCase() ? (
+                <span className="rounded-full bg-[var(--accent-soft)] px-2.5 py-1 text-[11px] font-semibold text-[var(--accent)]">
+                  {es ? "Tu cuenta" : "Your account"}
+                </span>
+              ) : null}
+              <span
+                className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${user.active && !user.activationPending ? "bg-[var(--verified-soft)] text-[var(--verified)]" : "bg-[var(--warn-soft)] text-[var(--warn)]"}`}
+              >
+                {!user.active
+                  ? es ? "Inactivo" : "Inactive"
+                  : user.activationPending
+                    ? es ? "Pendiente de activación" : "Activation pending"
+                    : es ? "Activo" : "Active"}
+              </span>
+            </li>
+          ))}
+        </ul>
+        {addingAdmin ? (
+          <form action={addAdmin} className="mt-5 grid gap-3 rounded-lg border bg-[var(--surface-2)] p-4 sm:grid-cols-2">
+            <div>
+              <label htmlFor="admin-name" className="mb-1.5 block text-xs font-semibold">
+                {es ? "Nombre del administrador" : "Administrator name"}
+              </label>
+              <input id="admin-name" name="displayName" required minLength={2} maxLength={100} className="ui-input w-full" />
+            </div>
+            <div>
+              <label htmlFor="admin-email" className="mb-1.5 block text-xs font-semibold">
+                {es ? "Correo del administrador" : "Administrator email"}
+              </label>
+              <input id="admin-email" name="email" type="email" required maxLength={254} className="ui-input w-full" />
+            </div>
+            <div className="sm:col-span-2">
+              <label htmlFor="admin-password" className="mb-1.5 block text-xs font-semibold">
+                {es ? "Contraseña inicial" : "Initial password"}
+              </label>
+              <input
+                id="admin-password"
+                name="password"
+                type="password"
+                required
+                minLength={12}
+                maxLength={256}
+                autoComplete="new-password"
+                className="ui-input w-full"
+                aria-describedby="admin-password-help"
+              />
+              <p id="admin-password-help" className="mt-1.5 text-[11px] text-[var(--text-muted)]">
+                {es
+                  ? "Mínimo 12 caracteres. Compártala por un canal seguro: Oculis no podrá mostrarla después."
+                  : "Minimum 12 characters. Share it through a secure channel: Oculis cannot display it later."}
+              </p>
+            </div>
+            <button disabled={busy} className="min-h-11 rounded-lg bg-[var(--accent)] px-4 text-sm font-semibold text-white disabled:opacity-50 sm:col-span-2">
+              {busy ? (es ? "Guardando…" : "Saving…") : es ? "Guardar administrador" : "Save administrator"}
+            </button>
+          </form>
+        ) : null}
+      </section>
+
+      {message ? (
+        <div
+          role={message.tone === "error" ? "alert" : "status"}
+          className={`mt-5 rounded-lg border px-4 py-3 text-sm ${message.tone === "error" ? "border-[var(--danger)] bg-[var(--danger-soft)] text-[var(--danger)]" : "border-[var(--verified)] bg-[var(--verified-soft)] text-[var(--verified)]"}`}
+        >
+          {message.text}
+        </div>
+      ) : null}
+
+      <section aria-label={es ? "Resumen de clientes" : "Client overview"} className="mt-8 grid gap-4 border-b pb-7 sm:grid-cols-3">
         <AdminStat
           icon={<Buildings size={20} aria-hidden="true" />}
           value={clients.length}
@@ -130,7 +278,7 @@ export function AdminClientManager({
         <AdminStat
           icon={<UsersThree size={20} aria-hidden="true" />}
           value={clients.reduce((sum, client) => sum + client.users.length, 0)}
-          label={es ? "Usuarios autorizados" : "Authorized users"}
+          label={es ? "Usuarios de clientes" : "Client users"}
         />
         <AdminStat
           icon={<List size={20} aria-hidden="true" />}
@@ -139,12 +287,13 @@ export function AdminClientManager({
         />
       </section>
 
-      <div className="mt-7 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+      <section aria-labelledby="client-access-title" className="mt-7">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="eyebrow text-[var(--accent)]">
             {es ? "Cartera de clientes" : "Client portfolio"}
           </p>
-          <h2 className="section-title mt-2">{es ? "Clientes y acceso" : "Clients and access"}</h2>
+          <h2 id="client-access-title" className="section-title mt-2">{es ? "Accesos de clientes" : "Client access"}</h2>
           <p className="mt-2 max-w-2xl text-sm leading-relaxed text-[var(--text-muted)]">
             {es
               ? "Cada cliente reúne sus usuarios autorizados y las iniciativas que FHC ha marcado como relevantes para su organización."
@@ -160,25 +309,8 @@ export function AdminClientManager({
             <Plus size={17} weight="bold" aria-hidden="true" />
             {es ? "Agregar cliente" : "Add client"}
           </button>
-          <button type="button" onClick={signOut} className="ui-button min-h-11 gap-2 px-4 text-sm">
-            <SignOut size={17} aria-hidden="true" />
-            {es ? "Cerrar sesión" : "Sign out"}
-          </button>
         </div>
       </div>
-
-      <p className="mt-3 text-xs text-[var(--text-muted)]">
-        {es ? `Sesión iniciada como ${adminName}.` : `Signed in as ${adminName}.`}
-      </p>
-
-      {message ? (
-        <div
-          role={message.tone === "error" ? "alert" : "status"}
-          className={`mt-5 rounded-lg border px-4 py-3 text-sm ${message.tone === "error" ? "border-[var(--danger)] bg-[var(--danger-soft)] text-[var(--danger)]" : "border-[var(--verified)] bg-[var(--verified-soft)] text-[var(--verified)]"}`}
-        >
-          {message.text}
-        </div>
-      ) : null}
 
       {addingClient ? (
         <form
@@ -442,6 +574,7 @@ export function AdminClientManager({
           </p>
         </div>
       )}
+      </section>
     </div>
   );
 }

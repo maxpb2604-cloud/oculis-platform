@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { AdminClientManager } from "@/components/admin-client-manager";
 import { AppShell } from "@/components/app-shell";
 import { getAdminSession } from "@/lib/admin-auth";
-import { getAdminClientSummaries } from "@/lib/data";
+import { getAdminClientSummaries, getAdminPortalUsers } from "@/lib/data";
 import { parseLang } from "@/lib/i18n";
 
 export const dynamic = "force-dynamic";
@@ -21,7 +21,10 @@ export default async function AdminPage({
   const lang = parseLang((await searchParams).lang);
   const session = await getAdminSession();
   if (!session) redirect(`/admin/login${lang === "en" ? "?lang=en" : ""}`);
-  const clients = await getAdminClientSummaries();
+  const [adminUsers, clients] = await Promise.all([
+    getAdminPortalUsers(),
+    getAdminClientSummaries(),
+  ]);
   const es = lang === "es";
 
   return (
@@ -30,11 +33,17 @@ export default async function AdminPage({
       title={es ? "Panel administrativo" : "Administrative panel"}
       subtitle={
         es
-          ? "Control privado de clientes, usuarios autorizados e iniciativas asignadas por el equipo FHC."
-          : "Private management of clients, authorized users, and initiatives assigned by the FHC team."
+          ? "Gestione por separado los accesos del equipo FHC, las cuentas de clientes y las iniciativas asignadas."
+          : "Manage FHC team access, client accounts, and assigned initiatives separately."
       }
     >
-      <AdminClientManager clients={clients} adminName={session.displayName} lang={lang} />
+      <AdminClientManager
+        adminUsers={adminUsers}
+        clients={clients}
+        adminName={session.displayName}
+        adminEmail={session.email}
+        lang={lang}
+      />
     </AppShell>
   );
 }

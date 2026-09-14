@@ -1,16 +1,59 @@
 import { describe, expect, it } from "vitest";
 import {
+  addAdminPortalUser,
   addClientPortalUser,
   createAdminPortalUserIfAbsent,
   createDb,
   createPortalClient,
   listActiveAdminClients,
   listAdminClientSummaries,
+  listAdminPortalUsers,
   upsertClientInitiativeAssignment,
 } from "../src/index.js";
 import { initiatives, regulations } from "../src/schema.js";
 
 describe("administrative client portal persistence", () => {
+  it("keeps FHC administrator accounts separate from client access and never lists hashes", async () => {
+    const handle = createDb();
+    try {
+      await handle.ensureSchema();
+      const client = await createPortalClient(handle.db, {
+        name: "Organización de prueba",
+        slug: "organizacion-de-prueba",
+      });
+      await addClientPortalUser(handle.db, {
+        clientId: client.id,
+        email: "persona@cliente.test",
+        displayName: "Persona cliente",
+        passwordHash: "client-secret-hash",
+      });
+      const admin = await addAdminPortalUser(handle.db, {
+        email: "EQUIPO@FHC.TEST",
+        displayName: "  Equipo   FHC  ",
+        passwordHash: "admin-secret-hash",
+      });
+
+      expect(admin).toEqual({
+        id: expect.any(Number),
+        email: "equipo@fhc.test",
+        displayName: "Equipo FHC",
+        active: true,
+        activationPending: false,
+      });
+      expect(await listAdminPortalUsers(handle.db)).toEqual([admin]);
+      expect(JSON.stringify(await listAdminPortalUsers(handle.db))).not.toContain("secret-hash");
+      await expect(
+        addAdminPortalUser(handle.db, {
+          email: "equipo@fhc.test",
+          displayName: "Otra persona",
+          passwordHash: "replacement-hash",
+        }),
+      ).rejects.toThrow();
+    } finally {
+      await handle.close();
+    }
+  });
+
   it("keeps clients, users, and legislative/regulatory assignments separated and update-safe", async () => {
     const handle = createDb();
     try {
