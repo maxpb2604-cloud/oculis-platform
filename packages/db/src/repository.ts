@@ -228,8 +228,10 @@ export interface InitiativeProponentBackfillCandidate {
 /**
  * Narrow, source-owned checkpoint reader for incremental congressional histories.
  *
- * The worker compares only literal official index fields retained in `raw`; this query
- * deliberately does not reuse a proponent-reconciliation contract or infer a signal
+ * The worker compares only literal official index fields retained in `raw`. For the
+ * two incremental sources, `raw` is a small JSON projection, not the complete
+ * retained snapshot. A row that actually needs a Cámara checkpoint must fetch its
+ * complete raw separately before merging observed collections. No signal is inferred
  * from generic `updated_at` timestamps.
  */
 export interface InitiativeMovementCheckpoint {
@@ -250,6 +252,31 @@ export async function listInitiativeMovementCheckpoints(
   const requestedLimit = Number.isSafeInteger(opts.limit) ? Math.trunc(opts.limit!) : 1_000;
   const limit = Math.min(1_000, Math.max(1, requestedLimit));
   const afterId = Number.isSafeInteger(opts.afterId) ? Math.max(0, Math.trunc(opts.afterId!)) : 0;
+  const signalRaw =
+    source === "sil-diputados"
+      ? sql<unknown>`case
+          when jsonb_typeof(${initiatives.raw} #> '{payload,list}') = 'object'
+            then jsonb_build_object('payload', jsonb_build_object('list', jsonb_build_object(
+              'id', ${initiatives.raw} #> '{payload,list,id}',
+              'estado', ${initiatives.raw} #> '{payload,list,estado}',
+              'fechaUltimoCambioPrincipal', ${initiatives.raw} #> '{payload,list,fechaUltimoCambioPrincipal}'
+            )))
+          else null
+        end`
+      : source === "senado-sil"
+        ? sql<unknown>`case
+            when jsonb_typeof(${initiatives.raw} #> '{payload,list}') = 'object'
+              then jsonb_build_object('payload', jsonb_build_object(
+                'list', jsonb_build_object('idExpediente', ${initiatives.raw} #> '{payload,list,idExpediente}'),
+                'ficha', case
+                  when jsonb_typeof(${initiatives.raw} #> '{payload,ficha}') = 'object'
+                    then jsonb_build_object('currentStatus', ${initiatives.raw} #> '{payload,ficha,currentStatus}')
+                  else null
+                end
+              ))
+            else null
+          end`
+        : initiatives.raw;
   return db
     .select({
       id: initiatives.id,
@@ -257,7 +284,7 @@ export async function listInitiativeMovementCheckpoints(
       sourceId: initiatives.sourceId,
       status: initiatives.status,
       officialStatusChangedAt: initiatives.officialStatusChangedAt,
-      raw: initiatives.raw,
+      raw: signalRaw,
     })
     .from(initiatives)
     .where(and(eq(initiatives.source, source), sql`${initiatives.id} > ${afterId}`))

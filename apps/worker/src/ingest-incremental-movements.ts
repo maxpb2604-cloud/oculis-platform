@@ -8,6 +8,7 @@
  */
 import {
   beginIngestionRun,
+  getInitiativeRawBySourceId,
   listInitiativeMovementCheckpoints,
   recordIngestionRun,
   reconcileStatusHistorySnapshot,
@@ -318,9 +319,18 @@ function currentDiputadosRaw(base: RawInitiative): Record<string, unknown> {
 async function checkpointDiputadosList(
   db: Database,
   base: RawInitiative,
-  priorRaw: unknown,
+  prior: StoredIndexSnapshot | undefined,
   history?: readonly SilHistorico[],
 ): Promise<void> {
+  // The bulk checkpoint reader carries only signal fields. Read the complete
+  // retained snapshot for rows we actually write so unrelated official collections
+  // and their provenance survive the list refresh.
+  const priorRaw = prior
+    ? await getInitiativeRawBySourceId(db, DIPUTADOS_INITIATIVE_SOURCE, base.sourceId)
+    : undefined;
+  if (prior && priorRaw === undefined) {
+    throw new Error(`Cámara retained snapshot disappeared for ${base.sourceId}`);
+  }
   const observation = currentDiputadosRaw(base);
   if (history) {
     (observation.payload as Record<string, unknown>).historicos = history;
@@ -531,7 +541,7 @@ export async function ingestIncrementalDiputadosMovements(
       const previousSignal = prior ? storedDiputadosSignal(prior.raw, base.sourceId) : null;
       if (!prior || !previousSignal) {
         try {
-          await checkpointDiputadosList(db, base, prior?.raw);
+          await checkpointDiputadosList(db, base, prior);
           baselined++;
         } catch (error) {
           baselineFailures++;
@@ -589,7 +599,7 @@ export async function ingestIncrementalDiputadosMovements(
         statusEventsInserted += reconciled.inserted;
         statusEventsReactivated += reconciled.reactivated;
         statusEventsRetired += reconciled.retired;
-        await checkpointDiputadosList(db, base, prior.raw, history);
+        await checkpointDiputadosList(db, base, prior, history);
         verified++;
       } catch (error) {
         requestFailures++;

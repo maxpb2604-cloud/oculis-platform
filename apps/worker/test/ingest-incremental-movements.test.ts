@@ -4,6 +4,7 @@ import {
   countInitiatives,
   createDb,
   getInitiativeById,
+  getInitiativeRawBySourceId,
   upsertInitiative,
   type Database,
 } from "@oculis/db";
@@ -122,7 +123,11 @@ function senateAdapter(
   };
 }
 
-async function seedDiputados(db: Database, row: SilIniciativa): Promise<number> {
+async function seedDiputados(
+  db: Database,
+  row: SilIniciativa,
+  retainedPayload: Record<string, unknown> = {},
+): Promise<number> {
   const raw = mapSilInitiative(row);
   const result = await upsertInitiative(db, {
     source: raw.source,
@@ -135,7 +140,10 @@ async function seedDiputados(db: Database, row: SilIniciativa): Promise<number> 
     sourceChamber: raw.sourceChamber,
     filedAt: raw.filedAt,
     sourceUrl: raw.sourceUrl,
-    raw: { payload: { list: row }, provenance: { observedCollections: ["list"] } },
+    raw: {
+      payload: { ...retainedPayload, list: row },
+      provenance: { observedCollections: ["list", ...Object.keys(retainedPayload)] },
+    },
   });
   return result.id;
 }
@@ -224,6 +232,61 @@ describe("incremental congressional movements", () => {
         senDetail?.events.map((event) => event.eventDate),
         ["2026-08-28", "2026-09-01"],
       );
+    } finally {
+      await handle.close();
+    }
+  });
+
+  it("keeps Cámara detail collections through a changed-history checkpoint", async () => {
+    const handle = createDb();
+    try {
+      await handle.ensureSchema();
+      const sourceId = "159665";
+      const retainedDetail = { officialDocument: "retained detail ".repeat(2_000) };
+      await seedDiputados(handle.db, diputadosRow("Depositado", "2026-08-20T10:00:00"), {
+        detalle: retainedDetail,
+      });
+      const changed = mapSilInitiative(diputadosRow("En Comisión", "2026-09-01T15:30:00"));
+      const history: SilHistorico[] = [
+        { id: 1, estado: "Depositado", inicio: "2026-08-20T00:00:00", fin: null },
+        { id: 2, estado: "En Comisión", inicio: "2026-09-01T00:00:00", fin: null },
+      ];
+      const summary = await ingestIncrementalDiputadosMovements(handle.db, {
+        adapter: diputadosAdapter([changed], new Map([[sourceId, history]]), []),
+        delayMs: 0,
+      });
+      assert.equal(summary.verified, 1);
+      const raw = (await getInitiativeRawBySourceId(handle.db, "sil-diputados", sourceId)) as {
+        payload: Record<string, unknown>;
+        provenance: Record<string, unknown>;
+      };
+      assert.deepEqual(raw.payload.detalle, retainedDetail);
+      assert.deepEqual(raw.payload.historicos, history);
+      assert.deepEqual(raw.provenance.retainedCollections, ["detalle"]);
+    } finally {
+      await handle.close();
+    }
+  });
+
+  it("keeps Cámara detail collections when replacing an incomplete stored baseline", async () => {
+    const handle = createDb();
+    try {
+      await handle.ensureSchema();
+      const sourceId = "159665";
+      const retainedDetail = { officialDocument: "retained detail ".repeat(2_000) };
+      await seedDiputados(handle.db, diputadosRow("Depositado", null), {
+        detalle: retainedDetail,
+      });
+      const fresh = mapSilInitiative(diputadosRow("Depositado", "2026-09-01T15:30:00"));
+      const summary = await ingestIncrementalDiputadosMovements(handle.db, {
+        adapter: diputadosAdapter([fresh], new Map(), []),
+        delayMs: 0,
+      });
+      assert.equal(summary.baselined, 1);
+      const raw = (await getInitiativeRawBySourceId(handle.db, "sil-diputados", sourceId)) as {
+        payload: Record<string, unknown>;
+      };
+      assert.deepEqual(raw.payload.detalle, retainedDetail);
     } finally {
       await handle.close();
     }
@@ -665,11 +728,7 @@ describe("incremental congressional movements", () => {
       facts.initiativeCode = "01886-2026-PLO-SE";
 
       const summary = await ingestIncrementalSenadoMovements(handle.db, {
-        adapter: senateAdapter(
-          [fresh],
-          new Map([[fresh.idExpediente!, facts]]),
-          calls,
-        ),
+        adapter: senateAdapter([fresh], new Map([[fresh.idExpediente!, facts]]), calls),
         fichaDelayMs: 0,
       });
 

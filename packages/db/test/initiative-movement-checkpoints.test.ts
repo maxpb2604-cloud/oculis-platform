@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { createDb, listInitiativeMovementCheckpoints, upsertInitiative } from "../src/index.js";
+import {
+  createDb,
+  getInitiativeRawBySourceId,
+  listInitiativeMovementCheckpoints,
+  upsertInitiative,
+} from "../src/index.js";
 
 describe("initiative movement checkpoints", () => {
   it("is source-isolated and supports stable id keyset batches", async () => {
@@ -52,6 +57,76 @@ describe("initiative movement checkpoints", () => {
       });
       expect(pageTwo.map((row) => row.id)).toEqual([second.id]);
       expect(pageTwo.every((row) => row.source === "sil-diputados")).toBe(true);
+    } finally {
+      await handle.close();
+    }
+  });
+
+  it("returns only literal movement signal fields for each chamber without altering stored raw", async () => {
+    const handle = createDb();
+    try {
+      await handle.ensureSchema();
+      const large = "retained official detail ".repeat(5_000);
+      const diputadosRaw = {
+        payload: {
+          list: {
+            id: 159665,
+            estado: "En Comisión",
+            fechaUltimoCambioPrincipal: "2026-09-01T15:30:00",
+            descripcion: large,
+          },
+          historicos: [{ id: 2, estado: "En Comisión", evidence: large }],
+          detalle: { document: large },
+        },
+        provenance: { retainedCollections: ["historicos", "detalle"] },
+      };
+      const senadoRaw = {
+        payload: {
+          list: { idExpediente: "40100", status: "Enviada a Comisión", description: large },
+          ficha: { currentStatus: "Depositada", historyLiteral: large },
+        },
+        provenance: { retainedCollections: ["ficha"] },
+      };
+      await upsertInitiative(handle.db, {
+        source: "sil-diputados",
+        sourceId: "159665",
+        kind: "LEGISLATIVE",
+        title: "Diputados",
+        raw: diputadosRaw,
+      });
+      await upsertInitiative(handle.db, {
+        source: "senado-sil",
+        sourceId: "40100",
+        kind: "LEGISLATIVE",
+        title: "Senado",
+        raw: senadoRaw,
+      });
+
+      const [diputados] = await listInitiativeMovementCheckpoints(handle.db, {
+        source: "sil-diputados",
+      });
+      const [senado] = await listInitiativeMovementCheckpoints(handle.db, {
+        source: "senado-sil",
+      });
+      expect(diputados?.raw).toEqual({
+        payload: {
+          list: {
+            id: 159665,
+            estado: "En Comisión",
+            fechaUltimoCambioPrincipal: "2026-09-01T15:30:00",
+          },
+        },
+      });
+      expect(senado?.raw).toEqual({
+        payload: {
+          list: { idExpediente: "40100" },
+          ficha: { currentStatus: "Depositada" },
+        },
+      });
+      expect(await getInitiativeRawBySourceId(handle.db, "sil-diputados", "159665")).toEqual(
+        diputadosRaw,
+      );
+      expect(await getInitiativeRawBySourceId(handle.db, "senado-sil", "40100")).toEqual(senadoRaw);
     } finally {
       await handle.close();
     }
