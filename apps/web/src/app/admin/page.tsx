@@ -20,7 +20,7 @@ export default async function AdminPage({
 }) {
   const lang = parseLang((await searchParams).lang);
   const session = await getAdminSession();
-  if (!session) redirect(`/admin/login${lang === "en" ? "?lang=en" : ""}`);
+  if (!session) redirect(`/${lang === "en" ? "?lang=en" : ""}#acceso`);
   const [adminUsers, clients] = await Promise.all([
     getAdminPortalUsers(),
     getAdminClientSummaries(),

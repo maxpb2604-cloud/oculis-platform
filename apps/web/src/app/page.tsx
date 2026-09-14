@@ -1,12 +1,12 @@
 import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
-import { ArrowRight, CheckCircle, FileMagnifyingGlass, ShieldCheck } from "@/components/ui/icons";
+import { ArrowRight, FileMagnifyingGlass, ShieldCheck } from "@/components/ui/icons";
 import { LandingShowcase } from "@/components/landing-showcase";
 import { parseLang } from "@/lib/i18n";
 
 export const dynamic = "force-dynamic";
-type PageProps = { searchParams: Promise<{ lang?: string }> };
+type PageProps = { searchParams: Promise<{ lang?: string; error?: string }> };
 
 export async function generateMetadata({ searchParams }: PageProps): Promise<Metadata> {
   const es = parseLang((await searchParams).lang) === "es";
@@ -19,7 +19,8 @@ export async function generateMetadata({ searchParams }: PageProps): Promise<Met
 }
 
 export default async function LandingPage({ searchParams }: PageProps) {
-  const lang = parseLang((await searchParams).lang);
+  const params = await searchParams;
+  const lang = parseLang(params.lang);
   const es = lang === "es";
   const q = es ? "" : "?lang=en";
 
@@ -55,9 +56,9 @@ export default async function LandingPage({ searchParams }: PageProps) {
             >
               <a href="#plataforma">{es ? "La plataforma" : "The platform"}</a>
               <a href="#metodo">{es ? "Nuestro método" : "Our method"}</a>
-              <Link className="landing-nav-login" href={`/login${q}`}>
+              <a className="landing-nav-login" href="#acceso">
                 {es ? "Iniciar sesión" : "Sign in"} <ArrowRight size={16} aria-hidden="true" />
-              </Link>
+              </a>
             </nav>
           </header>
 
@@ -84,10 +85,10 @@ export default async function LandingPage({ searchParams }: PageProps) {
                   : "Follow initiatives, congressional movements, and committee agendas in one place. Every important fact keeps a path back to its official source."}
               </p>
               <div className="landing-hero-actions">
-                <Link href={`/login${q}`} className="landing-button landing-button-primary">
+                <a href="#acceso" className="landing-button landing-button-primary">
                   {es ? "Entrar a Oculis" : "Enter Oculis"}{" "}
                   <ArrowRight size={20} aria-hidden="true" />
-                </Link>
+                </a>
                 <a href="#plataforma" className="landing-button landing-button-ghost">
                   {es ? "Conocer la plataforma" : "Explore the platform"}
                 </a>
@@ -100,33 +101,75 @@ export default async function LandingPage({ searchParams }: PageProps) {
               </p>
             </div>
 
-            <div
-              className="landing-signal-card"
-              aria-label={es ? "Vista de capacidades de Oculis" : "Oculis capabilities preview"}
+            <section
+              id="acceso"
+              className="portal-login-card landing-login-card"
+              aria-labelledby="landing-login-title"
             >
-              <div className="landing-signal-top">
-                <span className="landing-signal-pulse" aria-hidden="true" />
-                <span>{es ? "UNA LECTURA MÁS CLARA" : "A CLEARER VIEW"}</span>
-                <span aria-hidden="true">✦</span>
+              <div className="portal-login-card-icon">
+                <ShieldCheck size={25} weight="duotone" aria-hidden="true" />
               </div>
-              {[
-                es ? "Movimientos legislativos" : "Legislative movements",
-                es ? "Comisiones y agendas" : "Committees and agendas",
-                es ? "Actividad regulatoria" : "Regulatory activity",
-              ].map((label, index) => (
-                <div className="landing-signal-line" key={label}>
-                  <span>0{index + 1}</span>
-                  <strong>{label}</strong>
-                  <ArrowRight size={18} aria-hidden="true" />
-                </div>
-              ))}
-              <div className="landing-signal-foot">
-                <CheckCircle size={17} weight="fill" aria-hidden="true" />
+              <p className="landing-eyebrow">{es ? "ACCESO A OCULIS" : "OCULIS ACCESS"}</p>
+              <h2 id="landing-login-title">{es ? "Iniciar sesión" : "Sign in"}</h2>
+              <p className="portal-login-card-copy">
                 {es
-                  ? "Del hecho publicado a la decisión informada"
-                  : "From published fact to informed decision"}
-              </div>
-            </div>
+                  ? "Entre con su cuenta FHC o de cliente. Oculis lo llevará a su espacio correspondiente."
+                  : "Use your FHC or client account. Oculis will take you to your own space."}
+              </p>
+              {params.error === "1" && (
+                <div role="alert" className="portal-login-error">
+                  {es
+                    ? "No pudimos iniciar sesión. Revise sus credenciales e inténtelo de nuevo."
+                    : "We could not sign you in. Check your credentials and try again."}
+                </div>
+              )}
+              {params.error === "unavailable" && (
+                <div role="alert" className="portal-login-error">
+                  {es
+                    ? "El servicio de acceso no está disponible en este momento. Su contraseña no ha sido rechazada; inténtelo más tarde."
+                    : "The sign-in service is temporarily unavailable. Your password has not been rejected; please try again later."}
+                </div>
+              )}
+              {params.error === "limited" && (
+                <div role="alert" className="portal-login-error">
+                  {es
+                    ? "Demasiados intentos desde esta conexión. Espere 15 minutos antes de volver a intentar."
+                    : "Too many attempts from this connection. Please wait 15 minutes before trying again."}
+                </div>
+              )}
+              <form action="/api/portal/session" method="post" className="portal-login-form">
+                <input type="hidden" name="lang" value={lang} />
+                <label htmlFor="landing-email">{es ? "Correo electrónico" : "Email address"}</label>
+                <input
+                  id="landing-email"
+                  name="email"
+                  type="email"
+                  required
+                  maxLength={254}
+                  autoComplete="username"
+                  placeholder="nombre@empresa.com"
+                />
+                <label htmlFor="landing-password">{es ? "Contraseña" : "Password"}</label>
+                <input
+                  id="landing-password"
+                  name="password"
+                  type="password"
+                  required
+                  minLength={12}
+                  maxLength={256}
+                  autoComplete="current-password"
+                />
+                <button type="submit">
+                  {es ? "Entrar a mi espacio" : "Enter my space"}
+                  <ArrowRight size={19} aria-hidden="true" />
+                </button>
+              </form>
+              <p className="portal-login-help">
+                {es
+                  ? "¿No tiene acceso? Solicite una cuenta al equipo FHC."
+                  : "Need access? Request an account from the FHC team."}
+              </p>
+            </section>
           </div>
           <div className="landing-hero-bottom">
             <span>{es ? "REPÚBLICA DOMINICANA" : "DOMINICAN REPUBLIC"}</span>
@@ -219,9 +262,9 @@ export default async function LandingPage({ searchParams }: PageProps) {
               : "The FHC team and each client access Oculis with their own credentials."}
           </p>
         </div>
-        <Link href={`/login${q}`} className="landing-button landing-button-primary">
+        <a href="#acceso" className="landing-button landing-button-primary">
           {es ? "Iniciar sesión" : "Sign in"} <ArrowRight size={19} aria-hidden="true" />
-        </Link>
+        </a>
       </section>
       <footer className="landing-footer">
         <div className="landing-container landing-footer-inner">

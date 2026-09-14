@@ -52,7 +52,7 @@ describe("POST /api/portal/session", () => {
 
     expect(response.status).toBe(303);
     expect(response.headers.get("location")).toBe(
-      "http://localhost:3001/login?error=unavailable",
+      "http://localhost:3001/?error=unavailable#acceso",
     );
     expect(authenticateClient).not.toHaveBeenCalled();
   });
@@ -64,9 +64,7 @@ describe("POST /api/portal/session", () => {
     const response = await POST(signInRequest("192.0.2.11", "en"));
 
     expect(response.status).toBe(303);
-    expect(response.headers.get("location")).toBe(
-      "http://localhost:3001/login?error=1&lang=en",
-    );
+    expect(response.headers.get("location")).toBe("http://localhost:3001/?error=1&lang=en#acceso");
   });
 
   it("identifies the temporary attempt limit instead of reporting a bad password", async () => {
@@ -76,9 +74,44 @@ describe("POST /api/portal/session", () => {
     for (let n = 0; n < 8; n++) await POST(signInRequest("192.0.2.12"));
     const response = await POST(signInRequest("192.0.2.12"));
 
-    expect(response.headers.get("location")).toBe(
-      "http://localhost:3001/login?error=limited",
-    );
+    expect(response.headers.get("location")).toBe("http://localhost:3001/?error=limited#acceso");
     expect(authenticateAdmin).toHaveBeenCalledTimes(8);
+  });
+
+  it("routes administrators to their private panel", async () => {
+    authenticateAdmin.mockResolvedValue({ id: "admin-1" });
+
+    const response = await POST(signInRequest("192.0.2.13", "en"));
+
+    expect(response.headers.get("location")).toBe("http://localhost:3001/admin?lang=en");
+    expect(response.cookies.get("oculis_admin_session")?.value).toBe("admin-test-token");
+    expect(authenticateClient).not.toHaveBeenCalled();
+  });
+
+  it("routes clients to their private space", async () => {
+    authenticateAdmin.mockResolvedValue(null);
+    authenticateClient.mockResolvedValue({ id: "client-1" });
+
+    const response = await POST(signInRequest("192.0.2.14"));
+
+    expect(response.headers.get("location")).toBe("http://localhost:3001/cliente");
+    expect(response.cookies.get("oculis_client_session")?.value).toBe("client-test-token");
+  });
+
+  it("returns logout to the landing access form", async () => {
+    const response = await POST(
+      new NextRequest("http://localhost:3001/api/portal/session", {
+        method: "POST",
+        headers: {
+          origin: "http://localhost:3001",
+          "content-type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams({ intent: "logout", lang: "en" }).toString(),
+      }),
+    );
+
+    expect(response.headers.get("location")).toBe("http://localhost:3001/?lang=en#acceso");
+    expect(response.cookies.get("oculis_admin_session")?.value).toBe("");
+    expect(response.cookies.get("oculis_client_session")?.value).toBe("");
   });
 });

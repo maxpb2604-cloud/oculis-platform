@@ -22,7 +22,7 @@ export default async function ClientPage({
   const es = lang === "es";
   const q = es ? "" : "?lang=en";
   const session = await getClientSession();
-  if (!session) redirect(`/login${q}`);
+  if (!session) redirect(`/${q}#acceso`);
   const assignments = await getClientAssignedInitiatives(session.client.id);
 
   return (
