@@ -347,6 +347,13 @@ function normalizedEvidenceText(value: string): string {
   return value.normalize("NFC").replace(/\s+/g, " ").trim().toLocaleLowerCase("es");
 }
 
+/**
+ * Literal placeholders emitted by the SIL activity endpoints when the detailed agenda
+ * has not been copied into their `descripcion` field. These are not guessed synonyms:
+ * only an exact normalized upstream value may use the commission-row evidence path.
+ */
+const SIL_ACTIVITY_DESCRIPTION_PLACEHOLDERS = new Set(["pendiente"]);
+
 function escapedRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -361,8 +368,11 @@ function displayDate(isoDate: string): string | null {
  *
  * A generic word such as "Trabajo" or "Salud" elsewhere in the PDF is not evidence.
  * The complete commission name must be immediately followed by the row date (the
- * official table heading), and the row description or every literal initiative code
- * from that description must also occur in the document. No fuzzy matching is used.
+ * official table heading), and that heading must occur exactly once. Ordinarily the row
+ * description or every literal initiative code from that description must also occur in
+ * the document. The sole exception is a literal, enumerated SIL placeholder such as
+ * `Pendiente`: in that case the unique commission+date row is the evidence because the
+ * SIL did not publish agenda text to compare. No fuzzy matching is used.
  */
 export function commissionAppearsInAgendaPdf(
   commission: string | null | undefined,
@@ -373,7 +383,7 @@ export function commissionAppearsInAgendaPdf(
   matched: boolean;
   evidenceType: "COMMISSION_CODE" | "COMMISSION_NAME" | null;
   evidence: string | null;
-  agendaEvidenceType: "DESCRIPTION" | "INITIATIVE_CODES" | null;
+  agendaEvidenceType: "DESCRIPTION" | "INITIATIVE_CODES" | "SOURCE_PLACEHOLDER" | null;
   agendaEvidence: string[] | null;
 } {
   const literal = commission?.trim();
@@ -397,9 +407,10 @@ export function commissionAppearsInAgendaPdf(
   // selected "Trabajo" matching only "Comisión Especial de Trabajo".
   const exactHeading = new RegExp(
     `(?:^|\\s)\\d{1,3}\\s+${escapedRegExp(normalizedCommission)}\\s+${escapedRegExp(formattedDate.toLocaleLowerCase("es"))}(?=\\s|$)`,
-    "u",
+    "gu",
   );
-  if (!exactHeading.test(normalizedPdf)) {
+  const headingMatches = [...normalizedPdf.matchAll(exactHeading)];
+  if (headingMatches.length !== 1) {
     return {
       matched: false,
       evidenceType: null,
@@ -415,7 +426,8 @@ export function commissionAppearsInAgendaPdf(
     normalizedDescription.length >= 12 && normalizedPdf.includes(normalizedDescription);
   const exactDescriptionCodes =
     descriptionCodes.length > 0 && descriptionCodes.every((code) => pdfCodes.has(code));
-  if (!exactDescription && !exactDescriptionCodes) {
+  const sourcePlaceholder = SIL_ACTIVITY_DESCRIPTION_PLACEHOLDERS.has(normalizedDescription);
+  if (!exactDescription && !exactDescriptionCodes && !sourcePlaceholder) {
     return {
       matched: false,
       evidenceType: null,
@@ -430,8 +442,16 @@ export function commissionAppearsInAgendaPdf(
     matched: true,
     evidenceType: commissionCode ? "COMMISSION_CODE" : "COMMISSION_NAME",
     evidence: commissionCode ?? literal,
-    agendaEvidenceType: exactDescription ? "DESCRIPTION" : "INITIATIVE_CODES",
-    agendaEvidence: exactDescription ? null : descriptionCodes,
+    agendaEvidenceType: exactDescription
+      ? "DESCRIPTION"
+      : exactDescriptionCodes
+        ? "INITIATIVE_CODES"
+        : "SOURCE_PLACEHOLDER",
+    agendaEvidence: exactDescription
+      ? null
+      : exactDescriptionCodes
+        ? descriptionCodes
+        : [literalDescription],
   };
 }
 

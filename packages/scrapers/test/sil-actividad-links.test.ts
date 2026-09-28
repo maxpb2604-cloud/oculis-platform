@@ -251,6 +251,78 @@ describe("sil-actividad: exact committee destinations", () => {
       "no tuvieron evidencia literal suficiente de la comisión y su agenda",
     );
   });
+
+  it("links a unique date-matched PDF when SIL publishes the literal Pendiente placeholder", async () => {
+    const pendingOrder: SilComisionOrden = {
+      fecha: "2026-09-28T00:00:00",
+      descripcion: "Pendiente",
+      tipo: "Reunión",
+      nombreComision: "Asuntos Municipales",
+      periodoLegislativo: 2761,
+    };
+    const pendingCalendar: SilAgendaActividad = {
+      id: 162381,
+      comision: "Asuntos Municipales",
+      tipoActividad: "Reunión",
+      start: "2026-09-28T13:00:00",
+      descripcion: "Pendiente",
+    };
+    const pendingDocument: CommissionAgendaDocument = {
+      ...dailyAgendaDocument,
+      sourceId: "2252:29125",
+      categoryId: 2252,
+      categoryTitle: "septiembre",
+      fileId: 29125,
+      title: "Agenda del 28 de septiembre de 2026",
+      slug: "agenda-del-28-de-septiembre-de-2026-2",
+      agendaDate: "2026-09-28",
+      downloadUrl:
+        "https://camaradediputados.gob.do/download/2252/septiembre/29125/agenda-del-28-de-septiembre-de-2026-2.pdf",
+      previewUrl:
+        "https://camaradediputados.gob.do/wp-admin/admin-ajax.php?juwpfisadmin=false&action=wpfd&task=file.download&wpfd_category_id=2252&wpfd_file_id=29125&token=&preview=1",
+    };
+    const fetchMock = vi.fn(async (input: string | URL | Request) => {
+      const url = new URL(String(input));
+      if (url.pathname.endsWith("/comision/ordenes")) return json(page([pendingOrder]));
+      if (url.pathname.endsWith("/actividad/AgendaActividad")) return json([pendingCalendar]);
+      if (url.pathname.endsWith("/actividad/actividad/162381")) {
+        return json({ ubicacion: "Salón Rafaela Alburquerque", comisionId: 4035 });
+      }
+      throw new Error(`Unexpected test URL: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await new SilActividadAdapter(API_ROOT, {
+      resolveDates: async (dates) => ({
+        documentsByDate: new Map(
+          dates.map((date) => [date, date === "2026-09-28" ? pendingDocument : null]),
+        ),
+        pdfTextBySourceId: new Map([
+          [
+            pendingDocument.sourceId,
+            "Agenda diaria\n5 Asuntos Municipales 28/09/2026\nPresentar las iniciativas Nos.06279-2024-2028-CD y 06302-2024-2028-CD",
+          ],
+        ]),
+        gaps: [],
+      }),
+    }).committeeOrders();
+
+    expect(result.events[0]).toMatchObject({
+      sourceEventId: "162381",
+      agendaUrl: pendingDocument.previewUrl,
+      description: "Pendiente",
+      raw: {
+        dailyAgendaVerification: {
+          matched: true,
+          evidenceType: "COMMISSION_NAME",
+          agendaEvidenceType: "SOURCE_PLACEHOLDER",
+          agendaEvidence: ["Pendiente"],
+        },
+        provenance: { agendaDestination: pendingDocument.previewUrl },
+      },
+    });
+    expect(result.gap).toBeUndefined();
+  });
 });
 
 const dailyAgendaDocument: CommissionAgendaDocument = {

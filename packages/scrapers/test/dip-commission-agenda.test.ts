@@ -272,6 +272,32 @@ describe("dip-commission-agenda PDF commission evidence", () => {
     ).toMatchObject({ matched: true, evidenceType: "COMMISSION_NAME" });
   });
 
+  it("accepts the literal SIL placeholder only with one exact commission-and-date row", () => {
+    const exactRow =
+      "Agenda diaria\n5 Asuntos Municipales 28/09/2026\nPresentar las iniciativas Nos.06279-2024-2028-CD y 06302-2024-2028-CD";
+    expect(
+      commissionAppearsInAgendaPdf("Asuntos Municipales", "Pendiente", "2026-09-28", exactRow),
+    ).toMatchObject({
+      matched: true,
+      evidenceType: "COMMISSION_NAME",
+      evidence: "Asuntos Municipales",
+      agendaEvidenceType: "SOURCE_PLACEHOLDER",
+      agendaEvidence: ["Pendiente"],
+    });
+
+    expect(
+      commissionAppearsInAgendaPdf(
+        "Asuntos Municipales",
+        "Pendiente",
+        "2026-09-28",
+        `${exactRow}\n9 Asuntos Municipales 28/09/2026\nOtra reunión`,
+      ),
+    ).toMatchObject({ matched: false });
+    expect(
+      commissionAppearsInAgendaPdf("Asuntos Municipales", "Por confirmar", "2026-09-28", exactRow),
+    ).toMatchObject({ matched: false });
+  });
+
   it("does not fuzzy-match a commission or agenda description absent from the PDF", () => {
     expect(
       commissionAppearsInAgendaPdf(
