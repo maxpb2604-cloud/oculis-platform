@@ -6,6 +6,7 @@ import {
   ingestIncrementalMovements,
 } from "./ingest-incremental-movements.js";
 import { assertSourcesOk } from "./reliability.js";
+import { prepareWorkerSchema } from "./schema-bootstrap.js";
 
 loadEnv();
 
@@ -13,7 +14,7 @@ async function main(): Promise<void> {
   const { db, ensureSchema, close } = createDb();
   const started = Date.now();
   try {
-    await ensureSchema();
+    await prepareWorkerSchema({ ensureSchema }, { log: (message) => console.log(message) });
     const summary = await ingestIncrementalMovements(db, {
       log: (message) => console.log(message),
     });

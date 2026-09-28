@@ -28,6 +28,7 @@ import { ingestFeed } from "./ingest-feed.js";
 import { seedFeedAccounts } from "./feed-accounts.seed.js";
 import { linkInitiativeProponents } from "./link-initiative-proponents.js";
 import { numericArg } from "./cli.js";
+import { prepareWorkerSchema } from "./schema-bootstrap.js";
 import {
   assertRequiredSourcesOk,
   assertSourcesOk,
@@ -142,7 +143,7 @@ async function main() {
   const { db, ensureSchema, close } = createDb();
   const started = Date.now();
   try {
-    await ensureSchema();
+    await prepareWorkerSchema({ ensureSchema }, { log: (message) => console.log(message) });
 
     if (flag("link-initiative-proponents")) {
       const batchSize = numericArg(process.argv, "batch-size", { min: 1, max: 1_000 });

@@ -27,6 +27,7 @@ import {
   type PdfTextExtractor,
 } from "./official-document-pdf.js";
 import { loadEnv } from "./env.js";
+import { prepareWorkerSchema } from "./schema-bootstrap.js";
 
 export interface VerifyDocumentsBatchOptions {
   documentId?: number;
@@ -511,7 +512,7 @@ async function main(): Promise<void> {
   console.log("▶ Oculis · verificación factual de PDF oficiales (sin IA)");
   const handle = createDb();
   try {
-    await handle.ensureSchema();
+    await prepareWorkerSchema(handle, { log: (message) => console.log(message) });
     if (all) {
       const result = await runDocumentPdfVerificationCycle(handle.db, {
         pageSize: limit,

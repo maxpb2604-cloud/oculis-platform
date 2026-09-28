@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "db:bootstrap": "tsx src/bootstrap-schema.ts",
     "ingest": "tsx src/index.ts",
     "ingest:demo": "tsx src/index.ts --limit 25 --enrich",
     "crawl": "tsx src/index.ts --pages 2 --enrich --delay 120",

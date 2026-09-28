@@ -49,6 +49,11 @@ jobs:
     timeout-minutes: 180
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      # One explicit step below owns schema bootstrap for this run. Every ingestion
+      # process then skips replaying the full idempotent DDL catalog.
+      OCULIS_AUTO_MIGRATE: "0"
+      PG_POOL_MAX: "1"
+      OCULIS_DB_APP_NAME: oculis-github-ingestion
 
     steps:
       - name: Checkout
@@ -63,9 +68,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Verify database configuration
+      - name: Verify database configuration and bootstrap schema once
         id: database_config
-        run: test -n "$DATABASE_URL"
+        run: |
+          test -n "$DATABASE_URL"
+          npm run db:bootstrap -w @oculis/worker
 
       # Deposited documents can appear days or weeks after the initiative. This lane
       # is keyed by exact official initiative id, never by filing date or title.

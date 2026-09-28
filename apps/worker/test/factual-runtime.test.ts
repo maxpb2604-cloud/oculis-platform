@@ -260,6 +260,25 @@ function workflowStep(workflow: string, id: string): string {
 }
 
 describe("cloud monitoring lanes", () => {
+  it("bootstraps the cloud schema once and makes every later lane reuse it", () => {
+    const workflow = cloudWorkflow();
+    const preflight = workflowStep(workflow, "database_config");
+
+    assert.match(workflow, /OCULIS_AUTO_MIGRATE: "0"/);
+    assert.match(workflow, /PG_POOL_MAX: "1"/);
+    assert.match(workflow, /OCULIS_DB_APP_NAME: oculis-github-ingestion/);
+    assert.match(preflight, /test -n "\$DATABASE_URL"/);
+    assert.match(preflight, /npm run db:bootstrap -w @oculis\/worker/);
+    assert.doesNotMatch(preflight, /continue-on-error/);
+    assert.equal(workflow.match(/npm run db:bootstrap -w @oculis\/worker/g)?.length, 1);
+
+    const guardedLanes = workflow.match(/steps\.database_config\.outcome == 'success'/g) ?? [];
+    assert.ok(
+      guardedLanes.length >= 20,
+      "every ingestion lane must remain fail-closed on preflight",
+    );
+  });
+
   it("registers both movement detectors and both deposited-document processes as required", () => {
     assert.deepEqual(REQUIRED_SOURCE_SETS.incrementalMovements, [
       "sil-movements-incremental",
