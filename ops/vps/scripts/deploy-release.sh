@@ -64,10 +64,6 @@ if [[ "$deploy_tests" != "0" && "$deploy_tests" != "1" ]]; then
   echo "OCULIS_DEPLOY_TESTS must be 0 or 1" >&2
   exit 78
 fi
-if [[ ! -r "$env_file" ]]; then
-  echo "cannot read deployment environment: $env_file" >&2
-  exit 78
-fi
 if (( EUID != 0 )); then
   echo "deploy-release.sh must be invoked by the trusted root wrapper" >&2
   exit 77
@@ -82,6 +78,26 @@ if [[ ! -x /usr/sbin/runuser ]]; then
   echo "required command not found: /usr/sbin/runuser" >&2
   exit 69
 fi
+
+validate_runtime_env_file() {
+  local path="$1"
+  local metadata owner group mode links
+  if [[ "$path" != /* || ! -f "$path" || -L "$path" || ! -r "$path" ]]; then
+    echo "runtime environment must be a readable regular file, not a symlink: $path" >&2
+    exit 78
+  fi
+  if ! metadata="$(stat -c '%u:%g:%a:%h' -- "$path")"; then
+    echo "cannot inspect runtime environment: $path" >&2
+    exit 78
+  fi
+  IFS=: read -r owner group mode links <<<"$metadata"
+  if [[ "$owner" != "0" || "$group" != "0" || "$mode" != "600" || "$links" != "1" ]]; then
+    echo "runtime environment must be root:root mode 0600 with exactly one hard link: $path" >&2
+    exit 78
+  fi
+}
+
+validate_runtime_env_file "$env_file"
 if ! id -u "$build_user" >/dev/null 2>&1; then
   echo "dedicated build user is unavailable: $build_user" >&2
   exit 69
@@ -309,6 +325,7 @@ install -d -o oculis -g oculis -m 0750 "$incoming/apps/web/.next/cache"
 
 # Only after dependencies, tests and build are complete may trusted runtime code
 # receive the protected database/session configuration.
+validate_runtime_env_file "$env_file"
 set -a
 # shellcheck disable=SC1090
 source "$env_file"

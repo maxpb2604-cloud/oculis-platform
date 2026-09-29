@@ -23,10 +23,6 @@ if [[ "$service_name" == -* || ! "$service_name" =~ ^[A-Za-z0-9_.@-]+\.service$ 
   echo "OCULIS_WEB_SERVICE must be a systemd .service unit name" >&2
   exit 78
 fi
-if [[ ! -r "$env_file" ]]; then
-  echo "cannot read runtime environment: $env_file" >&2
-  exit 78
-fi
 if [[ ! "$ingestion_lock_wait" =~ ^[0-9]+$ ]]; then
   echo "OCULIS_INGEST_LOCK_WAIT_SECONDS must be an integer" >&2
   exit 78
@@ -41,6 +37,26 @@ if [[ ! -x /usr/sbin/runuser ]]; then
   echo "required command not found: /usr/sbin/runuser" >&2
   exit 69
 fi
+
+validate_runtime_env_file() {
+  local path="$1"
+  local metadata owner group mode links
+  if [[ "$path" != /* || ! -f "$path" || -L "$path" || ! -r "$path" ]]; then
+    echo "runtime environment must be a readable regular file, not a symlink: $path" >&2
+    exit 78
+  fi
+  if ! metadata="$(stat -c '%u:%g:%a:%h' -- "$path")"; then
+    echo "cannot inspect runtime environment: $path" >&2
+    exit 78
+  fi
+  IFS=: read -r owner group mode links <<<"$metadata"
+  if [[ "$owner" != "0" || "$group" != "0" || "$mode" != "600" || "$links" != "1" ]]; then
+    echo "runtime environment must be root:root mode 0600 with exactly one hard link: $path" >&2
+    exit 78
+  fi
+}
+
+validate_runtime_env_file "$env_file"
 if ! node --input-type=module -e '
   const [major, minor] = process.versions.node.split(".").map(Number);
   if (major < 20 || (major === 20 && minor < 9)) process.exit(1);
@@ -120,6 +136,7 @@ if [[ -z "$target_release" ]]; then
 fi
 
 # Load runtime secrets only after the root-owned wrapper selected a retained release.
+validate_runtime_env_file "$env_file"
 set -a
 # shellcheck disable=SC1090
 source "$env_file"
