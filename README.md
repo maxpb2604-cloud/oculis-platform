@@ -12,9 +12,9 @@ permanece como `null` y se presenta como «No informado». La regla completa est
 [`FACTUAL_DATA_POLICY.md`](./FACTUAL_DATA_POLICY.md).
 
 El repositorio es un monorepo npm. La recolección y la interfaz son procesos separados:
-la web **lee** la base de datos y el worker **ingiere y actualiza** los datos. En la nube,
-GitHub Actions ejecuta el worker y una base PostgreSQL administrada, como Neon, conserva
-la información entre ejecuciones.
+la web **lee** la base de datos y el worker **ingiere y actualiza** los datos. La
+producción puede ejecutar web, workers y PostgreSQL en un VPS; GitHub Actions valida
+cada commit y publica releases inmutables después de que CI termina correctamente.
 
 ## Arquitectura
 
@@ -27,7 +27,9 @@ flowchart LR
   DBPackage[packages/db] --> Worker
   DBPackage --> Web[apps/web]
   DB --> Web
-  Actions[GitHub Actions] --> Worker
+  Actions[GitHub Actions] --> VPS[VPS de producción]
+  VPS --> Web
+  VPS --> Worker
   User[Usuario] --> Web
 ```
 
@@ -39,6 +41,7 @@ flowchart LR
 | `packages/db`       | Esquema Drizzle, clientes PostgreSQL/PGlite y repositorios.         |
 | `packages/scrapers` | Adaptadores para fuentes legislativas, regulatorias y de noticias.  |
 | `.github/workflows` | CI y recolección periódica en la nube.                              |
+| `ops/vps`           | Caddy, systemd, backups y releases para el VPS de producción.       |
 
 ## Requisitos
 
@@ -98,22 +101,30 @@ flowchart LR
 
 ## Variables de entorno
 
-| Variable                          | Requerida               | Uso                                                                               |
-| --------------------------------- | ----------------------- | --------------------------------------------------------------------------------- |
-| `DATABASE_URL`                    | Sí en nube              | Conexión PostgreSQL/Neon. Debe mantenerse secreta y usar TLS.                     |
-| `DB_DRIVER`                       | Solo PGlite intencional | Define `pglite`; evita el fallback accidental en producción.                      |
-| `PGLITE_DIR`                      | Para PGlite persistente | Directorio absoluto de la base embebida.                                          |
-| `PG_POOL_MAX`                     | No                      | Máximo de conexiones por proceso; valor recomendado para Neon Free: `5` o menos.  |
-| `OCULIS_DB_APP_NAME`              | No                      | Nombre del proceso visible en PostgreSQL.                                         |
-| `OCULIS_AUTO_MIGRATE`             | No                      | `1` permite bootstrap DDL desde la web; evitarlo normalmente en producción.       |
-| `OCULIS_SESSION_SECRET`           | Sí para admin           | Firma sesiones; usa 32 o más caracteres aleatorios y guárdala como secreto.       |
-| `OCULIS_BOOTSTRAP_ADMIN_EMAIL`    | Inicio del admin        | Correo del primer administrador; se provisiona al iniciar sesión por primera vez. |
-| `OCULIS_BOOTSTRAP_ADMIN_PASSWORD` | Inicio del admin        | Contraseña inicial de 12+ caracteres; nunca se guarda en el repositorio.          |
-| `OCULIS_BOOTSTRAP_ADMIN_NAME`     | No                      | Nombre visible del primer administrador.                                          |
-| `NEXT_PUBLIC_MAPBOX_TOKEN`        | No                      | Habilita el mapa. Es público por diseño; restríngelo por dominio en Mapbox.       |
-| `X_BEARER_TOKEN`                  | No                      | Feed de X; requiere acceso compatible a la API de X.                              |
+| Variable                          | Requerida               | Uso                                                                                                                           |
+| --------------------------------- | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`                    | Sí en nube              | Conexión PostgreSQL/Neon. Debe mantenerse secreta y usar TLS.                                                                 |
+| `DB_DRIVER`                       | Solo PGlite intencional | Define `pglite`; evita el fallback accidental en producción.                                                                  |
+| `PGLITE_DIR`                      | Para PGlite persistente | Directorio absoluto de la base embebida.                                                                                      |
+| `PG_POOL_MAX`                     | No                      | Máximo de conexiones por proceso; valor recomendado para Neon Free: `5` o menos.                                              |
+| `OCULIS_DB_APP_NAME`              | No                      | Nombre del proceso visible en PostgreSQL.                                                                                     |
+| `OCULIS_PUBLIC_URL`               | Sí tras proxy           | Origen externo canónico (por ejemplo, `https://oculis.example.com`) para validar solicitudes administrativas y redirecciones. |
+| `OCULIS_MIN_READY_INITIATIVES`    | Sí en producción        | Piso positivo de iniciativas verificadas; readiness falla si el conteo cae por debajo.                                        |
+| `OCULIS_AUTO_MIGRATE`             | No                      | `1` permite bootstrap DDL desde la web; evitarlo normalmente en producción.                                                   |
+| `OCULIS_SESSION_SECRET`           | Sí para admin           | Firma sesiones; usa 32 o más caracteres aleatorios y guárdala como secreto.                                                   |
+| `OCULIS_BOOTSTRAP_ADMIN_EMAIL`    | Inicio del admin        | Correo del primer administrador; se provisiona al iniciar sesión por primera vez.                                             |
+| `OCULIS_BOOTSTRAP_ADMIN_PASSWORD` | Inicio del admin        | Contraseña inicial de 12+ caracteres; nunca se guarda en el repositorio.                                                      |
+| `OCULIS_BOOTSTRAP_ADMIN_NAME`     | No                      | Nombre visible del primer administrador.                                                                                      |
+| `NEXT_PUBLIC_MAPBOX_TOKEN`        | No                      | Habilita el mapa. Es público por diseño; restríngelo por dominio en Mapbox.                                                   |
+| `X_BEARER_TOKEN`                  | No                      | Feed de X; requiere acceso compatible a la API de X.                                                                          |
 
 Consulta [`.env.example`](./.env.example) para una plantilla sin credenciales reales.
+
+En producción, `/api/health` verifica únicamente que el proceso web está vivo y
+`/api/ready` confirma además que PostgreSQL acepta consultas y que existen los datos
+esenciales y una cuenta administrativa activa. Una base recién creada o vacía no se
+declara lista. La respuesta de readiness no incluye credenciales, nombres de tablas ni
+contenido de la base de datos.
 
 ## Comandos principales
 
@@ -403,6 +414,20 @@ porque actualmente solo publica dos PDF antiguos titulados como iniciativas prio
 debates y asistencia a sesiones de la Cámara y las actas de sesiones del Senado. Estos
 vacíos se muestran como cobertura pendiente, no como fuente fallida ni como ausencia de
 actividad.
+
+## Producción en VPS (OVHcloud)
+
+La ruta de producción recomendada para esta instalación usa PostgreSQL 16, la web y
+los workers en un VPS, con Caddy para HTTPS. Cada release queda identificado por el
+SHA completo de Git; el servidor verifica liveness, readiness, datos esenciales y el
+administrador antes de aceptar el cambio. El workflow de GitHub reconcilia el SHA
+público y puede volver al release anterior cuando una publicación no supera esos
+controles.
+
+La instalación inicial, la migración completa desde PGlite, los servicios systemd,
+los backups y el procedimiento de recuperación están documentados en
+[`ops/vps/README.md`](./ops/vps/README.md). No habilites el despliegue automático hasta
+que el VPS, el origen HTTPS, la base migrada y el primer backup hayan sido verificados.
 
 ## Nube sin costo: Neon + GitHub Actions
 

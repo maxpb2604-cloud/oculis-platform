@@ -3,16 +3,41 @@ import "server-only";
 import { NextResponse, type NextRequest } from "next/server";
 import { getAdminSession, type AdminSession } from "@/lib/admin-auth";
 
+function configuredPublicOrigin(): string | null | undefined {
+  const configuredUrl = process.env.OCULIS_PUBLIC_URL?.trim();
+  const externalUrl =
+    configuredUrl ||
+    (process.env.RENDER === "true" ? process.env.RENDER_EXTERNAL_URL?.trim() : undefined);
+  if (!externalUrl) return undefined;
+
+  try {
+    const parsed = new URL(externalUrl);
+    if (
+      (parsed.protocol !== "https:" && parsed.protocol !== "http:") ||
+      parsed.username ||
+      parsed.password
+    ) {
+      return null;
+    }
+    return parsed.origin;
+  } catch {
+    return null;
+  }
+}
+
 export function requestHasSameOrigin(request: NextRequest): boolean {
   const origin = request.headers.get("origin");
   if (!origin) return false;
   try {
     const suppliedOrigin = new URL(origin).origin;
-    if (suppliedOrigin === new URL(request.url).origin) return true;
-    // Render's proxy may expose an internal request URL to Next.js. Trust only
-    // Render's own externally assigned URL, never an arbitrary forwarded host.
-    const renderUrl = process.env.RENDER === "true" ? process.env.RENDER_EXTERNAL_URL : null;
-    return Boolean(renderUrl && suppliedOrigin === new URL(renderUrl).origin);
+    // A reverse proxy may expose an internal request URL to Next.js. Trust only the
+    // explicitly configured public URL, never an arbitrary forwarded host. Render's
+    // assigned URL remains a compatibility fallback for the legacy deployment.
+    const publicOrigin = configuredPublicOrigin();
+    if (publicOrigin === null) return false;
+    return publicOrigin === undefined
+      ? suppliedOrigin === new URL(request.url).origin
+      : suppliedOrigin === publicOrigin;
   } catch {
     return false;
   }

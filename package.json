@@ -12,11 +12,15 @@
     "apps/*"
   ],
   "scripts": {
-    "test": "npm run test --workspaces --if-present",
+    "test": "npm run test:db-migration && npm run test:db-migration:native && npm run test --workspaces --if-present",
     "build": "npm run build --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "daily": "npm run daily -w @oculis/worker",
     "dev": "npm run dev -w @oculis/web",
+    "db:migrate:pglite": "tsx scripts/migrate-pglite-to-postgres.mjs",
+    "db:verify:pglite": "tsx scripts/verify-pglite-postgres.mjs",
+    "test:db-migration": "tsx scripts/test-pglite-postgres-migration.mjs",
+    "test:db-migration:native": "tsx scripts/test-pglite-postgres-native.mjs",
     "check:factual": "node scripts/check-factual-policy.mjs",
     "lint": "eslint .",
     "format": "prettier --check \"**/*.{ts,tsx,js,jsx,json,css,md}\"",
@@ -44,6 +48,6 @@
   "overrides": {
     "nanoid@3": "3.3.18",
     "postcss": "8.5.23",
-    "sharp": "0.35.3"
+    "sharp": "0.35.4"
   }
 }

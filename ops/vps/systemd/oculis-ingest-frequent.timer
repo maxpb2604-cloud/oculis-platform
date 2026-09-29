@@ -1,0 +1,13 @@
+[Unit]
+Description=Run Oculis frequent ingestion three times daily
+
+[Timer]
+OnCalendar=*-*-* 02:15:00 UTC
+OnCalendar=*-*-* 10:15:00 UTC
+OnCalendar=*-*-* 18:15:00 UTC
+Unit=oculis-ingest@frequent.service
+Persistent=true
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target

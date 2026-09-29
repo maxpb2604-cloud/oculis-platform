@@ -1,0 +1,36 @@
+[Unit]
+Description=Oculis factual ingestion (%i)
+Documentation=https://github.com/maxpb2604-cloud/oculis-platform
+Wants=network-online.target
+After=network-online.target postgresql.service
+OnFailure=oculis-failure-log@%n.service
+
+[Service]
+Type=oneshot
+User=oculis
+Group=oculis
+WorkingDirectory=/var/lib/oculis/runtime
+EnvironmentFile=/etc/oculis/worker.env
+Environment=HOME=/var/lib/oculis/runtime
+# This root-owned launcher takes the ingestion lock before it resolves
+# /opt/oculis/current, so a queued job cannot pin an old release.
+ExecStart=/usr/local/libexec/oculis/run-ingest.sh %i
+TimeoutStartSec=6h
+UMask=0027
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+StandardOutput=journal
+StandardError=journal
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ReadWritePaths=/var/lib/oculis/documents /var/lib/oculis/runtime
+ReadWritePaths=/var/lib/oculis/locks/ingestion.lock /var/log/oculis

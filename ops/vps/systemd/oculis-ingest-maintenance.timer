@@ -1,0 +1,11 @@
+[Unit]
+Description=Run Oculis daily maintenance ingestion
+
+[Timer]
+OnCalendar=*-*-* 06:45:00 UTC
+Unit=oculis-ingest@maintenance.service
+Persistent=true
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target

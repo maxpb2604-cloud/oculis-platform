@@ -1,0 +1,38 @@
+[Unit]
+Description=Oculis web application
+Documentation=https://github.com/maxpb2604-cloud/oculis-platform
+Wants=network-online.target
+After=network-online.target postgresql.service
+OnFailure=oculis-failure-log@%n.service
+
+[Service]
+Type=simple
+User=oculis
+Group=oculis
+WorkingDirectory=/opt/oculis/current
+EnvironmentFile=/etc/oculis/web.env
+EnvironmentFile=-/etc/oculis/bootstrap.env
+EnvironmentFile=-/var/lib/oculis-state/release.env
+ExecStart=/usr/bin/node /opt/oculis/current/node_modules/next/dist/bin/next start /opt/oculis/current/apps/web -H 127.0.0.1 -p 3000
+Restart=always
+RestartSec=5s
+TimeoutStartSec=90s
+TimeoutStopSec=30s
+KillSignal=SIGINT
+UMask=0027
+StandardOutput=journal
+StandardError=journal
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ReadWritePaths=-/opt/oculis/current/apps/web/.next/cache
+
+[Install]
+WantedBy=multi-user.target

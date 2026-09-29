@@ -1,0 +1,11 @@
+[Unit]
+Description=Refresh Oculis congressional rosters weekly
+
+[Timer]
+OnCalendar=Mon *-*-* 07:30:00 UTC
+Unit=oculis-ingest@roster.service
+Persistent=true
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target

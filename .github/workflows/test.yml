@@ -18,6 +18,19 @@ jobs:
     name: lint, typecheck, test & build
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: oculis_migration_test_ci
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d oculis_migration_test_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     env:
       CI: "true"
       NEXT_TELEMETRY_DISABLED: "1"
@@ -46,6 +59,12 @@ jobs:
 
       - name: Run tests (all workspaces)
         run: npm test
+
+      - name: Test PGlite migration against native PostgreSQL 16
+        env:
+          OCULIS_ALLOW_NATIVE_DB_TEST: "1"
+          OCULIS_TEST_POSTGRES_URL: postgresql://postgres:postgres@127.0.0.1:5432/oculis_migration_test_ci
+        run: npm run test:db-migration:native
 
       - name: Build
         env:

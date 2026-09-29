@@ -1,0 +1,33 @@
+[Unit]
+Description=Read-only live checks of Oculis official sources
+Wants=network-online.target
+After=network-online.target
+OnFailure=oculis-failure-log@%n.service
+
+[Service]
+Type=oneshot
+User=oculis
+Group=oculis
+WorkingDirectory=/opt/oculis/current
+Environment=CI=true
+Environment=OCULIS_LIVE=1
+Environment=DATABASE_URL=
+Environment=OCULIS_AUTO_MIGRATE=0
+Environment=HOME=/var/lib/oculis/runtime
+ExecStart=/opt/oculis/current/ops/vps/scripts/run-source-health.sh
+TimeoutStartSec=30min
+UMask=0027
+Nice=10
+StandardOutput=journal
+StandardError=journal
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ReadWritePaths=/var/lib/oculis/health /var/lib/oculis/runtime

@@ -1,0 +1,11 @@
+[Unit]
+Description=Check Oculis application health every five minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+Unit=oculis-health.service
+AccuracySec=30s
+
+[Install]
+WantedBy=timers.target

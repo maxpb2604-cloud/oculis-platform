@@ -1,0 +1,14 @@
+[Unit]
+Description=Check official Oculis sources every six hours
+
+[Timer]
+OnCalendar=*-*-* 03:37:00 UTC
+OnCalendar=*-*-* 09:37:00 UTC
+OnCalendar=*-*-* 15:37:00 UTC
+OnCalendar=*-*-* 21:37:00 UTC
+Unit=oculis-source-health.service
+Persistent=true
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target

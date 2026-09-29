@@ -1,0 +1,11 @@
+[Unit]
+Description=Run Oculis weekly full reconciliation
+
+[Timer]
+OnCalendar=Sun *-*-* 08:15:00 UTC
+Unit=oculis-ingest@weekly.service
+Persistent=true
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target

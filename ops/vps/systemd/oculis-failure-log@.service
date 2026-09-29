@@ -1,0 +1,19 @@
+[Unit]
+Description=Record failure details for Oculis unit %i
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/systemctl --no-pager --full status %i
+SuccessExitStatus=0 1 2 3 4
+StandardOutput=journal
+StandardError=journal
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_UNIX

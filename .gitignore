@@ -5,6 +5,12 @@ dist/
 .next-health-validation/
 .env
 .env.local
+.env.*
+!.env.example
+ops/vps/*.env
+!ops/vps/*.env.example
+ops/vps/*.key
+ops/vps/known_hosts
 *.log
 .DS_Store
 coverage/
